@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-mkdir.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-download.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-update.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-patch.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-configure.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-install.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\96c68f3e217946a87c4d770de065f088\daisysp-populate-test.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\7185f4b949eac82f1ebc84f92909b383\daisysp-populate-complete.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\0814d89f3468f0132cef85c4802bb791\daisysp-populate.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-subbuild\CMakeFiles\daisysp-populate" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{5901B7D5-408E-360C-8B37-C2876FC79988}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

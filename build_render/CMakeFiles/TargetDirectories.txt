@@ -1,0 +1,16 @@
+C:/dev/m8-sdl3/build_render/CMakeFiles/m8_engine.dir
+C:/dev/m8-sdl3/build_render/CMakeFiles/m8_clone.dir
+C:/dev/m8-sdl3/build_render/CMakeFiles/m8_render.dir
+C:/dev/m8-sdl3/build_render/CMakeFiles/m8_tests.dir
+C:/dev/m8-sdl3/build_render/CMakeFiles/ALL_BUILD.dir
+C:/dev/m8-sdl3/build_render/CMakeFiles/ZERO_CHECK.dir
+C:/dev/m8-sdl3/build_render/_deps/sdl3-build/CMakeFiles/SDL3-shared.dir
+C:/dev/m8-sdl3/build_render/_deps/sdl3-build/CMakeFiles/SDL3_test.dir
+C:/dev/m8-sdl3/build_render/_deps/sdl3-build/CMakeFiles/SDL_uclibc.dir
+C:/dev/m8-sdl3/build_render/_deps/sdl3-build/CMakeFiles/uninstall.dir
+C:/dev/m8-sdl3/build_render/_deps/sdl3-build/CMakeFiles/ALL_BUILD.dir
+C:/dev/m8-sdl3/build_render/_deps/daisysp-build/CMakeFiles/DaisySP.dir
+C:/dev/m8-sdl3/build_render/_deps/daisysp-build/CMakeFiles/ALL_BUILD.dir
+C:/dev/m8-sdl3/build_render/_deps/catch2-build/CMakeFiles/ALL_BUILD.dir
+C:/dev/m8-sdl3/build_render/_deps/catch2-build/src/CMakeFiles/Catch2.dir
+C:/dev/m8-sdl3/build_render/_deps/catch2-build/src/CMakeFiles/Catch2WithMain.dir

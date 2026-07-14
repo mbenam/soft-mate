@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Control\adenv.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Control\adsr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Control\phasor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Drums\analogbassdrum.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Drums\analogsnaredrum.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Drums\hihat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Drums\synthbassdrum.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Drums\synthsnaredrum.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Dynamics\crossfade.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Dynamics\limiter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\autowah.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\chorus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\decimator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\flanger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\overdrive.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\phaser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\sampleratereducer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\tremolo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Effects\wavefolder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Filters\ladder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Filters\svf.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Filters\soap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Noise\clockednoise.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Noise\grainlet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Noise\particle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\PhysicalModeling\drip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\PhysicalModeling\modalvoice.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\PhysicalModeling\resonator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\PhysicalModeling\KarplusString.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\PhysicalModeling\stringvoice.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Sampling\granularplayer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\fm2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\formantosc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\oscillator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\oscillatorbank.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\variablesawosc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\variableshapeosc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\vosim.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Synthesis\zoscillator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Utility\dcblock.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\Source\Utility\metro.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\daisysp-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{378C181C-048B-35FD-8C72-253D3478FCC4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

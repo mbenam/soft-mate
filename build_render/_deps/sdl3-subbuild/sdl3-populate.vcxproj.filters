@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-mkdir.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-download.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-update.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-patch.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-configure.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-install.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\667d9c728a46e4785294363061157759\sdl3-populate-test.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\29fb48a7336d06fbdcae97e5dc07de4f\sdl3-populate-complete.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\a37f5f70729a7775f9f54f7769074afd\sdl3-populate.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\dev\m8-sdl3\build_render\_deps\sdl3-subbuild\CMakeFiles\sdl3-populate" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{9E91CEB6-BD9C-33FC-91EB-1847B938504C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

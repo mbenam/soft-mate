@@ -1,0 +1,10 @@
+^C:\DEV\M8-SDL3\BUILD_RENDER\_DEPS\DAISYSP-SUBBUILD\CMAKEFILES\0814D89F3468F0132CEF85C4802BB791\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/dev/m8-sdl3/build_render/_deps/daisysp-subbuild -BC:/dev/m8-sdl3/build_render/_deps/daisysp-subbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/dev/m8-sdl3/build_render/_deps/daisysp-subbuild/daisysp-populate.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

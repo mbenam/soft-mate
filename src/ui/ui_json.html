@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M8 UI Grouping Editor V13 - Delete & Bulk Clear</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+        
+        body { font-family: sans-serif; background: #000; color: #eee; display: flex; gap: 20px; padding: 20px; margin: 0; }
+        .sidebar { display: flex; flex-direction: column; gap: 10px; width: 340px; flex-shrink: 0; }
+        .main-content { display: flex; flex-direction: column; gap: 30px; max-width: 900px; }
+        
+        .btn { padding: 8px; background: #333; color: white; border: 1px solid #555; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn.active { background: #4CAF50; color: white; border-color: #4CAF50; }
+        .btn:hover { background: #444; }
+        .btn.active:hover { background: #45a049; }
+        .panel { background: #111; padding: 12px; border-radius: 6px; border: 1px solid #333; }
+        
+        /* M8 Exact Palette Colors */
+        .color-TITLE { color: #ff0044; }       
+        .color-LABEL_DIM { color: #559999; }   
+        .color-LABEL_LITE { color: #00ffff; }  
+        .color-VALUE { color: #ffffff; }       
+        .color-ACCENT { color: #ff0044; }      
+        .color-SLIDER_BG { color: #559999; } 
+
+        .palette-btn { width: 100%; padding: 8px; margin-top: 5px; background: #000; border: 1px solid #444; cursor: pointer; text-align: left; font-weight: bold; font-family: 'Courier Prime', monospace;}
+        .palette-btn.selected { border: 2px solid #fff; }
+
+        /* 40x30 Grid with Light Amber Lines */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(40, 16px);
+            grid-template-rows: repeat(30, 16px);
+            background: rgba(255, 193, 7, 0.25); 
+            gap: 1px; 
+            border: 2px solid rgba(255, 193, 7, 0.4); 
+            width: fit-content;
+            position: relative;
+            user-select: none;
+        }
+        .cell {
+            width: 16px; height: 16px;
+            background: #000;
+            font-family: 'Courier Prime', monospace;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: center;
+            line-height: 16px;
+            cursor: crosshair;
+            box-sizing: border-box;
+            transition: color 0.1s;
+        }
+        .cell.cursor { background: #222; border: 1px dashed rgba(255, 193, 7, 0.8);}
+        
+        /* Interactive Field Visualization */
+        .cell.has-field { position: relative; --hover-color: #00ffff; }
+        .cell.has-field::after { content: ""; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: var(--hover-color); opacity: 0.5; }
+        .cell.has-field:hover, .cell.has-field.group-hover { color: var(--hover-color) !important; }
+        
+        /* Dynamic Text Visualization */
+        .cell.has-var { position: relative; }
+        .cell.has-var::after { content: ""; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; border-bottom: 2px dashed #ff00ff; box-sizing: border-box; opacity: 0.8;}
+        .cell.has-var:hover, .cell.has-var.group-hover-var { color: #ff00ff !important; }
+
+        /* Selection Boxes */
+        .selection-box { position: absolute; pointer-events: none; display: none; box-sizing: border-box;}
+        .sel-tag { border: 2px dashed #00ffff; background: rgba(0,255,255,0.1); }
+        .sel-tagvar { border: 2px dashed #ff00ff; background: rgba(255,0,255,0.1); }
+        .sel-move { border: 2px dashed #ff9900; background: rgba(255,153,0,0.2); transition: background 0.1s;}
+        
+        textarea { width: 100%; height: 200px; background: #0a0a0a; color: #00ffff; font-family: monospace; border: 1px solid #333; padding: 10px; box-sizing: border-box; margin-top: 5px; }
+        .flex-row { display: flex; gap: 5px; }
+        
+        /* Instructions Section */
+        .instructions { background: #111; padding: 25px; border-radius: 8px; border: 1px solid #333; color: #ccc; line-height: 1.6; }
+        .instructions h2 { color: #fff; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .instructions h3 { color: #00ffff; margin-bottom: 5px; }
+        .instructions code { background: #000; color: #0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px;}
+        .instructions pre { background: #000; color: #0f0; padding: 15px; border-radius: 6px; border: 1px solid #444; overflow-x: auto; white-space: pre-wrap; font-size: 13px;}
+        .instructions ul { margin-top: 5px; padding-left: 20px; }
+        .instructions li { margin-bottom: 8px; }
+        .highlight-prompt { border-left: 4px solid #4CAF50; padding-left: 15px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- SIDEBAR CONTROLS -->
+    <div class="sidebar">
+        <h2>M8 Layout Tool V13</h2>
+        
+        <div class="flex-row">
+            <button class="btn" style="flex:1" onclick="undo()">⟲ Undo (Ctrl+Z)</button>
+        </div>
+
+        <div class="panel">
+            <h3 style="margin-top:0;">1. Screen Config</h3>
+            <input type="text" id="screenName" value="NewScreen" style="width: 100%; padding: 6px; background: #000; color: #0ff; border: 1px solid #444; font-family: monospace; box-sizing: border-box;">
+        </div>
+
+        <div class="panel">
+            <h3>2. Active Tool</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <button class="btn active" id="mode-draw" onclick="setMode('draw')">Draw</button>
+                <button class="btn" id="mode-move" onclick="setMode('move')">Select</button>
+                <button class="btn" id="mode-tag" onclick="setMode('tag')" style="color:#0ff;">Tag Field</button>
+                <button class="btn" id="mode-tagvar" onclick="setMode('tagvar')" style="color:#f0f;">Tag Var</button>
+            </div>
+            
+            <div id="tag-options" style="display:none; margin-top:10px; border-top: 1px solid #333; padding-top:10px;">
+                <label style="font-size: 11px; color: #00ffff; font-weight: bold;">When Selected, turn elements:</label>
+                <select id="sel-color-override" style="width: 100%; padding: 4px; background: #000; color: #fff; border: 1px solid #444; margin-top: 4px; font-family: sans-serif;">
+                    <option value="AUTO">Auto (Bright Cyan)</option>
+                    <option value="LABEL_LITE">LABEL_LITE (Bright Cyan)</option>
+                    <option value="VALUE">VALUE (White)</option>
+                    <option value="TITLE">TITLE (Red)</option>
+                    <option value="ACCENT">ACCENT (Red)</option>
+                    <option value="LABEL_DIM">LABEL_DIM (Dim Teal)</option>
+                </select>
+            </div>
+
+            <p style="font-size: 11px; color: #888; margin-top: 10px; min-height: 48px;" id="mode-desc">
+                Click to type. Select SLIDER block and press any key.
+            </p>
+        </div>
+
+        <div class="panel" id="color-panel">
+            <h3>3. Palette</h3>
+            <button class="palette-btn color-TITLE" onclick="setColor('TITLE')">TITLE (Red)</button>
+            <button class="palette-btn color-LABEL_DIM selected" onclick="setColor('LABEL_DIM')">LABEL (Dim Teal)</button>
+            <button class="palette-btn color-VALUE" onclick="setColor('VALUE')">VALUE (White)</button>
+            <button class="palette-btn color-ACCENT" onclick="setColor('ACCENT')">ACCENT (Red)</button>
+            <button class="palette-btn color-SLIDER_BG" onclick="setColor('SLIDER_BG')">SLIDER (███)</button>
+        </div>
+
+        <button class="btn" style="background:#00ffff; color:#000; font-size:16px; margin-top:5px;" onclick="exportJSON()">Export JSON</button>
+        <textarea id="output" placeholder="JSON Schema will appear here upon export..."></textarea>
+    </div>
+
+    <!-- MAIN CONTENT (GRID + INSTRUCTIONS) -->
+    <div class="main-content">
+        <!-- GRID CONTAINER -->
+        <div style="position:relative;">
+            <div id="grid"></div>
+            <div id="selection-box" class="selection-box"></div>
+        </div>
+        
+        <!-- DETAILED INSTRUCTIONS -->
+        <div class="instructions">
+            <h2>About This Tool</h2>
+            <p>
+                This tool is a <strong>Semantic UI Layout Generator</strong>. AI Vision models struggle to deduce perfect math, alignments, and programmatic groupings from pixel screenshots. 
+                By drawing the UI here, you bypass the vision model completely. You produce a mathematically perfect, logically grouped JSON schema that tells the AI exactly where elements live, how they are colored, and how they behave when selected.
+            </p>
+
+            <h3>How To Operate</h3>
+            <ul>
+                <li><strong>Draw:</strong> Select a logical color from the palette, click any cell on the grid, and type. For sliders, select the <code>SLIDER</code> palette and press any key to draw solid blocks. <code>Spacebar</code> clears a cell.</li>
+                <li><strong>Select (Copy/Paste/Move):</strong> Drag a box to highlight elements.
+                    <ul>
+                        <li><strong>Move:</strong> Click and drag inside the orange box to move the elements.</li>
+                        <li><strong>Duplicate:</strong> Hold <code>Alt</code> while dragging the box to leave a copy behind.</li>
+                        <li><strong>Copy/Paste:</strong> Press <code>Ctrl+C</code> to copy the highlighted area. Click anywhere on the grid (or draw a new 1x1 selection box) and press <code>Ctrl+V</code> to paste.</li>
+                        <li><strong>Nudge:</strong> Press the <code>Arrow Keys</code> to precisely bump the selected group around.</li>
+                        <li><strong>Delete:</strong> Press <code>Delete</code> or <code>Backspace</code> to clear the selected area.</li>
+                    </ul>
+                </li>
+                <li><strong>Tag Field (Interactive):</strong> M8 fields are grouped (e.g., Label + Hex Value + Slider). Use this tool to drag a box over related elements and assign them a shared ID (like <code>CUTOFF</code>).</li>
+                <li><strong>Tag Var (Dynamic Text):</strong> Use this tool to tag text that isn't selectable but changes programmatically (e.g., drawing <code>INST. 00</code> and tagging it as <code>SCREEN_TITLE</code>).</li>
+            </ul>
+
+            <h3>The SDL3 Rendering Prompt</h3>
+            <p>Once you have exported your JSON, copy it and provide it to your AI agent along with the following prompt to generate the math:</p>
+            
+            <div class="highlight-prompt">
+                <strong>Copy and paste this to your AI Agent:</strong>
+<pre>I am building an M8 Tracker clone in C++ using SDL3. We are rendering to a 40 column by 30 row character grid.
+Assume I have two basic render functions available:
+1. `DrawTextGrid(int col, int row, const char* text, UI_Color color)`
+2. `DrawSolidGrid(int col, int row, int width, UI_Color color)`
+
+Below is the JSON schema for the screen layout. 
+Please write the rendering loop `RenderScreen()` for this screen based on these exact rules:
+
+1. **Static Text**: Loop through the `static` array. Draw the text using the `normal_color` provided.
+2. **Dynamic Text**: Loop through the `dynamic_text` dictionary. Do NOT hardcode the text provided in the JSON; it is just a placeholder. Instead, fetch the live string from the application state based on the dictionary Key (e.g., `SCREEN_TITLE`), and draw it at the provided `col` and `row` using `normal_color`.
+3. **Interactive Fields**: Loop through the `interactive` dictionary. 
+   - Check if the dictionary Key matches the `current_active_cursor_id`.
+   - If the field is ACTIVE: 
+     - Draw all components using their `selected_color`.
+     - If a component has `has_cursor_box: true`, draw a bright cyan `[ ]` graphic encompassing the first character of that text string.
+   - If the field is NOT ACTIVE: 
+     - Draw all components using their `normal_color`.
+   - If a component has `role: "slider"`, do not use DrawTextGrid. Instead, call `DrawSolidGrid` using the provided `width`.
+
+Here is the JSON schema to parse:
+[PASTE YOUR EXPORTED JSON HERE]</pre>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const COLS = 40, ROWS = 30;
+    const gridEl = document.getElementById('grid');
+    const selBox = document.getElementById('selection-box');
+    
+    const hexPalette = {
+        'TITLE': '#ff0044', 'LABEL_DIM': '#559999', 'LABEL_LITE': '#00ffff',
+        'VALUE': '#ffffff', 'ACCENT': '#ff0044', 'SLIDER_BG': '#559999', 'AUTO': '#00ffff'
+    };
+    
+    let mode = 'draw'; 
+    let activeColor = 'LABEL_DIM';
+    let typeCursor = null; 
+    
+    let gridData = Array.from({ length: COLS }, () => Array(ROWS).fill(null));
+    let historyStack = [];
+    let clipboardData = null; 
+
+    let isDragging = false;
+    let dragStart = null;
+    let currentDragC, currentDragR;
+    
+    let activeMoveRegion = null; 
+    let isMovingBlocks = false;
+    let blocksDataToMove = null;
+
+    function saveState() {
+        historyStack.push(JSON.parse(JSON.stringify(gridData)));
+        if (historyStack.length > 50) historyStack.shift();
+    }
+    
+    function undo() {
+        if (historyStack.length > 0) {
+            gridData = historyStack.pop();
+            clearMoveSelection();
+            renderGrid();
+        }
+    }
+
+    // --- NUDGE LOGIC ---
+    function nudgeSelection(dc, dr) {
+        if (!activeMoveRegion) return;
+        saveState();
+        
+        let temp = [];
+        for (let x = activeMoveRegion.minC; x <= activeMoveRegion.maxC; x++) {
+            let col = [];
+            for (let y = activeMoveRegion.minR; y <= activeMoveRegion.maxR; y++) {
+                if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+                    col.push(gridData[x][y] ? JSON.parse(JSON.stringify(gridData[x][y])) : null);
+                } else {
+                    col.push(null);
+                }
+            }
+            temp.push(col);
+        }
+        
+        for (let x = activeMoveRegion.minC; x <= activeMoveRegion.maxC; x++) {
+            for (let y = activeMoveRegion.minR; y <= activeMoveRegion.maxR; y++) {
+                if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+                    gridData[x][y] = null;
+                }
+            }
+        }
+        
+        activeMoveRegion.minC += dc;
+        activeMoveRegion.maxC += dc;
+        activeMoveRegion.minR += dr;
+        activeMoveRegion.maxR += dr;
+        
+        for (let i = 0; i < temp.length; i++) {
+            for (let j = 0; j < temp[0].length; j++) {
+                let targetC = activeMoveRegion.minC + i;
+                let targetR = activeMoveRegion.minR + j;
+                if (targetC >= 0 && targetC < COLS && targetR >= 0 && targetR < ROWS) {
+                    if (temp[i][j]) gridData[targetC][targetR] = temp[i][j];
+                }
+            }
+        }
+        
+        updateSelectionBox(activeMoveRegion.minC, activeMoveRegion.minR, activeMoveRegion.maxC, activeMoveRegion.maxR, 'sel-move');
+        renderGrid();
+    }
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.id = `cell-${c}-${r}`;
+            
+            cell.addEventListener('mousedown', () => handleMouseDown(c, r));
+            cell.addEventListener('mouseenter', () => handleMouseEnter(c, r));
+            
+            cell.addEventListener('mouseover', () => {
+                if (mode === 'draw' && gridData[c][r]) {
+                    if (gridData[c][r].fieldId) {
+                        let id = gridData[c][r].fieldId;
+                        document.querySelectorAll('.cell').forEach(el => {
+                            let [_, c_i, r_i] = el.id.split('-');
+                            if (gridData[c_i][r_i] && gridData[c_i][r_i].fieldId === id) el.classList.add('group-hover');
+                        });
+                    } else if (gridData[c][r].varId) {
+                        let id = gridData[c][r].varId;
+                        document.querySelectorAll('.cell').forEach(el => {
+                            let [_, c_i, r_i] = el.id.split('-');
+                            if (gridData[c_i][r_i] && gridData[c_i][r_i].varId === id) el.classList.add('group-hover-var');
+                        });
+                    }
+                }
+            });
+            cell.addEventListener('mouseout', () => {
+                document.querySelectorAll('.group-hover').forEach(el => el.classList.remove('group-hover'));
+                document.querySelectorAll('.group-hover-var').forEach(el => el.classList.remove('group-hover-var'));
+            });
+            
+            gridEl.appendChild(cell);
+        }
+    }
+    
+    window.addEventListener('mouseup', (e) => handleMouseUp(e));
+
+    function handleMouseDown(c, r) {
+        if (mode === 'draw') {
+            setCursor(c, r);
+        } else if (mode === 'tag' || mode === 'tagvar') {
+            isDragging = true;
+            dragStart = { c, r };
+            updateSelectionBox(c, r, c, r, mode === 'tag' ? 'sel-tag' : 'sel-tagvar');
+        } else if (mode === 'move') {
+            if (activeMoveRegion && c >= activeMoveRegion.minC && c <= activeMoveRegion.maxC && r >= activeMoveRegion.minR && r <= activeMoveRegion.maxR) {
+                isMovingBlocks = true;
+                dragStart = { c, r };
+                blocksDataToMove = [];
+                for (let x = activeMoveRegion.minC; x <= activeMoveRegion.maxC; x++) {
+                    blocksDataToMove[x - activeMoveRegion.minC] = [];
+                    for (let y = activeMoveRegion.minR; y <= activeMoveRegion.maxR; y++) {
+                        blocksDataToMove[x - activeMoveRegion.minC][y - activeMoveRegion.minR] = gridData[x][y] ? JSON.parse(JSON.stringify(gridData[x][y])) : null;
+                    }
+                }
+            } else {
+                clearMoveSelection();
+                isDragging = true;
+                dragStart = { c, r };
+                updateSelectionBox(c, r, c, r, 'sel-move');
+            }
+        }
+    }
+
+    function handleMouseEnter(c, r) {
+        if (isDragging && (mode === 'tag' || mode === 'tagvar' || mode === 'move')) {
+            let cls = mode === 'tag' ? 'sel-tag' : (mode === 'tagvar' ? 'sel-tagvar' : 'sel-move');
+            updateSelectionBox(dragStart.c, dragStart.r, c, r, cls);
+        } else if (isMovingBlocks && mode === 'move') {
+            let dc = c - dragStart.c;
+            let dr = r - dragStart.r;
+            updateSelectionBox(
+                activeMoveRegion.minC + dc, activeMoveRegion.minR + dr,
+                activeMoveRegion.maxC + dc, activeMoveRegion.maxR + dr, 
+                'sel-move'
+            );
+        }
+    }
+
+    function handleMouseUp(e) {
+        if (isDragging && (mode === 'tag' || mode === 'tagvar')) {
+            isDragging = false;
+            selBox.style.display = 'none';
+            
+            let minC = Math.min(dragStart.c, currentDragC), maxC = Math.max(dragStart.c, currentDragC);
+            let minR = Math.min(dragStart.r, currentDragR), maxR = Math.max(dragStart.r, currentDragR);
+            
+            let promptText = mode === 'tag' 
+                ? "Enter INTERACTIVE Field ID (e.g. 'SONG_CELL'). Leave blank to clear."
+                : "Enter DYNAMIC Variable ID (e.g. 'SCREEN_TITLE'). Leave blank to clear.";
+                
+            let inputId = prompt(promptText);
+            
+            if (inputId !== null) {
+                saveState();
+                inputId = inputId.trim() === "" ? null : inputId.toUpperCase();
+                let overrideColor = document.getElementById('sel-color-override').value; 
+                
+                for (let c = minC; c <= maxC; c++) {
+                    for (let r = minR; r <= maxR; r++) {
+                        if (gridData[c][r]) {
+                            if (mode === 'tag') {
+                                gridData[c][r].fieldId = inputId;
+                                gridData[c][r].selectedColor = overrideColor;
+                                if(inputId) gridData[c][r].varId = null;
+                            } else {
+                                gridData[c][r].varId = inputId;
+                                if(inputId) gridData[c][r].fieldId = null;
+                            }
+                        }
+                    }
+                }
+                renderGrid();
+            }
+        } else if (isDragging && mode === 'move') {
+            isDragging = false;
+            activeMoveRegion = {
+                minC: Math.min(dragStart.c, currentDragC), maxC: Math.max(dragStart.c, currentDragC),
+                minR: Math.min(dragStart.r, currentDragR), maxR: Math.max(dragStart.r, currentDragR)
+            };
+        } else if (isMovingBlocks && mode === 'move') {
+            isMovingBlocks = false;
+            saveState();
+            let dc = currentDragC - dragStart.c;
+            let dr = currentDragR - dragStart.r;
+            
+            if (!e.altKey) {
+                for (let c = activeMoveRegion.minC; c <= activeMoveRegion.maxC; c++) {
+                    for (let r = activeMoveRegion.minR; r <= activeMoveRegion.maxR; r++) gridData[c][r] = null;
+                }
+            }
+            
+            for (let x = 0; x < blocksDataToMove.length; x++) {
+                for (let y = 0; y < blocksDataToMove[0].length; y++) {
+                    let targetC = activeMoveRegion.minC + x + dc;
+                    let targetR = activeMoveRegion.minR + y + dr;
+                    if (targetC >= 0 && targetC < COLS && targetR >= 0 && targetR < ROWS) {
+                        if (blocksDataToMove[x][y]) gridData[targetC][targetR] = JSON.parse(JSON.stringify(blocksDataToMove[x][y]));
+                    }
+                }
+            }
+            
+            let newMinC = activeMoveRegion.minC + dc;
+            let newMinR = activeMoveRegion.minR + dr;
+            activeMoveRegion = {
+                minC: newMinC, maxC: newMinC + blocksDataToMove.length - 1,
+                minR: newMinR, maxR: newMinR + blocksDataToMove[0].length - 1
+            };
+            updateSelectionBox(activeMoveRegion.minC, activeMoveRegion.minR, activeMoveRegion.maxC, activeMoveRegion.maxR, 'sel-move');
+            
+            renderGrid();
+        }
+    }
+
+    function updateSelectionBox(c1, r1, c2, r2, cssClass) {
+        currentDragC = c2; currentDragR = r2;
+        let minC = Math.min(c1, c2), maxC = Math.max(c1, c2);
+        let minR = Math.min(r1, r2), maxR = Math.max(r1, r2);
+        
+        selBox.className = 'selection-box ' + cssClass;
+        selBox.style.display = 'block';
+        selBox.style.left = (minC * 17) + 'px'; 
+        selBox.style.top = (minR * 17) + 'px';
+        selBox.style.width = ((maxC - minC + 1) * 17 - 1) + 'px';
+        selBox.style.height = ((maxR - minR + 1) * 17 - 1) + 'px';
+    }
+
+    function clearMoveSelection() {
+        activeMoveRegion = null;
+        selBox.style.display = 'none';
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return; 
+
+        if (e.ctrlKey && e.key.toLowerCase() === 'a') {
+            e.preventDefault();
+            setMode('move');
+            activeMoveRegion = { minC: 0, maxC: COLS - 1, minR: 0, maxR: ROWS - 1 };
+            updateSelectionBox(0, 0, COLS - 1, ROWS - 1, 'sel-move');
+            return;
+        }
+
+        if (e.ctrlKey && e.key.toLowerCase() === 'z') { 
+            e.preventDefault(); undo(); return;
+        }
+
+        if (mode === 'move' && activeMoveRegion) {
+            if (e.key === 'ArrowUp') { e.preventDefault(); nudgeSelection(0, -1); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); nudgeSelection(0, 1); return; }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); nudgeSelection(-1, 0); return; }
+            if (e.key === 'ArrowRight') { e.preventDefault(); nudgeSelection(1, 0); return; }
+        }
+
+        if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+            if (mode === 'move' && activeMoveRegion) {
+                clipboardData = [];
+                for (let x = activeMoveRegion.minC; x <= activeMoveRegion.maxC; x++) {
+                    let col = [];
+                    for (let y = activeMoveRegion.minR; y <= activeMoveRegion.maxR; y++) {
+                        col.push(gridData[x][y] ? JSON.parse(JSON.stringify(gridData[x][y])) : null);
+                    }
+                    clipboardData.push(col);
+                }
+                
+                selBox.style.backgroundColor = 'rgba(0, 255, 0, 0.4)';
+                selBox.style.borderColor = '#0f0';
+                setTimeout(() => {
+                    selBox.style.backgroundColor = 'rgba(255,153,0,0.2)';
+                    selBox.style.borderColor = '#ff9900';
+                }, 150);
+            }
+            e.preventDefault(); return;
+        }
+
+        if (e.ctrlKey && e.key.toLowerCase() === 'v') {
+            if (clipboardData) {
+                saveState();
+                let startC = 0, startR = 0;
+                
+                if (mode === 'move' && activeMoveRegion) {
+                    startC = activeMoveRegion.minC;
+                    startR = activeMoveRegion.minR;
+                } else if (typeCursor) {
+                    startC = typeCursor.c;
+                    startR = typeCursor.r;
+                }
+                
+                for (let x = 0; x < clipboardData.length; x++) {
+                    for (let y = 0; y < clipboardData[0].length; y++) {
+                        let targetC = startC + x;
+                        let targetR = startR + y;
+                        if (targetC >= 0 && targetC < COLS && targetR >= 0 && targetR < ROWS) {
+                            if (clipboardData[x][y]) { 
+                                gridData[targetC][targetR] = JSON.parse(JSON.stringify(clipboardData[x][y]));
+                            }
+                        }
+                    }
+                }
+                
+                if (mode === 'move') {
+                    activeMoveRegion = {
+                        minC: startC, maxC: startC + clipboardData.length - 1,
+                        minR: startR, maxR: startR + clipboardData[0].length - 1
+                    };
+                    updateSelectionBox(activeMoveRegion.minC, activeMoveRegion.minR, activeMoveRegion.maxC, activeMoveRegion.maxR, 'sel-move');
+                }
+                renderGrid();
+            }
+            e.preventDefault(); return;
+        }
+
+        // --- NEW: DELETE AND BACKSPACE LOGIC ---
+        if (!e.ctrlKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+            saveState();
+            
+            // 1. Bulk Delete (If area selected in Move Mode)
+            if (mode === 'move' && activeMoveRegion) {
+                for (let x = activeMoveRegion.minC; x <= activeMoveRegion.maxC; x++) {
+                    for (let y = activeMoveRegion.minR; y <= activeMoveRegion.maxR; y++) {
+                        if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+                            gridData[x][y] = null;
+                        }
+                    }
+                }
+                renderGrid();
+                e.preventDefault();
+                return;
+            }
+            
+            // 2. Single Cell Delete (If typing cursor is active)
+            if (typeCursor) {
+                let {c, r} = typeCursor;
+                gridData[c][r] = null;
+                renderGrid();
+                
+                // Backspace moves left. Delete stays in place.
+                if (e.key === 'Backspace' && c - 1 >= 0) {
+                    setCursor(c - 1, r);
+                }
+                e.preventDefault();
+                return;
+            }
+        }
+        
+        // Typing Normal Characters
+        if (!e.ctrlKey && mode === 'draw' && typeCursor && e.key.length === 1) {
+            saveState(); 
+            let {c, r} = typeCursor;
+            let char = e.key.toUpperCase();
+            
+            if (activeColor === 'SLIDER_BG') { char = '█'; }
+            
+            if (char === ' ' && activeColor !== 'SLIDER_BG') {
+                gridData[c][r] = null; 
+            } else {
+                gridData[c][r] = { char, color: activeColor, fieldId: null, varId: null, selectedColor: null };
+            }
+            
+            renderGrid();
+            if (c + 1 < COLS) setCursor(c + 1, r);
+            e.preventDefault(); 
+        }
+    });
+
+    function setMode(newMode) {
+        mode = newMode;
+        document.getElementById('mode-draw').classList.toggle('active', mode === 'draw');
+        document.getElementById('mode-tag').classList.toggle('active', mode === 'tag');
+        document.getElementById('mode-tagvar').classList.toggle('active', mode === 'tagvar');
+        document.getElementById('mode-move').classList.toggle('active', mode === 'move');
+        
+        document.getElementById('tag-options').style.display = mode === 'tag' ? 'block' : 'none';
+        
+        clearMoveSelection();
+        if (mode !== 'draw') setCursor(null, null);
+        
+        const descs = {
+            'draw': "Click cell to type. Select SLIDER block and press any key.",
+            'tag': "Drag over elements to assign INTERACTIVE cursors.",
+            'tagvar': "Drag over text to assign read-only DYNAMIC text.",
+            'move': "[Ctrl+A] Select All. \n[Arrows] Nudge. \n[Del] Clear Selection. \n[Ctrl+C/V] Copy. [Alt+Drag] Duplicate."
+        };
+        document.getElementById('mode-desc').innerText = descs[mode];
+    }
+
+    function setColor(color) {
+        activeColor = color;
+        document.querySelectorAll('.palette-btn').forEach(btn => btn.classList.remove('selected'));
+        document.querySelector(`.color-${color}`).classList.add('selected');
+        setMode('draw');
+    }
+
+    function setCursor(c, r) {
+        if (typeCursor) document.getElementById(`cell-${typeCursor.c}-${typeCursor.r}`).classList.remove('cursor');
+        if (c !== null) {
+            typeCursor = {c, r};
+            document.getElementById(`cell-${c}-${r}`).classList.add('cursor');
+        } else typeCursor = null;
+    }
+
+    function renderGrid() {
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let el = document.getElementById(`cell-${c}-${r}`);
+                let data = gridData[c][r];
+                el.className = 'cell' + (typeCursor && typeCursor.c === c && typeCursor.r === r ? ' cursor' : '');
+                
+                if (data) {
+                    el.innerText = data.char;
+                    el.classList.add(`color-${data.color}`);
+                    
+                    if (data.fieldId) {
+                        el.classList.add('has-field');
+                        let override = (data.selectedColor && data.selectedColor !== 'AUTO') ? data.selectedColor : 'LABEL_LITE';
+                        el.style.setProperty('--hover-color', hexPalette[override]);
+                    } else {
+                        el.style.removeProperty('--hover-color');
+                    }
+                    if (data.varId) el.classList.add('has-var');
+                } else {
+                    el.innerText = '';
+                    el.style.removeProperty('--hover-color');
+                }
+            }
+        }
+    }
+
+    function exportJSON() {
+        let screenName = document.getElementById('screenName').value || "UnnamedScreen";
+        let staticText = [];
+        let fields = {}; 
+        let dynamicText = {};
+
+        for (let r = 0; r < ROWS; r++) {
+            let currentStr = "";
+            let startCol = -1;
+            let lastData = null;
+
+            const pushChunk = (c) => {
+                if (currentStr !== "" || (lastData && lastData.color === 'SLIDER_BG')) {
+                    
+                    let highlightColor = (lastData.selectedColor && lastData.selectedColor !== 'AUTO') 
+                        ? lastData.selectedColor 
+                        : "LABEL_LITE";
+                    
+                    if (lastData.color === 'SLIDER_BG') {
+                        let sliderWidth = c - startCol;
+                        let chunk = { role: "slider", col: startCol, row: r, width: sliderWidth, normal_color: "SLIDER_BG" };
+                        
+                        if (lastData.fieldId) {
+                            if (!fields[lastData.fieldId]) fields[lastData.fieldId] = [];
+                            chunk.selected_color = highlightColor;
+                            fields[lastData.fieldId].push(chunk);
+                        } else {
+                            staticText.push(chunk);
+                        }
+                    } else {
+                        let chunk = { text: currentStr, col: startCol, row: r, normal_color: lastData.color };
+                        
+                        if (lastData.fieldId) {
+                            if (!fields[lastData.fieldId]) fields[lastData.fieldId] = [];
+                            if (lastData.color === 'LABEL_DIM') { chunk.role = "label"; chunk.selected_color = highlightColor; }
+                            else if (lastData.color === 'VALUE') { chunk.role = "value"; chunk.selected_color = highlightColor; chunk.has_cursor_box = true; } 
+                            else if (lastData.color === 'ACCENT') { chunk.role = "accent"; chunk.selected_color = highlightColor; }
+                            else if (lastData.color === 'TITLE') { chunk.role = "title"; chunk.selected_color = highlightColor; } 
+                            fields[lastData.fieldId].push(chunk);
+                            
+                        } else if (lastData.varId) {
+                            if (!dynamicText[lastData.varId]) dynamicText[lastData.varId] = [];
+                            chunk.role = "dynamic_text";
+                            dynamicText[lastData.varId].push(chunk);
+                            
+                        } else {
+                            staticText.push(chunk);
+                        }
+                    }
+                }
+            };
+
+            for (let c = 0; c < COLS; c++) {
+                let data = gridData[c][r];
+                if (data) {
+                    let match = lastData && 
+                                data.color === lastData.color && 
+                                data.fieldId === lastData.fieldId &&
+                                data.varId === lastData.varId;
+                                
+                    if (!match) {
+                        pushChunk(c);
+                        currentStr = data.color === 'SLIDER_BG' ? "" : data.char;
+                        startCol = c;
+                    } else if (data.color !== 'SLIDER_BG') {
+                        currentStr += data.char;
+                    }
+                    lastData = data;
+                } else {
+                    pushChunk(c);
+                    currentStr = "";
+                    lastData = null;
+                }
+            }
+            pushChunk(COLS); 
+        }
+
+        let output = { 
+            screen: screenName, 
+            static: staticText, 
+            dynamic_text: dynamicText, 
+            interactive: fields 
+        };
+        document.getElementById('output').value = JSON.stringify(output, null, 2);
+    }
+</script>
+</body>
+</html>

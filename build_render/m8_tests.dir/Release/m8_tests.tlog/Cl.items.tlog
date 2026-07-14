@@ -1,0 +1,13 @@
+C:\dev\m8-sdl3\tests\test_main.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_main.obj
+C:\dev\m8-sdl3\tests\test_tempo.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_tempo.obj
+C:\dev\m8-sdl3\tests\test_sequencer_walk.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_sequencer_walk.obj
+C:\dev\m8-sdl3\tests\test_fx.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_fx.obj
+C:\dev\m8-sdl3\tests\test_groove.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_groove.obj
+C:\dev\m8-sdl3\tests\test_commands.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_commands.obj
+C:\dev\m8-sdl3\tests\test_sample_pool.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_sample_pool.obj
+C:\dev\m8-sdl3\tests\test_sampler.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_sampler.obj
+C:\dev\m8-sdl3\tests\test_modulation.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_modulation.obj
+C:\dev\m8-sdl3\tests\test_rt_safety.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_rt_safety.obj
+C:\dev\m8-sdl3\tests\test_demo_verify.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\test_demo_verify.obj
+C:\dev\m8-sdl3\tests\support\OfflineHost.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\OfflineHost.obj
+C:\dev\m8-sdl3\tests\support\AllocGuard.cpp;C:\dev\m8-sdl3\build_render\m8_tests.dir\Release\AllocGuard.obj

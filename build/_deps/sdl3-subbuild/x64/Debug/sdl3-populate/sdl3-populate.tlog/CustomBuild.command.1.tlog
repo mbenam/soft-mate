@@ -1,0 +1,150 @@
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-MKDIR.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -Dcfgdir=/Debug -P C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/tmp/sdl3-populate-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-DOWNLOAD.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/tmp/sdl3-populate-gitclone.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-UPDATE.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps\sdl3-src
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -Dcan_fetch=YES -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/tmp/sdl3-populate-gitupdate.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-PATCH.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-CONFIGURE.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps\sdl3-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-BUILD.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps\sdl3-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-build
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-INSTALL.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps\sdl3-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-install
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\7843E9815D9D4638FC0CE61187D4D4CD\SDL3-POPULATE-TEST.RULE
+setlocal
+cd C:\dev\m8-sdl3\build\_deps\sdl3-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-test
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\D4D84E2EB6680FBF8B4F3D1FB92F022C\SDL3-POPULATE-COMPLETE.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/CMakeFiles/Debug
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/CMakeFiles/Debug/sdl3-populate-complete
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/sdl3-populate-prefix/src/sdl3-populate-stamp/Debug/sdl3-populate-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKEFILES\AA74CE6497505C06590D0BBAE6A78130\SDL3-POPULATE.RULE
+setlocal
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\M8-SDL3\BUILD\_DEPS\SDL3-SUBBUILD\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/dev/m8-sdl3/build/_deps/sdl3-subbuild -BC:/dev/m8-sdl3/build/_deps/sdl3-subbuild --check-stamp-file C:/dev/m8-sdl3/build/_deps/sdl3-subbuild/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

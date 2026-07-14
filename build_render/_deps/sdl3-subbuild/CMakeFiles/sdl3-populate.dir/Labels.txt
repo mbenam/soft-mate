@@ -1,0 +1,14 @@
+# Target labels
+ sdl3-populate
+# Source files and their labels
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/sdl3-populate
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/a37f5f70729a7775f9f54f7769074afd/sdl3-populate.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/29fb48a7336d06fbdcae97e5dc07de4f/sdl3-populate-complete.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-build.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-configure.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-download.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-install.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-mkdir.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-patch.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-test.rule
+C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/667d9c728a46e4785294363061157759/sdl3-populate-update.rule

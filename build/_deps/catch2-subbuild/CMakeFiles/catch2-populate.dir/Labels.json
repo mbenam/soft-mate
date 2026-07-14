@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/catch2-populate"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/881e558a36a37ea1ca155667e01232cb/catch2-populate.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/d32437d3063dc75e50a54fdde073dd95/catch2-populate-complete.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-build.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-configure.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-download.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-install.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-patch.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-test.rule"
+		},
+		{
+			"file" : "C:/dev/m8-sdl3/build/_deps/catch2-subbuild/CMakeFiles/69ebbe70c00efe81e24bb96f71fd9280/catch2-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"catch2-populate"
+		],
+		"name" : "catch2-populate"
+	}
+}
