@@ -80,9 +80,18 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         m_gate = std::max(m_gate - m_gateStep, m_gateTarget);
     if (m_gate == 0.0f && m_gateTarget == 0.0f) { m_active = false; return 0.0f; }
 
+    // Instrument types the engine doesn't synthesize (INST_NONE covers
+    // FMSynth/HyperSynth/WavSynth/MIDIOut/External loaded from a song file,
+    // plus INST_MIDI) must not fall through to the default oscillator below —
+    // that path has no volume envelope applied by the file conversion, so an
+    // un-gated note would drone at full amplitude for as long as it's held.
+    if (m_instrument) {
+        const InstType it = m_instrument->type;
+        if (it != InstType::INST_SAMPLER && it != InstType::INST_MACROSYN) return 0.0f;
+    }
+
     ModTargets mt{};
     float amtScale[4] = {1, 1, 1, 1};
-    float rateScale[4] = {1, 1, 1, 1};
 
     if (m_instrument) {
         bool noteOn = (m_gateTarget > 0.0f && m_gate < 1.0f && m_gate > 0.0f);
@@ -126,9 +135,14 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             case ModDest::AMP: mt.amp += scaled; break;
             case ModDest::PAN: mt.pan += scaled; break;
             case ModDest::MOD_AMT: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
-            case ModDest::MOD_RATE: rateScale[(i + 1) & 3] = 1.0f + scaled; break;
-            case ModDest::MOD_BOTH: amtScale[(i + 1) & 3] = 1.0f + scaled; rateScale[(i + 1) & 3] = 1.0f + scaled; break;
-            case ModDest::MOD_BINV: amtScale[(i + 1) & 3] = 1.0f + scaled; rateScale[(i + 1) & 3] = 1.0f - scaled; break;
+            // MOD_RATE, and the rate half of MOD_BOTH/MOD_BINV, are not
+            // implemented: there is no per-slot modulation rate to scale, so
+            // only the amount half applies. Placeholder (AGENTS.md §8) --
+            // do not "fix" this into a guessed rate-scaling behavior without
+            // a hardware capture to verify against.
+            case ModDest::MOD_RATE: break;
+            case ModDest::MOD_BOTH: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
+            case ModDest::MOD_BINV: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
             default: break;
             }
         }

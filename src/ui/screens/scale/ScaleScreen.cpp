@@ -15,26 +15,27 @@ static SDL_Color GetColorFromString(const std::string& colorName) {
     return {255, 255, 255, 255};
 }
 
-static std::string ResolveScaleValue(const std::string& fieldId, const engine::Scale& scale) {
-    if (fieldId == "KEY") {
+static std::string ResolveScaleValue(CursorId fieldId, const engine::Scale& scale) {
+    using C = CursorId;
+    if (fieldId == C::KEY) {
         const char* notes[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
         return notes[scale.key % 12];
     }
-    if (fieldId == "TUNE") {
+    if (fieldId == C::TUNE) {
         char buf[16];
         snprintf(buf, sizeof(buf), "%06.2f", scale.tune);
         return std::string(buf);
     }
-    if (fieldId == "NAME") return scale.name;
-    if (fieldId == "CMD_LOAD") return "LOAD";
-    if (fieldId == "CMD_SAVE") return "SAVE";
-    
-    if (fieldId.find("NOTE_EN_") == 0) {
-        int idx = std::stoi(fieldId.substr(8));
+    if (fieldId == C::NAME) return scale.name;
+    if (fieldId == C::CMD_LOAD) return "LOAD";
+    if (fieldId == C::CMD_SAVE) return "SAVE";
+
+    if (IsNoteEnCursor(fieldId)) {
+        int idx = NoteEnIndexOf(fieldId);
         return scale.notes[idx].enable ? "ON" : "OFF";
     }
-    if (fieldId.find("NOTE_OFFSET_") == 0) {
-        int idx = std::stoi(fieldId.substr(12));
+    if (IsNoteOffsetCursor(fieldId)) {
+        int idx = NoteOffsetIndexOf(fieldId);
         char buf[16];
         snprintf(buf, sizeof(buf), "%05.2f", scale.notes[idx].offset);
         return std::string(buf);
@@ -42,14 +43,14 @@ static std::string ResolveScaleValue(const std::string& fieldId, const engine::S
     return "--";
 }
 
-void RenderScaleScreen(Renderer& renderer, 
-                       const engine::EngineState& engState, 
+void RenderScaleScreen(Renderer& renderer,
+                       const engine::EngineState& engState,
                        int currentScaleIndex,
-                       const std::string& active_cursor_id) {
-                            
+                       CursorId active_cursor_id) {
+
     static std::vector<UI_GridCell> staticText = GetScaleStaticText();
     static std::vector<UI_GridCell> dynamicText = GetScaleDynamicTextDefaults();
-    static std::unordered_map<std::string, std::vector<UI_GridCell>> interactiveFields = GetScaleInteractiveFields();
+    static std::unordered_map<CursorId, std::vector<UI_GridCell>> interactiveFields = GetScaleInteractiveFields();
 
     const engine::Scale& currentScale = engState.scales[currentScaleIndex];
 
@@ -88,6 +89,46 @@ void RenderScaleScreen(Renderer& renderer,
             if (isActive && comp.has_cursor_box && comp.role == "value") {
                 renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
             }
+        }
+    }
+}
+
+void HandleScaleInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                       engine::EngineState& uiEngineState, int currentScaleIndex,
+                       CursorId& cursor_id, CommandSink& commandSink) {
+    using C = CursorId;
+    auto navMap = GetScaleNavMap();
+    if (event.key.key == SDLK_DOWN) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE) {
+            cursor_id = navMap[cursor_id].down;
+        }
+    } else if (event.key.key == SDLK_UP) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].up != C::NONE) {
+            cursor_id = navMap[cursor_id].up;
+        }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+            cursor_id = navMap[cursor_id].right;
+        }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+            cursor_id = navMap[cursor_id].left;
+        }
+    }
+
+    if (editHeld && (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
+        arrowPressedDuringEdit = true;
+        int step = (event.key.key == SDLK_RIGHT) ? 1 : -1;
+        const auto& scale = uiEngineState.scales[currentScaleIndex];
+
+        if (cursor_id == C::KEY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_KEY, (scale.key + step + 12) % 12, currentScaleIndex);
+        else if (cursor_id == C::TUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, scale.tune + step);
+        else if (IsNoteEnCursor(cursor_id)) {
+            int idx = NoteEnIndexOf(cursor_id);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, !scale.notes[idx].enable, currentScaleIndex, idx);
+        } else if (IsNoteOffsetCursor(cursor_id)) {
+            int idx = NoteOffsetIndexOf(cursor_id);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, idx, scale.notes[idx].offset + step);
         }
     }
 }

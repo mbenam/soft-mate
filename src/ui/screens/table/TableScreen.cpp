@@ -101,6 +101,18 @@ void RenderTableScreen(Renderer& renderer,
     }
 }
 
+void HandleTableInput(const SDL_Event& event, bool editHeld, int& cursor_x, int& cursor_y) {
+    if (event.key.key == SDLK_DOWN) {
+        if (!editHeld) cursor_y = (cursor_y + 1) % 16;
+    } else if (event.key.key == SDLK_UP) {
+        if (!editHeld) cursor_y = (cursor_y - 1 + 16) % 16;
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (!editHeld) cursor_x = (cursor_x + 1) % 5;
+    } else if (event.key.key == SDLK_LEFT) {
+        if (!editHeld) cursor_x = (cursor_x - 1 + 5) % 5;
+    }
+}
+
 } // namespace table
 } // namespace ui
 } // namespace m8

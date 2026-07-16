@@ -2,6 +2,7 @@
 #include "PhraseScreenLayout.h"
 #include <sstream>
 #include "ui/HexFmt.h"
+#include "ui/UiEditHelpers.h"
 #include <iomanip>
 
 namespace m8 {
@@ -126,6 +127,47 @@ void RenderPhraseScreen(Renderer& renderer,
             }
         }
     }
+}
+
+void HandlePhraseInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                        engine::Sequencer& uiSequencer, int currentPhrase,
+                        int& cursor_x, int& cursor_y, CommandSink& commandSink) {
+    auto& phrases = uiSequencer.phrases;
+    auto pushStep = [&]() {
+        m8::engine::EngineCommand cmd;
+        cmd.type = m8::engine::CommandType::SET_STEP;
+        cmd.targetId = currentPhrase;
+        cmd.row = cursor_y;
+        cmd.u.step = phrases[currentPhrase][cursor_y];
+        commandSink.send(cmd);
+    };
+
+    if (event.key.key == SDLK_DOWN) {
+        if (editHeld) { ModifyValue(phrases[currentPhrase][cursor_y], cursor_x, -1, true); arrowPressedDuringEdit = true; pushStep(); }
+        else { cursor_y = (cursor_y + 1) % 16; }
+    } else if (event.key.key == SDLK_UP) {
+        if (editHeld) { ModifyValue(phrases[currentPhrase][cursor_y], cursor_x, 1, true); arrowPressedDuringEdit = true; pushStep(); }
+        else { cursor_y = (cursor_y - 1 + 16) % 16; }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (editHeld) { ModifyValue(phrases[currentPhrase][cursor_y], cursor_x, 1, false); arrowPressedDuringEdit = true; pushStep(); }
+        else { cursor_x = (cursor_x + 1) % 9; }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (editHeld) { ModifyValue(phrases[currentPhrase][cursor_y], cursor_x, -1, false); arrowPressedDuringEdit = true; pushStep(); }
+        else { cursor_x = (cursor_x - 1 + 9) % 9; }
+    }
+}
+
+void HandlePhraseEditRelease(engine::Sequencer& uiSequencer, int currentPhrase,
+                              int cursor_x, int cursor_y, CommandSink& commandSink) {
+    auto& phrases = uiSequencer.phrases;
+    InsertDefault(phrases[currentPhrase][cursor_y], cursor_x);
+
+    m8::engine::EngineCommand cmd;
+    cmd.type = m8::engine::CommandType::SET_STEP;
+    cmd.targetId = currentPhrase;
+    cmd.row = cursor_y;
+    cmd.u.step = phrases[currentPhrase][cursor_y];
+    commandSink.send(cmd);
 }
 
 } // namespace phrase

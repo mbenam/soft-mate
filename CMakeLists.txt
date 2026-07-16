@@ -17,6 +17,11 @@ elseif(M8_SANITIZE STREQUAL "tsan")
     add_link_options(-fsanitize=thread)
 endif()
 
+# Gates fetching SDL3 and building the m8_clone app. OFF builds only the
+# engine, the offline tools (m8_render/m8_analyze/m8_spectrum/m8_makeprobe/
+# m8_capture), and m8_tests -- none of which need SDL.
+option(BUILD_CLONE "Build the SDL3 app (m8_clone)" ON)
+
 include(FetchContent)
 
 # Fetch SDL3
@@ -44,20 +49,35 @@ endif()
 target_compile_definitions(DaisySP PUBLIC USE_DAISYSP_LGPL)
 target_include_directories(DaisySP PUBLIC "${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source")
 
+# -------------------------------------------------------------------
+# m8-files-cxx (song file I/O library)
+# -------------------------------------------------------------------
+add_subdirectory(third_party/m8-files-cxx/src)
 
 # -------------------------------------------------------------------
-# Engine library (no SDL) — used by m8_tests, m8_render
+# Engine library (no SDL) — used by m8_tests, m8_render, m8_analyze
 # -------------------------------------------------------------------
+# kissfft: C sources need the C language enabled
+enable_language(C)
+add_library(kissfft STATIC
+    third_party/kissfft/kiss_fft.c
+    third_party/kissfft/kiss_fftr.c
+)
+target_include_directories(kissfft PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/kissfft)
+set_target_properties(kissfft PROPERTIES LINKER_LANGUAGE C)
+
 add_library(m8_engine STATIC
     src/engine/Sequencer.cpp
     src/engine/Engine.cpp
     src/engine/SynthVoice.cpp
     src/engine/SamplePool.cpp
     src/engine/SamplerEngine.cpp
+    src/io/SongIO.cpp
+    src/analysis/AudioMetrics.cpp
     ${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source/Effects/reverbsc.cpp
 )
 target_include_directories(m8_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(m8_engine PUBLIC DaisySP)
+target_link_libraries(m8_engine PUBLIC DaisySP m8_files_cpp kissfft)
 
 # Add executable
 if(BUILD_CLONE)
@@ -66,6 +86,7 @@ add_executable(m8_clone
     src/ui/Renderer.cpp
     src/ui/ViewManager.cpp
     src/ui/FileBrowser.cpp
+    src/ui/ScriptRunner.cpp
     src/ui/screens/song/SongScreen.cpp
     src/ui/screens/chain/ChainScreen.cpp
     src/ui/screens/phrase/PhraseScreen.cpp
@@ -96,10 +117,41 @@ add_executable(m8_render src/tools/main_render.cpp)
 target_link_libraries(m8_render PRIVATE m8_engine)
 target_include_directories(m8_render PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# -------------------------------------------------------------------
+# Audio analysis tool (no SDL)
+# -------------------------------------------------------------------
+add_executable(m8_analyze src/tools/main_analyze.cpp)
+target_link_libraries(m8_analyze PRIVATE m8_engine)
+target_include_directories(m8_analyze PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# -------------------------------------------------------------------
+# Spectral A/B comparison tool (no SDL) — M8_AUDIO_ANALYSIS_SPEC.md Part D
+# -------------------------------------------------------------------
+add_executable(m8_spectrum src/tools/main_spectrum.cpp)
+target_link_libraries(m8_spectrum PRIVATE m8_engine)
+target_include_directories(m8_spectrum PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# -------------------------------------------------------------------
+# Probe generator (links m8_files_cpp only, no engine)
+# -------------------------------------------------------------------
+add_executable(m8_makeprobe src/tools/main_makeprobe.cpp)
+target_link_libraries(m8_makeprobe PRIVATE m8_files_cpp)
+target_include_directories(m8_makeprobe PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/m8-files-cxx/src)
+
+# -------------------------------------------------------------------
+# Hardware capture tool (miniaudio header-only, no engine, no SDL)
+# -------------------------------------------------------------------
+add_executable(m8_capture src/tools/main_capture.cpp)
+target_include_directories(m8_capture PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
+if(WIN32)
+    target_link_libraries(m8_capture PRIVATE winmm ole32)
+endif()
+
 # -----------------------------------------------------------------------------
 # Tests Target (m8_tests)
 # -----------------------------------------------------------------------------
-include(FetchContent)
 FetchContent_Declare(Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v3.5.2)
@@ -117,12 +169,16 @@ add_executable(m8_tests
     tests/test_modulation.cpp
     tests/test_rt_safety.cpp
     tests/test_demo_verify.cpp
+    tests/test_persistence.cpp
+    tests/test_audio.cpp
+    tests/test_ui_scripts.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )
 
 target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine)
 target_include_directories(m8_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(m8_tests PRIVATE THIRD_PARTY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 if(MSVC)
     target_compile_options(m8_tests PRIVATE /FS /bigobj)

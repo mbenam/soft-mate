@@ -1,0 +1,30 @@
+# save_reload.m8script — round-trip save/load proves UI persistence path works
+# Edit: insert C-4 note at phrase 00 row 0, save, reload, assert it survived
+
+load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+wait 1
+assert_no_error
+
+# Navigate to PHRASE screen: SONG -> CHAIN -> PHRASE
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+wait 1
+
+# Enter edit mode (X), press UP to set note to C-4, exit edit mode (X)
+key X
+key UP
+key X
+wait 1
+
+# Verify the note is visible before saving
+assert_screen row 3 contains "C-4"
+
+# Save and reload
+save artifacts/roundtrip.m8s
+assert_no_error
+load artifacts/roundtrip.m8s
+wait 1
+assert_no_error
+
+# Verify the note survived the round-trip
+assert_screen row 3 contains "C-4"

@@ -1,6 +1,7 @@
 #include "GrooveScreen.h"
 #include "GrooveScreenLayout.h"
 #include "ui/HexFmt.h"
+#include "ui/UiEditHelpers.h"
 #include <iomanip>
 #include <sstream>
 
@@ -67,7 +68,7 @@ void RenderGrooveScreen(Renderer& renderer,
 
     for (int y = 0; y < 16; ++y) {
         const UI_GridCell& cell = GrooveGrid[y][0];
-        std::string val = m8::ui::HexU8(grooveData.steps[y], 0);
+        std::string val = m8::ui::HexU8(grooveData.steps[y], "0");
         
         bool isSelected = (cursor_y == y);
         SDL_Color color = isSelected ? GetColorFromString(cell.selected_color) 
@@ -80,6 +81,64 @@ void RenderGrooveScreen(Renderer& renderer,
             renderer.drawBracket(cell.col, cell.row, val.length(), GetColorFromString("LABEL_LITE"));
         }
     }
+}
+
+void HandleGrooveInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                        engine::Groove& groove, int currentGrooveIndex, int& cursor_y,
+                        CommandSink& commandSink) {
+    auto pushStep = [&]() {
+        m8::engine::EngineCommand cmd;
+        cmd.type = m8::engine::CommandType::SET_GROOVE_STEP;
+        cmd.targetId = currentGrooveIndex;
+        cmd.row = cursor_y;
+        cmd.value = groove.steps[cursor_y];
+        commandSink.send(cmd);
+    };
+
+    if (event.key.key == SDLK_DOWN) {
+        if (editHeld) {
+            groove.steps[cursor_y] = AdjustU8(groove.steps[cursor_y], -1, 1, 255, 0);
+            pushStep();
+            arrowPressedDuringEdit = true;
+        } else {
+            cursor_y = (cursor_y + 1) % 16;
+        }
+    } else if (event.key.key == SDLK_UP) {
+        if (editHeld) {
+            groove.steps[cursor_y] = AdjustU8(groove.steps[cursor_y], 1, 1, 255, 0);
+            pushStep();
+            arrowPressedDuringEdit = true;
+        } else {
+            cursor_y = (cursor_y - 1 + 16) % 16;
+        }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (editHeld) {
+            groove.steps[cursor_y] = AdjustU8(groove.steps[cursor_y], 16, 1, 255, 0);
+            pushStep();
+            arrowPressedDuringEdit = true;
+        }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (editHeld) {
+            groove.steps[cursor_y] = AdjustU8(groove.steps[cursor_y], -16, 1, 255, 0);
+            pushStep();
+            arrowPressedDuringEdit = true;
+        }
+    }
+}
+
+void HandleGrooveEditRelease(engine::Groove& groove, int currentGrooveIndex, int cursor_y,
+                              CommandSink& commandSink) {
+    if (groove.steps[cursor_y] == 0) {
+        groove.steps[cursor_y] = 6;
+    } else {
+        groove.steps[cursor_y] = 0;
+    }
+    m8::engine::EngineCommand cmd;
+    cmd.type = m8::engine::CommandType::SET_GROOVE_STEP;
+    cmd.targetId = currentGrooveIndex;
+    cmd.row = cursor_y;
+    cmd.value = groove.steps[cursor_y];
+    commandSink.send(cmd);
 }
 
 } // namespace groove

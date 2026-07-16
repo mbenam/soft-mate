@@ -1,0 +1,12 @@
+# live_vs_offline.m8script — Task 5a
+#
+# Loads a fixture, renders it offline via the in-app render command.
+# The WAV is then compared against m8_render's output of the same song
+# using: m8_analyze --diff <in_app.wav> <m8_render.wav>
+#
+# Both paths call Engine::render() — the bar is exact sample-for-sample identity.
+
+load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+assert_no_error
+render 1 live_vs_offline_app.wav
+assert_no_error

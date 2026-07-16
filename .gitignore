@@ -1,3 +1,7 @@
 build/
 build_render/
+build_asan/
 *.obj
+*.zip
+artifacts/
+test_out_ui/

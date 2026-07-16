@@ -1,0 +1,18 @@
+# edit.m8script — enter a note at phrase 00 row 0, confirm it lands
+# Key sequence from save_reload.m8script (proven to set note to C-4)
+# Starting state: SONG screen, phrase 00, row 0, column 0 (note column)
+# Note starts empty (0xFF). X enters edit mode, UP increments to C-4 (MIDI 60).
+
+# Navigate to PHRASE screen: SONG -> CHAIN -> PHRASE
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+wait 1
+
+# Enter edit mode (X), press UP to set note to C-4, exit edit mode (X)
+key X
+key UP
+key X
+wait 1
+
+# Verify the note is visible
+assert_screen row 3 contains "C-4"

@@ -118,6 +118,31 @@ TEST_CASE("M9 LFO FREQ=0x10 at 120 BPM period = 1 bar", "[modulation]") {
     REQUIRE(period < 102000);
 }
 
+TEST_CASE("M21 LFO RANDOM shape (0x0C) is deterministic across instances", "[modulation]") {
+    // Regression for CODE_CLEANUP_SPEC.md #7: the RANDOM shape used to call
+    // std::rand() -- global state, non-deterministic across runs, breaking
+    // the "offline render is reproducible ground truth" property. Two
+    // independently-triggered Lfo instances fed the same shape/freq/trig
+    // sequence must now produce bit-identical output.
+    EnvContext ctx; ctx.samplesPerTick = 1000.0;
+
+    Lfo a, b;
+    a.trigger();
+    b.trigger();
+
+    bool sawNonZero = false;
+    for (int i = 0; i < 2000; ++i) {
+        float va = a.process(0x0C, 0x08, 1, ctx, (i == 0));
+        float vb = b.process(0x0C, 0x08, 1, ctx, (i == 0));
+        REQUIRE(va == vb);
+        REQUIRE(std::isfinite(va));
+        REQUIRE(va >= -1.0f);
+        REQUIRE(va <= 1.0f);
+        if (va != 0.0f) sawNonZero = true;
+    }
+    REQUIRE(sawNonZero); // actually exercised the RNG, not stuck returning 0
+}
+
 TEST_CASE("M10 DEST=CUTOFF (0x06) affects filter", "[modulation]") {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();
@@ -269,6 +294,42 @@ TEST_CASE("M20 DC offset < 0.001 over 30s demo render", "[modulation]") {
     double meanR = sumR / frames;
     REQUIRE(std::abs(meanL) < 0.001);
     REQUIRE(std::abs(meanR) < 0.001);
+}
+
+static std::vector<float> renderRandomLfoPhrase() {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_SAMPLER;
+    state.instruments[0].sampler.play = 2; // FWDLOOP
+    state.instruments[0].sampler.loop_st = 0x00;
+    state.instruments[0].sampler.length = 0xFF;
+    state.instruments[0].sampler.dry = 0xFF;
+
+    state.instruments[0].mods[0] = {0, 1, 0xFF, 0, 0, 4, 0};       // AHD -> VOLUME
+    // LFO (type=3), shape 0x0C (RANDOM), dest VOLUME, full amount
+    state.instruments[0].mods[1] = {3, 1, 0xFF, 0x0C, 0x01 /*RETRIG*/, 0x10 /*freq*/, 0x00};
+
+    std::vector<float> sampleBuf(4800, 0.7f);
+    SampleData sd{}; sd.data = sampleBuf.data(); sd.frames = 4800; sd.channels = 1; sd.sampleRate = 48000;
+    std::strncpy(sd.path, "rand_lfo_test.wav", 127);
+    EngineCommand cmd{}; cmd.type = CommandType::LOAD_SAMPLE; cmd.targetId = 0; cmd.u.sample = sd;
+    host.push(cmd);
+
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(1.0);
+    return host.audio();
+}
+
+TEST_CASE("M22 RANDOM-LFO render is bit-identical across independent runs", "[modulation]") {
+    // Full-engine version of the CODE_CLEANUP_SPEC.md #7 determinism check --
+    // same scenario as m8_render'ing the same phrase twice and diffing the
+    // WAVs, done in-process via two independent OfflineHost instances.
+    auto a = renderRandomLfoPhrase();
+    auto b = renderRandomLfoPhrase();
+    REQUIRE(a.size() == b.size());
+    REQUIRE(a.size() > 0);
+    REQUIRE(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
 }
 
 TEST_CASE("M18 Fuzz - random mod bytes x render: no crash, no NaN", "[modulation]") {

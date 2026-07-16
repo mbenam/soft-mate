@@ -40,8 +40,13 @@ void Engine::processCommands() {
 
         if (cmd.type == CommandType::PLAY_START) {
             m_state.playMode = static_cast<PlayMode>(cmd.value);
-            m_state.currentPhrase = cmd.targetId;
-            m_state.currentChain = cmd.targetId;
+            // currentPhrase is only read in PHRASE mode (tickTrack's base
+            // phIdx); currentChain only in CHAIN mode. Setting both to
+            // cmd.targetId unconditionally used to leave whichever one the
+            // current mode doesn't use holding a value from the wrong ID
+            // space (e.g. a song row stored as if it were a phrase id).
+            if (m_state.playMode == PlayMode::PHRASE) m_state.currentPhrase = cmd.targetId;
+            else if (m_state.playMode == PlayMode::CHAIN) m_state.currentChain = cmd.targetId;
             m_state.activeCol = cmd.col;
             if (m_state.playMode == PlayMode::SONG) m_songRow = cmd.targetId;
 
@@ -64,17 +69,7 @@ void Engine::processCommands() {
         } else if (cmd.type == CommandType::PLAY_STOP) {
             m_state.playMode = PlayMode::NONE;
             for(int t=0; t<8; ++t) {
-                if (m_voices[t].isActive()) {
-                    m_voices[t].noteOff();
-                    EngineEvent e_off{};
-                    e_off.type = EventType::NOTE_OFF;
-                    e_off.track = t;
-                    e_off.phraseRow = m_state.playPhraseRow[t];
-                    e_off.chainRow = m_state.playChainRow[t];
-                    e_off.songRow = m_state.playSongRow[t];
-                    e_off.sampleTime = m_frameCounter;
-                    emit(e_off);
-                }
+                if (m_voices[t].isActive()) emitNoteOff(t);
                 publishPlayhead(t);
             }
         } else if (cmd.type == CommandType::LOAD_SAMPLE) {
@@ -110,15 +105,7 @@ void Engine::processCommands() {
                     if (vi >= 0 && vi < (int)m_state.instruments.size()
                         && m_state.instruments[vi].type == InstType::INST_SAMPLER
                         && m_state.instruments[vi].sampler.sample == oldHandle) {
-                        m_voices[t].noteOff();
-                        EngineEvent e_off{};
-                        e_off.type = EventType::NOTE_OFF;
-                        e_off.track = t;
-                        e_off.phraseRow = m_state.playPhraseRow[t];
-                        e_off.chainRow = m_state.playChainRow[t];
-                        e_off.songRow = m_state.playSongRow[t];
-                        e_off.sampleTime = m_frameCounter;
-                        emit(e_off);
+                        emitNoteOff(t);
                         m_voices[t].setSample(nullptr);
                     }
                 }
@@ -147,12 +134,56 @@ void Engine::processCommands() {
         } else if (cmd.type == CommandType::SET_GROOVE_STEP) {
             if (cmd.targetId >= 0 && cmd.targetId < Sequencer::NUM_GROOVES && cmd.row >= 0 && cmd.row < 16)
                 m_sequencer.grooves[cmd.targetId].steps[cmd.row] = cmd.value;
+        } else if (cmd.type == CommandType::LOAD_SONG) {
+            auto* base = static_cast<uint8_t*>(cmd.u.song.data);
+            if (base) {
+                auto* seq = reinterpret_cast<Sequencer*>(base);
+                auto* st  = reinterpret_cast<EngineState*>(base + sizeof(Sequencer));
+                std::memcpy(&m_sequencer, seq, sizeof(Sequencer));
+                // Copy instruments, mixer, effects, project — not play state
+                for (int i = 0; i < 128; ++i)
+                    m_state.instruments[i] = st->instruments[i];
+                m_state.mixer     = st->mixer;
+                m_state.effects   = st->effects;
+                m_state.project   = st->project;
+                m_state.bpm       = st->bpm;
+                m_state.bpm_frac  = st->bpm_frac;
+                for (int i = 0; i < 16; ++i)
+                    m_state.scales[i] = st->scales[i];
+                // Reset effects DSP state so the new song starts clean — without
+                // this, chorus/delay/reverb buffers and DC blockers carry audio
+                // from whatever was previously loaded (e.g. the demo song), causing
+                // the in-app render path to diverge from m8_render's fresh engine.
+                m_chorus.Init(kSampleRate);
+                m_delayL.Reset();
+                m_delayR.Reset();
+                m_reverb.Init(kSampleRate);
+                m_dcDelL = 0.0f; m_dcDelR = 0.0f;
+                m_dcRevL = 0.0f; m_dcRevR = 0.0f;
+                m_dcMixL = 0.0f; m_dcMixR = 0.0f;
+                m_smoothChoFreq = 0.0f; m_smoothChoDepth = 0.0f;
+                m_smoothDelL = 0.0f; m_smoothDelR = 0.0f;
+                m_songGcRing.push(cmd.u.song.data);
+                recalcBPM();
+            }
         }
     }
 }
 
 
 static inline bool valid(int i, int n) { return i >= 0 && i < n; }
+
+void Engine::emitNoteOff(int t, int songRowOverride) {
+    m_voices[t].noteOff();
+    EngineEvent e_off{};
+    e_off.type = EventType::NOTE_OFF;
+    e_off.track = t;
+    e_off.phraseRow = m_state.playPhraseRow[t];
+    e_off.chainRow = m_state.playChainRow[t];
+    e_off.songRow = (songRowOverride >= 0) ? static_cast<uint8_t>(songRowOverride) : m_state.playSongRow[t];
+    e_off.sampleTime = m_frameCounter;
+    emit(e_off);
+}
 
 void Engine::syncSongRow() {
     // Copy the shared song row to all tracks and reset their chain/phrase
@@ -176,17 +207,7 @@ void Engine::publishPlayhead(int t) {
 void Engine::tickTrack(int t) {
     if (m_state.playMode == PlayMode::PHRASE || m_state.playMode == PlayMode::CHAIN) {
         if (t != m_state.activeCol) {
-            if (m_voices[t].isActive()) {
-                m_voices[t].noteOff();
-                EngineEvent e_off{};
-                e_off.type = EventType::NOTE_OFF;
-                e_off.track = t;
-                e_off.phraseRow = m_state.playPhraseRow[t];
-                e_off.chainRow = m_state.playChainRow[t];
-                e_off.songRow = m_state.playSongRow[t];
-                e_off.sampleTime = m_frameCounter;
-                emit(e_off);
-            }
+            if (m_voices[t].isActive()) emitNoteOff(t);
             return;
         }
     }
@@ -215,17 +236,7 @@ void Engine::tickTrack(int t) {
             if (chainId == CHAIN_EMPTY) {
                 // Track is silent for this section. Don't advance — wait
                 // for another track's chain to end, which advances everyone.
-                if (m_voices[t].isActive()) {
-                    m_voices[t].noteOff();
-                    EngineEvent e_off{};
-                    e_off.type = EventType::NOTE_OFF;
-                    e_off.track = t;
-                    e_off.phraseRow = m_state.playPhraseRow[t];
-                    e_off.chainRow = m_state.playChainRow[t];
-                    e_off.songRow = m_songRow;
-                    e_off.sampleTime = m_frameCounter;
-                    emit(e_off);
-                }
+                if (m_voices[t].isActive()) emitNoteOff(t, m_songRow);
                 return;
             }
         } else if (m_state.playMode == PlayMode::CHAIN) {
@@ -234,17 +245,7 @@ void Engine::tickTrack(int t) {
         
         if (m_state.playMode == PlayMode::SONG || m_state.playMode == PlayMode::CHAIN) {
             if (!valid(chainId, Sequencer::NUM_CHAINS)) {
-                if (m_voices[t].isActive()) {
-                    m_voices[t].noteOff();
-                    EngineEvent e_off{};
-                    e_off.type = EventType::NOTE_OFF;
-                    e_off.track = t;
-                    e_off.phraseRow = m_state.playPhraseRow[t];
-                    e_off.chainRow = m_state.playChainRow[t];
-                    e_off.songRow = m_state.playSongRow[t];
-                    e_off.sampleTime = m_frameCounter;
-                    emit(e_off);
-                }
+                if (m_voices[t].isActive()) emitNoteOff(t);
                 return;
             }
             if (!valid(m_state.playChainRow[t], Sequencer::ROWS)) m_state.playChainRow[t] = 0;
@@ -256,31 +257,11 @@ void Engine::tickTrack(int t) {
                     // The actual advance happens in doTick() after all tracks
                     // have been ticked, so every track moves together.
                     m_songRowAdvance = true;
-                    if (m_voices[t].isActive()) {
-                        m_voices[t].noteOff();
-                        EngineEvent e_off{};
-                        e_off.type = EventType::NOTE_OFF;
-                        e_off.track = t;
-                        e_off.phraseRow = m_state.playPhraseRow[t];
-                        e_off.chainRow = m_state.playChainRow[t];
-                        e_off.songRow = m_songRow;
-                        e_off.sampleTime = m_frameCounter;
-                        emit(e_off);
-                    }
+                    if (m_voices[t].isActive()) emitNoteOff(t, m_songRow);
                     return;
                 } else { // PLAY_CHAIN stops
                     m_state.playMode = PlayMode::NONE;
-                    if (m_voices[t].isActive()) {
-                        m_voices[t].noteOff();
-                        EngineEvent e_off{};
-                        e_off.type = EventType::NOTE_OFF;
-                        e_off.track = t;
-                        e_off.phraseRow = m_state.playPhraseRow[t];
-                        e_off.chainRow = m_state.playChainRow[t];
-                        e_off.songRow = m_state.playSongRow[t];
-                        e_off.sampleTime = m_frameCounter;
-                        emit(e_off);
-                    }
+                    if (m_voices[t].isActive()) emitNoteOff(t);
                     return;
                 }
             }
@@ -292,17 +273,7 @@ void Engine::tickTrack(int t) {
         }
         
         if (!valid(phIdx, Sequencer::NUM_PHRASES)) {
-            if (m_voices[t].isActive()) {
-                m_voices[t].noteOff();
-                EngineEvent e_off{};
-                e_off.type = EventType::NOTE_OFF;
-                e_off.track = t;
-                e_off.phraseRow = m_state.playPhraseRow[t];
-                e_off.chainRow = m_state.playChainRow[t];
-                e_off.songRow = m_state.playSongRow[t];
-                e_off.sampleTime = m_frameCounter;
-                emit(e_off);
-            }
+            if (m_voices[t].isActive()) emitNoteOff(t);
             return;
         }
         if (!valid(m_state.playPhraseRow[t], Sequencer::ROWS)) m_state.playPhraseRow[t] = 0;
@@ -355,17 +326,7 @@ void Engine::tickTrack(int t) {
     
     // Execute pending FX logic
     if (m_state.pendingKil[t] == m_state.playTick[t]) {
-        if (m_voices[t].isActive()) {
-            m_voices[t].noteOff();
-            EngineEvent e_off{};
-            e_off.type = EventType::NOTE_OFF;
-            e_off.track = t;
-            e_off.phraseRow = m_state.playPhraseRow[t];
-            e_off.chainRow = m_state.playChainRow[t];
-            e_off.songRow = m_state.playSongRow[t];
-            e_off.sampleTime = m_frameCounter;
-            emit(e_off);
-        }
+        emitNoteOff(t);
     }
     
     if (m_state.pendingDel[t] == m_state.playTick[t] || (m_state.pendingDel[t] == -1 && m_state.playTick[t] == 0)) {
@@ -380,7 +341,7 @@ void Engine::tickTrack(int t) {
             e_on.phraseRow = m_state.playPhraseRow[t];
             e_on.chainRow = m_state.playChainRow[t];
             e_on.songRow = m_state.playSongRow[t];
-            e_on.instrument = m_state.pendingInst[t] ? m_state.pendingInst[t]->type == InstType::INST_SAMPLER ? m_state.pendingInst[t]->sampler.sample : 0 : 0;
+            e_on.instrument = static_cast<uint8_t>(m_trackInstrument[t]);
             e_on.sampleTime = m_frameCounter;
             e_on.frequency = m_state.pendingFreq[t];
             e_on.volume = m_state.pendingVol[t];
@@ -544,12 +505,6 @@ void Engine::render(float* buffer, int frames) {
         float master_vol = m_state.mixer.out_vol / 255.0f;
         mixL *= master_vol;
         mixR *= master_vol;
-
-        // Bus attenuation: eight full-volume tracks sum to ~4.0; bring it
-        // down so tanh operates in the gentle knee, not hard clipping.
-        constexpr float kBusAtten = 1.0f;
-        mixL *= kBusAtten;
-        mixR *= kBusAtten;
 
         mixL = dcBlock(mixL, m_dcMixL);
         mixR = dcBlock(mixR, m_dcMixR);

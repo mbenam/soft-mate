@@ -23,56 +23,65 @@ static std::string ToHex(int value) {
     return ss.str();
 }
 
-static std::string ResolveModValue(const std::string& fieldId, const engine::Modulator& mod) {
-    if (fieldId.find("MOD_TYPE") != std::string::npos) return ToHex(mod.type);
-    if (fieldId.find("MOD_DEST") != std::string::npos) return ToHex(mod.dest);
-    if (fieldId.find("MOD_AMT") != std::string::npos) return ToHex(mod.amt);
-    if (fieldId.find("MOD_P1") != std::string::npos) return ToHex(mod.p1);
-    if (fieldId.find("MOD_P2") != std::string::npos) return ToHex(mod.p2);
-    if (fieldId.find("MOD_P3") != std::string::npos) return ToHex(mod.p3);
-    if (fieldId.find("MOD_P4") != std::string::npos) return ToHex(mod.p4);
+static std::string ResolveModValue(CursorId fieldId, const engine::Modulator& mod) {
+    if (IsTypeCursor(fieldId)) return ToHex(mod.type);
+    if (IsDestCursor(fieldId)) return ToHex(mod.dest);
+    if (IsAmtCursor(fieldId)) return ToHex(mod.amt);
+    if (IsParamCursor(fieldId)) {
+        switch (ParamSlotOf(fieldId)) {
+            case 1: return ToHex(mod.p1);
+            case 2: return ToHex(mod.p2);
+            case 3: return ToHex(mod.p3);
+            case 4: return ToHex(mod.p4);
+        }
+    }
     return "00";
 }
 
-static std::string ResolveModAccent(const std::string& fieldId, const engine::Modulator& mod) {
-    if (fieldId.find("MOD_TYPE") != std::string::npos) {
+static std::string ResolveModAccent(CursorId fieldId, const engine::Modulator& mod) {
+    if (IsTypeCursor(fieldId)) {
         const char* names[] = {"AHD ENV", "ADSR ENV", "DRUM ENV", "LFO", "TRIG ENV", "TRACKING"};
         return names[mod.type % 6];
     }
-    if (fieldId.find("MOD_DEST") != std::string::npos) {
+    if (IsDestCursor(fieldId)) {
         if (mod.dest == 0) return "OFF";
         return "PARAM " + std::to_string(mod.dest); // Can map to actual names later
     }
-    
+
+    int paramSlot = IsParamCursor(fieldId) ? ParamSlotOf(fieldId) : 0;
     if (mod.type == 3) { // LFO
-        if (fieldId.find("MOD_P1") != std::string::npos) {
+        if (paramSlot == 1) {
             const char* osc[] = {"TRI", "SIN", "SQU", "S+H"};
             return osc[mod.p1 % 4];
         }
-        if (fieldId.find("MOD_P2") != std::string::npos) return (mod.p2 == 0) ? "FREE" : "RETRIG";
+        if (paramSlot == 2) return (mod.p2 == 0) ? "FREE" : "RETRIG";
     }
-    if (mod.type == 4 && fieldId.find("MOD_P4") != std::string::npos) {
+    if (mod.type == 4 && paramSlot == 4) {
         return (mod.p4 == 0) ? "WAVSYNTH" : "EXTERNAL";
     }
-    if (mod.type == 5 && fieldId.find("MOD_P1") != std::string::npos) {
+    if (mod.type == 5 && paramSlot == 1) {
         return (mod.p1 == 0) ? "NOTE" : "VELOCITY";
     }
     return "";
 }
 
-static int GetModSliderValue(const std::string& fieldId, const engine::Modulator& mod) {
-    if (fieldId.find("MOD_AMT") != std::string::npos) return mod.amt;
-    if (fieldId.find("MOD_P1") != std::string::npos) return mod.p1;
-    if (fieldId.find("MOD_P2") != std::string::npos) return mod.p2;
-    if (fieldId.find("MOD_P3") != std::string::npos) return mod.p3;
-    if (fieldId.find("MOD_P4") != std::string::npos) return mod.p4;
+static int GetModSliderValue(CursorId fieldId, const engine::Modulator& mod) {
+    if (IsAmtCursor(fieldId)) return mod.amt;
+    if (IsParamCursor(fieldId)) {
+        switch (ParamSlotOf(fieldId)) {
+            case 1: return mod.p1;
+            case 2: return mod.p2;
+            case 3: return mod.p3;
+            case 4: return mod.p4;
+        }
+    }
     return 0;
 }
 
-void RenderModScreen(Renderer& renderer, 
-                     const engine::EngineState& engState, 
+void RenderModScreen(Renderer& renderer,
+                     const engine::EngineState& engState,
                      int currentInstIndex,
-                     const std::string& active_cursor_id) {
+                     CursorId active_cursor_id) {
                             
     const engine::Instrument& currentInst = engState.instruments[currentInstIndex];
                             
@@ -94,7 +103,7 @@ void RenderModScreen(Renderer& renderer,
 
     for (const auto& [fieldId, components] : interactiveFields) {
         bool isActive = (fieldId == active_cursor_id);
-        int q = fieldId.back() - '0';
+        int q = QuadrantOf(fieldId);
         const auto& mod = currentInst.mods[q];
 
         std::string liveText = ResolveModValue(fieldId, mod);
@@ -125,6 +134,47 @@ void RenderModScreen(Renderer& renderer,
                 }
             }
         }
+    }
+}
+
+void HandleModInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                     engine::EngineState& uiEngineState, int currentInstIndex,
+                     CursorId& cursor_id, CommandSink& commandSink) {
+    using C = CursorId;
+    auto navMap = GetModNavMap(uiEngineState.instruments[currentInstIndex]);
+
+    if (event.key.key == SDLK_DOWN) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE) {
+            cursor_id = navMap[cursor_id].down;
+        }
+    } else if (event.key.key == SDLK_UP) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].up != C::NONE) {
+            cursor_id = navMap[cursor_id].up;
+        }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+            cursor_id = navMap[cursor_id].right;
+        }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+            cursor_id = navMap[cursor_id].left;
+        }
+    }
+
+    // Value Editing Block
+    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
+        arrowPressedDuringEdit = true;
+        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
+        int q = QuadrantOf(cursor_id);
+        const auto& mod = uiEngineState.instruments[currentInstIndex].mods[q];
+
+        if (IsTypeCursor(cursor_id)) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_TYPE, std::clamp<int>(mod.type + step, 0, 5), currentInstIndex, q);
+        else if (IsDestCursor(cursor_id)) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_DEST, std::clamp<int>(mod.dest + step, 0, 255), currentInstIndex, q);
+        else if (IsAmtCursor(cursor_id)) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_AMT, std::clamp<int>(mod.amt + step, 0, 255), currentInstIndex, q);
+        else if (IsParamCursor(cursor_id) && ParamSlotOf(cursor_id) == 1) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P1, std::clamp<int>(mod.p1 + step, 0, 255), currentInstIndex, q);
+        else if (IsParamCursor(cursor_id) && ParamSlotOf(cursor_id) == 2) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P2, std::clamp<int>(mod.p2 + step, 0, 255), currentInstIndex, q);
+        else if (IsParamCursor(cursor_id) && ParamSlotOf(cursor_id) == 3) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P3, std::clamp<int>(mod.p3 + step, 0, 255), currentInstIndex, q);
+        else if (IsParamCursor(cursor_id) && ParamSlotOf(cursor_id) == 4) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P4, std::clamp<int>(mod.p4 + step, 0, 255), currentInstIndex, q);
     }
 }
 

@@ -18,7 +18,11 @@ inline bool isEnvShape(uint8_t shape) {
 
 class Lfo {
 public:
-    void trigger() { m_phase = 0.0; m_done = false; m_lastOut = 0.0f; }
+    // Fixed non-zero seed: RANDOM-shape output is then deterministic per
+    // note-on, so the same phrase always renders bit-identically (m8_render
+    // twice, diff the WAVs). std::rand() used to break that -- global,
+    // possibly-locking state with no per-voice determinism.
+    void trigger() { m_phase = 0.0; m_done = false; m_lastOut = 0.0f; m_rngState = 0x9E3779B9u; }
     bool done() const { return m_done; }
     float lastOutput() const { return m_lastOut; }
 
@@ -36,7 +40,7 @@ public:
                 if (trig == 3 || isEnvShape(shape)) { m_phase = 1.0; m_done = true; }
                 else m_phase -= 1.0;
             }
-            out = shapeValue(shape, m_phase);
+            out = shapeValue(shape, m_phase, m_rngState);
         } else {
             out = startValue(shape);
         }
@@ -50,8 +54,12 @@ private:
     float m_lastOut = 0.0f;
     double m_phase = 0.0;
     bool m_done = false;
+    uint32_t m_rngState = 0x9E3779B9u;
 
-    static float shapeValue(uint8_t shape, double phase) {
+    // Per-instance xorshift32 (same formula as the demo-sample noise
+    // generators elsewhere in the engine) -- no allocation, no lock, no
+    // shared/global state, safe on the audio thread.
+    static float shapeValue(uint8_t shape, double phase, uint32_t& rngState) {
         float p = float(phase);
         switch (shape) {
         case 0x00: return (p < 0.25f) ? (p * 4.0f) : (p < 0.75f) ? (2.0f - p * 4.0f) : (p * 4.0f - 4.0f);
@@ -66,10 +74,14 @@ private:
         case 0x09: return (p < 0.75f) ? -1.0f : 1.0f;
         case 0x0A: return (p < 0.87f) ? -1.0f : 1.0f;
         case 0x0B: return (p < 0.95f) ? -1.0f : 1.0f;
-        case 0x0C: return (float(std::rand()) / float(RAND_MAX)) * 2.0f - 1.0f;
+        case 0x0C:
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return (float(rngState) / float(0xFFFFFFFFu)) * 2.0f - 1.0f;
         case 0x0D: case 0x0E: case 0x0F: case 0x10:
-            return shapeValue(uint8_t(shape - 0x0D), phase);
-        default: return shapeValue(0x00, phase);
+            return shapeValue(uint8_t(shape - 0x0D), phase, rngState);
+        default: return shapeValue(0x00, phase, rngState);
         }
     }
 

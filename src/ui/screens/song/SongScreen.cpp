@@ -1,6 +1,7 @@
 #include "SongScreen.h"
 #include "SongScreenLayout.h"
 #include "ui/HexFmt.h"
+#include "ui/UiEditHelpers.h"
 #include <iomanip>
 #include <sstream>
 
@@ -109,6 +110,61 @@ void RenderSongScreen(Renderer& renderer,
             }
         }
     }
+}
+
+void HandleSongInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                      engine::Sequencer& uiSequencer, int& cursor_x, int& cursor_y,
+                      CommandSink& commandSink) {
+    using namespace m8::ui;
+    auto& song = uiSequencer.song;
+    auto pushSongStep = [&]() {
+        m8::engine::EngineCommand cmd;
+        cmd.type = m8::engine::CommandType::SET_SONG_STEP;
+        cmd.targetId = cursor_y;
+        cmd.row = cursor_x;
+        cmd.value = song[cursor_y].tracks[cursor_x];
+        commandSink.send(cmd);
+    };
+
+    if (event.key.key == SDLK_DOWN) {
+        if (editHeld) {
+            song[cursor_y].tracks[cursor_x] = AdjustU8(song[cursor_y].tracks[cursor_x], -1, 0, 254, engine::CHAIN_EMPTY);
+            arrowPressedDuringEdit = true;
+            pushSongStep();
+        } else if (cursor_y < 255) cursor_y++;
+    } else if (event.key.key == SDLK_UP) {
+        if (editHeld) {
+            song[cursor_y].tracks[cursor_x] = AdjustU8(song[cursor_y].tracks[cursor_x], 1, 0, 254, engine::CHAIN_EMPTY);
+            arrowPressedDuringEdit = true;
+            pushSongStep();
+        } else if (cursor_y > 0) cursor_y--;
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (editHeld) {
+            song[cursor_y].tracks[cursor_x] = AdjustU8(song[cursor_y].tracks[cursor_x], 16, 0, 254, engine::CHAIN_EMPTY);
+            arrowPressedDuringEdit = true;
+            pushSongStep();
+        } else cursor_x = (cursor_x + 1) % 8;
+    } else if (event.key.key == SDLK_LEFT) {
+        if (editHeld) {
+            song[cursor_y].tracks[cursor_x] = AdjustU8(song[cursor_y].tracks[cursor_x], -16, 0, 254, engine::CHAIN_EMPTY);
+            arrowPressedDuringEdit = true;
+            pushSongStep();
+        } else cursor_x = (cursor_x - 1 + 8) % 8;
+    }
+}
+
+void HandleSongEditRelease(engine::Sequencer& uiSequencer, int cursor_x, int cursor_y,
+                            CommandSink& commandSink) {
+    auto& song = uiSequencer.song;
+    if (song[cursor_y].tracks[cursor_x] == engine::CHAIN_EMPTY) song[cursor_y].tracks[cursor_x] = 0;
+    else song[cursor_y].tracks[cursor_x] = engine::CHAIN_EMPTY;
+
+    m8::engine::EngineCommand cmd;
+    cmd.type = m8::engine::CommandType::SET_SONG_STEP;
+    cmd.targetId = cursor_y;
+    cmd.row = cursor_x;
+    cmd.value = song[cursor_y].tracks[cursor_x];
+    commandSink.send(cmd);
 }
 
 } // namespace song

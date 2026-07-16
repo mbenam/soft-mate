@@ -185,6 +185,10 @@ red, the fix is one line in `SamplerEngine::computeRegion()` — do not redesign
 - **`FILTER` 06/07** (ZDF) alias to LP/HP. DaisySP has no ZDF SVF.
 - **LFO shapes 0x0D-0x16** (Drunk family, `*Env` one-shots) alias to TRI.
 - **`MOD BINV`** is a guess.
+- **`MOD RATE`, and the rate half of `MOD BOTH`/`MOD BINV`, do nothing.** Only the amount
+  half of mod-to-mod routing (`amtScale`) is applied in `SynthVoice::renderSample`; there is
+  no per-slot modulation-rate scaling. Removed the dead code that computed an unused
+  `rateScale` array rather than leave it looking implemented (`CODE_CLEANUP_SPEC.md` #8).
 - **Tables** are edited by the UI and ignored by the engine.
 - **The voice path is mono.** `SamplerEngine` reads both channels; `SynthVoice` sums them.
 - **`loadDemoSong()` is scaffolding.** It disappears once `.m8s` loading works.

@@ -1,3 +1,0 @@
-C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/sdl3-populate.dir
-C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/ALL_BUILD.dir
-C:/dev/m8-sdl3/build_render/_deps/sdl3-subbuild/CMakeFiles/ZERO_CHECK.dir

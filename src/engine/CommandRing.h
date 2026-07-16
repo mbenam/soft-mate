@@ -16,11 +16,16 @@ enum class CommandType {
     PLAY_START,
     PLAY_STOP,
     LOAD_SAMPLE,
-    UPDATE_PARAM,   // <-- NEW COMMAND TYPE
+    UPDATE_PARAM,
     SET_STEP,
     SET_CHAIN_STEP,
     SET_SONG_STEP,
-    SET_GROOVE_STEP
+    SET_GROOVE_STEP,
+    LOAD_SONG
+};
+
+struct SongPayload {
+    void* data = nullptr;  // single heap allocation: [Sequencer][EngineState]
 };
 
 enum class ParamID {
@@ -67,6 +72,7 @@ struct EngineCommand {
         Step step;
         ChainStep chainStep;
         SampleData sample;
+        SongPayload song;
     } u{};
 };
 static_assert(std::is_trivially_copyable_v<EngineCommand>);

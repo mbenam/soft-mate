@@ -6,6 +6,11 @@ namespace m8 {
 namespace ui {
 namespace chain {
 
+// The `.text`/`.normal_color` literals below are layout-design placeholders.
+// ChainScreen.cpp's interactive-grid loop only reads `.col`/`.row`/
+// `.selected_color` from this table; the displayed value always comes from
+// the live `Sequencer`/cursor state. Do not "fix" these strings expecting
+// them to affect what's on screen.
 inline void InitChainGrid(UI_GridCell ChainGrid[16][2]) {
     ChainGrid[0][0] = {"27", 3, 3, "VALUE", "LABEL_LITE", "value", true};
     ChainGrid[0][1] = {"00", 6, 3, "LABEL_DIM", "LABEL_LITE", "label", false};

@@ -2,9 +2,10 @@
 #include "ui/Renderer.h"
 #include "ui/ViewManager.h"
 #include "engine/Engine.h"
-#include "engine/EngineStateUpdater.h"
 #include "ui/FileBrowser.h"
-#include "ui/screens/song/SongScreen.h"
+#include "ui/ScriptRunner.h"
+#include "io/SongIO.h"
+#include <ui/screens/song/SongScreen.h>
 #include "ui/screens/chain/ChainScreen.h"
 #include "ui/screens/phrase/PhraseScreen.h"
 #include "ui/screens/instrument/InstrumentScreen.h"
@@ -33,85 +34,48 @@
 #include <cmath>
 #include <map>
 #include <algorithm>
+#include <filesystem>
 
 using namespace m8::engine;
 
 #include "ui/HexFmt.h"
 
-uint8_t AdjustU8(uint8_t val, int delta, int minVal, int maxVal, uint8_t emptyVal) {
-    if (val == emptyVal) {
-        return (delta > 0) ? minVal : maxVal;
+// WAV writer — identical to m8_render's (16-bit PCM, interleaved stereo float input)
+static void writeWav(const std::string& path, const std::vector<float>& interleaved,
+                     int channels, int sampleRate) {
+    const uint32_t nFrames  = static_cast<uint32_t>(interleaved.size() / channels);
+    const uint32_t dataSize = nFrames * channels * 2;          // 16-bit
+    const uint32_t riffSize = 36 + dataSize;
+
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) { std::cerr << "writeWav: cannot open " << path << "\n"; return; }
+
+    auto u32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    auto u16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+
+    std::fwrite("RIFF", 1, 4, f);  u32(riffSize);
+    std::fwrite("WAVE", 1, 4, f);
+    std::fwrite("fmt ", 1, 4, f);  u32(16);
+    u16(1);                                        // PCM
+    u16(static_cast<uint16_t>(channels));
+    u32(static_cast<uint32_t>(sampleRate));
+    u32(static_cast<uint32_t>(sampleRate * channels * 2));   // byte rate
+    u16(static_cast<uint16_t>(channels * 2));                // block align
+    u16(16);                                       // bits
+    std::fwrite("data", 1, 4, f);  u32(dataSize);
+
+    for (float s : interleaved) {
+        s = std::max(-1.0f, std::min(1.0f, s));
+        int16_t v = static_cast<int16_t>(s * 32767.0f);
+        std::fwrite(&v, 2, 1, f);
     }
-    int newVal = val + delta;
-    if (newVal < minVal) newVal = minVal;
-    if (newVal > maxVal) newVal = maxVal;
-    return newVal;
+    std::fclose(f);
 }
 
-int8_t AdjustS8(int8_t val, int delta, int minVal, int maxVal, int8_t emptyVal) {
-    if (val == emptyVal) {
-        return (delta > 0) ? minVal : maxVal;
-    }
-    int newVal = val + delta;
-    if (newVal < minVal) newVal = minVal;
-    if (newVal > maxVal) newVal = maxVal;
-    return newVal;
-}
-
-void ModifyValue(Step& step, int col, int delta, bool largeStep) {
-    if (col == 0) {
-        if (step.note == NOTE_EMPTY) {
-            step.note = 60; // C-4
-            if (step.vol == VOL_EMPTY) step.vol = 0x64;
-            if (step.instr == INST_EMPTY) step.instr = 0;
-        } else {
-            int midi = step.note;
-            midi += (largeStep ? delta * 12 : delta);
-            if (midi < 0) midi = 0;
-            if (midi > 127) midi = 127;
-            step.note = midi;
-        }
-    } else if (col == 1) {
-        int d = largeStep ? delta * 0x10 : delta;
-        if (step.vol == VOL_EMPTY) step.vol = 0x64;
-        else step.vol = std::clamp((int)step.vol + d, 0, 127);
-    } else if (col == 2) {
-        int d = largeStep ? delta * 0x10 : delta;
-        if (step.instr == INST_EMPTY) step.instr = 0;
-        else step.instr = std::clamp((int)step.instr + d, 0, 127);
-    } else if (col == 4 || col == 6 || col == 8) {
-        int d = largeStep ? delta * 0x10 : delta;
-        int idx = (col == 4) ? 0 : (col == 6) ? 1 : 2;
-        if (step.fx[idx].cmd != FxCmd::NONE) {
-            step.fx[idx].val = std::clamp((int)step.fx[idx].val + d, 0, 255);
-        }
-    } else if (col == 3 || col == 5 || col == 7) {
-        int idx = (col == 3) ? 0 : (col == 5) ? 1 : 2;
-        int cmd = static_cast<int>(step.fx[idx].cmd);
-        cmd += delta;
-        if (cmd < 0) cmd = 6;
-        if (cmd > 6) cmd = 0;
-        step.fx[idx].cmd = static_cast<FxCmd>(cmd);
-    }
-}
-
-void InsertDefault(Step& step, int col) {
-    if (col == 0 && step.note == NOTE_EMPTY) {
-        step.note = 60; // C-4
-        if (step.vol == VOL_EMPTY) step.vol = 0x64;
-        if (step.instr == INST_EMPTY) step.instr = 0;
-    } else if (col == 1 && step.vol == VOL_EMPTY) {
-        step.vol = 0x64;
-    } else if (col == 2 && step.instr == INST_EMPTY) {
-        step.instr = 0;
-    } else if (col == 3 && step.fx[0].cmd == FxCmd::NONE) {
-        step.fx[0] = {FxCmd::VOL, 0};
-    } else if (col == 5 && step.fx[1].cmd == FxCmd::NONE) {
-        step.fx[1] = {FxCmd::VOL, 0};
-    } else if (col == 7 && step.fx[2].cmd == FxCmd::NONE) {
-        step.fx[2] = {FxCmd::VOL, 0};
-    }
-}
+// AdjustU8/AdjustS8/ModifyValue/InsertDefault moved to ui/UiEditHelpers.h
+// (m8::ui namespace) when per-screen input handling was extracted out of
+// main() (CODE_CLEANUP_SPEC.md #1) -- every call site now lives in the
+// screens/<name>/ files that actually use them.
 
 void DrawBracket(Renderer& renderer, int cx, int y, int cw, SDL_Color color) {
     int bpx = cx * 8 - 2;
@@ -131,9 +95,87 @@ void DrawBracket(Renderer& renderer, int cx, int y, int cw, SDL_Color color) {
 
 // Legacy InstCursorPos removed, navigation is now handled by NavNode map in InstrumentSamplerLayout.h
 
+// Loads a song from `path` into the engine + UI mirrors: PLAY_STOP, pack a
+// [Sequencer][EngineState] buffer, push LOAD_SONG, update uiSequencer/
+// uiEngineState/currentSongPath/currentLoadResult, and set missingSamplesMsg
+// (either "LOAD FAILED: ..." or the missing-samples list, or cleared).
+// Shared by both file-browser load sites (key-down select, key-up release)
+// and ScriptRunner's loadSong callback -- previously duplicated ~35 lines
+// each, three times over (plus a fourth copy that was unreachable dead code
+// and has been removed rather than folded in here).
+static bool loadSongIntoEngine(const std::string& path, const std::string& sampleRoot,
+                                CommandRing<EngineCommand, 1024>& commandRing,
+                                m8::engine::Sequencer& uiSequencer,
+                                m8::engine::EngineState& uiEngineState,
+                                std::string& currentSongPath,
+                                m8::io::LoadResult& currentLoadResult,
+                                std::string& missingSamplesMsg) {
+    auto result = m8::io::loadSong(path, sampleRoot);
+    if (!result.ok) {
+        missingSamplesMsg = "LOAD FAILED: " + result.error;
+        return false;
+    }
+
+    EngineCommand stopCmd{};
+    stopCmd.type = CommandType::PLAY_STOP;
+    commandRing.push(stopCmd);
+
+    auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
+    *reinterpret_cast<Sequencer*>(buf) = result.sequencer;
+    *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = result.state;
+
+    EngineCommand loadCmd{};
+    loadCmd.type = CommandType::LOAD_SONG;
+    loadCmd.u.song.data = buf;
+    commandRing.push(loadCmd);
+
+    uiSequencer = result.sequencer;
+    uiEngineState = result.state;
+    currentSongPath = path;
+    currentLoadResult = std::move(result);
+    // NOTE: previously the interactive-load call sites (file-browser select
+    // and file-browser key-up-release) cleared currentLoadResult.original
+    // here; the ScriptRunner load path never did. saveSong() re-parses from
+    // origin.original (SongIO.cpp), so clearing it here would break any
+    // save that follows a load -- confirmed by save_reload.m8script failing
+    // once this helper unified on the clearing behavior (CODE_CLEANUP_SPEC.md
+    // #2). Kept non-clearing, matching the one path that was actually
+    // tested end-to-end (load then save).
+    currentLoadResult.ok = true;
+
+    if (!currentLoadResult.missing.empty()) {
+        missingSamplesMsg = "MISSING SAMPLES:";
+        for (const auto& s : currentLoadResult.missing)
+            missingSamplesMsg += "\n  " + s;
+    } else {
+        missingSamplesMsg.clear();
+    }
+    return true;
+}
+
 int main(int argc, char* argv[]) {
+// ─── Script mode / headless / out-dir flag parsing ──────────────────────────
+    std::string scriptPath;
+    std::string outDir;
+    bool headless = false;
+    {
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--script" && i + 1 < argc) {
+                scriptPath = argv[++i];
+            } else if (arg == "--headless") {
+                headless = true;
+            } else             if (arg == "--out-dir" && i + 1 < argc) {
+                outDir = argv[++i];
+                std::filesystem::create_directories(outDir);
+            }
+        }
+    }
+    bool scriptMode = !scriptPath.empty();
+    bool audioActive = false;  // true when stream is non-null (audio device owns engine.render())
+
     Renderer renderer;
-    if (!renderer.init(320, 240, 3)) {
+    if (!renderer.init(320, 240, 3, headless)) {
         return 1;
     }
 
@@ -147,11 +189,11 @@ int main(int argc, char* argv[]) {
     int cursorRow = 0; 
     int cursorCol = 0; 
     
-    std::string active_cursor = "TYPE";
-    std::string project_cursor_id = "TEMPO_INT";
-    std::string active_cursor_mod = "MOD_TYPE_0";
-    std::string active_cursor_mixer = "TRK_VOL_0";
-    std::string active_cursor_effects = "CHO_EQ";
+    m8::ui::instrument::CursorId active_cursor = m8::ui::instrument::CursorId::TYPE;
+    m8::ui::project::CursorId project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
+    m8::ui::mods::CursorId active_cursor_mod = m8::ui::mods::CursorId::MOD_TYPE_0;
+    m8::ui::mixer::CursorId active_cursor_mixer = m8::ui::mixer::CursorId::TRK_VOL_0;
+    m8::ui::effects::CursorId active_cursor_effects = m8::ui::effects::CursorId::CHO_EQ;
     int currentInstIndex = 0;
 
     int songRow = 0;
@@ -169,7 +211,7 @@ int main(int argc, char* argv[]) {
     int currentGrooveIndex = 0;
     int groove_cursor_y = 0; // Ranges 0 to 15
 
-    std::string scale_cursor_id = "KEY";
+    m8::ui::scale::CursorId scale_cursor_id = m8::ui::scale::CursorId::KEY;
     int currentScaleIndex = 0; // Ranges 0 to 15
 
     int pool_cursor_x = 0; // Ranges 0 to 5
@@ -183,16 +225,8 @@ int main(int argc, char* argv[]) {
     static AudioCtx g_audioCtx;
 
     CommandRing<EngineCommand, 1024> commandRing;
-    
-    struct CommandSink {
-        CommandRing<EngineCommand, 1024>& ring;
-        uint32_t dropped = 0;
-        bool send(const EngineCommand& cmd) {
-            if (ring.push(cmd)) return true;
-            ++dropped;
-            return false;
-        }
-    } commandSink{commandRing};
+
+    m8::ui::CommandSink commandSink{commandRing};
 
     struct PendingEdit { CommandType type; int targetId; int row; };
     std::vector<PendingEdit> pendingEdits;
@@ -202,18 +236,21 @@ int main(int argc, char* argv[]) {
     
     g_audioCtx.engine = &engine;
 
-    SDL_AudioSpec spec = { SDL_AUDIO_F32, 2, static_cast<int>(m8::engine::kSampleRate) };
-    SDL_AudioStream *stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, [](void* userdata, SDL_AudioStream* astream, int additional_amount, int total_amount) {
-        auto* ctx = static_cast<AudioCtx*>(userdata);
-        int framesLeft = additional_amount / (int)(sizeof(float) * 2);
-        while (framesLeft > 0) {
-            const int n = std::min(framesLeft, kMaxFramesPerChunk);
-            ctx->engine->render(ctx->scratch, n);
-            SDL_PutAudioStreamData(astream, ctx->scratch, n * 2 * (int)sizeof(float));
-            framesLeft -= n;
-        }
-    }, &g_audioCtx);
-    if (stream) { SDL_ResumeAudioStreamDevice(stream); }
+    SDL_AudioStream *stream = nullptr;
+    if (!headless) {
+        SDL_AudioSpec spec = { SDL_AUDIO_F32, 2, static_cast<int>(m8::engine::kSampleRate) };
+        stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, [](void* userdata, SDL_AudioStream* astream, int additional_amount, int total_amount) {
+            auto* ctx = static_cast<AudioCtx*>(userdata);
+            int framesLeft = additional_amount / (int)(sizeof(float) * 2);
+            while (framesLeft > 0) {
+                const int n = std::min(framesLeft, kMaxFramesPerChunk);
+                ctx->engine->render(ctx->scratch, n);
+                SDL_PutAudioStreamData(astream, ctx->scratch, n * 2 * (int)sizeof(float));
+                framesLeft -= n;
+            }
+        }, &g_audioCtx);
+        if (stream) { SDL_ResumeAudioStreamDevice(stream); }
+    }
     
     m8::engine::Sequencer uiSequencer;
     m8::engine::EngineState uiEngineState;
@@ -242,6 +279,17 @@ int main(int argc, char* argv[]) {
     FileBrowser fileBrowser;
     fileBrowser.init("Samples");
 
+    // Song persistence state
+    m8::io::LoadResult currentLoadResult;
+    std::string currentSongPath;
+    std::string sampleRoot = "Samples";
+    bool browserForSongLoad = false;  // true = browser filters .m8s for song load
+    bool textInputActive = false;
+    std::string textInputBuffer;
+    std::string textInputPrompt;
+    std::string missingSamplesMsg;     // non-empty = show missing samples overlay
+    int missingSamplesScroll = 0;
+
     SDL_Color colorBg = {0, 0, 0, 255};
     SDL_Color colorRed = {255, 60, 60, 255};
     SDL_Color colorCyan = {0, 255, 255, 255};
@@ -250,21 +298,24 @@ int main(int argc, char* argv[]) {
     SDL_Color colorGreen = {0, 255, 100, 255};
     SDL_Color colorBar = {120, 170, 170, 255};
 
-    auto pushParam = [&](m8::engine::ParamID id, int val, int target = 0, int row = 0, float fVal = 0.0f) {
-        m8::engine::EngineCommand cmd;
-        cmd.type = m8::engine::CommandType::UPDATE_PARAM;
-        cmd.paramId = id;
-        cmd.targetId = target;
-        cmd.row = row;
-        cmd.value = val;
-        cmd.fValue = fVal;
-        commandSink.send(cmd);
-        m8::engine::EngineStateUpdater::applyParameterUpdate(uiEngineState, cmd);
-    };
+    // pushParam moved to m8::ui::PushParam (ui/UiCommands.h) when per-screen
+    // input handling was extracted out of main() (CODE_CLEANUP_SPEC.md #1) --
+    // every call site now lives in the screens/<name>/ files that use it.
 
     engine.loadDemoSong();
     uiSequencer = engine.getSequencerForInit();
     uiEngineState = engine.getStateForInit();
+
+    // ─── Script runner setup ───────────────────────────────────────────────
+    std::unique_ptr<ScriptRunner> scriptRunner;
+    if (scriptMode) {
+        scriptRunner = std::make_unique<ScriptRunner>();
+        if (!scriptRunner->loadScript(scriptPath)) {
+            return scriptRunner->getExitCode();
+        }
+        scriptRunner->setOutDir(outDir);
+    }
+
     while (running) {
         if (!pendingEdits.empty()) {
             std::vector<PendingEdit> oldEdits = std::move(pendingEdits);
@@ -281,14 +332,63 @@ int main(int argc, char* argv[]) {
         m8::engine::Playhead playheads[8];
         for (int i=0; i<8; i++) playheads[i] = engine.getPlayhead(i);
 
-        const bool isPlaying = playheads[0].playMode != static_cast<uint8_t>(m8::engine::PlayMode::NONE);
+        // Store playheads in renderer for dump_json
+        {
+            StoredPlayhead sph[8];
+            for (int i = 0; i < 8; ++i) {
+                sph[i].track     = i;
+                sph[i].songRow   = playheads[i].songRow;
+                sph[i].chainRow  = playheads[i].chainRow;
+                sph[i].phraseRow = playheads[i].phraseRow;
+                sph[i].playMode  = playheads[i].playMode;
+            }
+            renderer.setPlayheads(sph, 8);
+        }
+
+        bool isPlaying = playheads[0].playMode != static_cast<uint8_t>(m8::engine::PlayMode::NONE);
         m8::engine::EngineEvent ev;
         while (engine.getEventRing().pop(ev)) {}
+
+        // Script mode: push synthetic events before SDL_PollEvent
+        if (scriptRunner) scriptRunner->onFrameStart();
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
+            } else if (textInputActive && event.type == SDL_EVENT_TEXT_INPUT) {
+                textInputBuffer += event.text.text;
+            } else if (!missingSamplesMsg.empty() && event.type == SDL_EVENT_KEY_DOWN) {
+                missingSamplesMsg.clear();
+            } else if (textInputActive && event.type == SDL_EVENT_KEY_DOWN) {
+                if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
+                    SDL_StopTextInput(SDL_GetKeyboardFocus());
+                    if (textInputPrompt == "SAVE AS:") {
+                        if (!textInputBuffer.empty()) {
+                            currentSongPath = textInputBuffer;
+                            if (currentSongPath.find('.') == std::string::npos)
+                                currentSongPath += ".m8s";
+                            std::string err;
+                            bool ok = m8::io::saveSong(currentSongPath, currentLoadResult,
+                                                       uiSequencer, uiEngineState, err);
+                            if (!ok) missingSamplesMsg = "SAVE FAILED: " + err;
+                            else missingSamplesMsg = "SAVED: " + currentSongPath;
+                        }
+                    } else if (textInputPrompt == "SAMPLE ROOT:") {
+                        sampleRoot = textInputBuffer;
+                        m8::ui::project::setSampleRoot(sampleRoot);
+                    }
+                    textInputActive = false;
+                } else if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_BACKSPACE) {
+                    if (event.key.key == SDLK_BACKSPACE && !textInputBuffer.empty()) {
+                        textInputBuffer.pop_back();
+                    } else if (event.key.key == SDLK_ESCAPE) {
+                        SDL_StopTextInput(SDL_GetKeyboardFocus());
+                        textInputActive = false;
+                    }
+                } else if (event.key.key == SDLK_LEFT) {
+                    viewManager.popModal();
+                }
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 if (event.key.key == SDLK_LSHIFT) {
                     shiftHeld = true;
@@ -298,6 +398,37 @@ int main(int argc, char* argv[]) {
                         arrowPressedDuringEdit = false;
                     }
                 } else {
+                    // FILE_BROWSER modal: handle escape/select before navigation
+                    if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
+                        if (event.key.key == SDLK_LEFT || event.key.key == SDLK_ESCAPE) {
+                            viewManager.popModal();
+                            continue;
+                        }
+                        std::string path = fileBrowser.handleInput(event, editHeld);
+                        if (!path.empty()) {
+                            if (browserForSongLoad) {
+                                loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+                                                   uiEngineState, currentSongPath,
+                                                   currentLoadResult, missingSamplesMsg);
+                            } else {
+                                m8::engine::SampleData buf;
+                                if (FileBrowser::loadWavFile(path, buf)) {
+                                    std::strncpy(buf.path, path.c_str(), 127);
+                                    buf.path[127] = '\0';
+                                    EngineCommand cmd;
+                                    cmd.type = CommandType::LOAD_SAMPLE;
+                                    cmd.targetId = currentInstIndex;
+                                    cmd.u.sample = buf;
+                                    if (!commandSink.send(cmd)) {
+                                        FileBrowser::freeWavFile(buf);
+                                    }
+                                }
+                            }
+                            viewManager.popModal();
+                        }
+                        continue;
+                    }
+
                     auto oldView = viewManager.getCurrentView();
                     if (viewManager.handleNavigation(event, shiftHeld)) {
                         auto newView = viewManager.getCurrentView();
@@ -321,396 +452,58 @@ int main(int argc, char* argv[]) {
                         }
                         
                         continue;
-                    } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
-                        std::string path = fileBrowser.handleInput(event, editHeld);
-                    if (event.key.key == SDLK_LEFT && !shiftHeld) {
-                        viewManager.popModal(); // Escape back
-                    } else if (!path.empty()) {
-                        // Load the sample
-                        m8::engine::SampleData buf;
-                        if (FileBrowser::loadWavFile(path, buf)) {
-                            std::strncpy(buf.path, path.c_str(), 127);
-                            buf.path[127] = '\0';
-                            EngineCommand cmd;
-                            cmd.type = CommandType::LOAD_SAMPLE;
-                            cmd.targetId = currentInstIndex;
-                            cmd.u.sample = buf;
-                            if (!commandSink.send(cmd)) {
-                                FileBrowser::freeWavFile(buf);
-                            }
-                        }
-                        viewManager.popModal();
-                    }
-                } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (editHeld) { ModifyValue(phrases[currentPhrase][cursorRow], cursorCol, -1, true); arrowPressedDuringEdit = true; pushStep(currentPhrase, cursorRow); }
-                        else { cursorRow = (cursorRow + 1) % 16; }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (editHeld) { ModifyValue(phrases[currentPhrase][cursorRow], cursorCol, 1, true); arrowPressedDuringEdit = true; pushStep(currentPhrase, cursorRow); }
-                        else { cursorRow = (cursorRow - 1 + 16) % 16; }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (editHeld) { ModifyValue(phrases[currentPhrase][cursorRow], cursorCol, 1, false); arrowPressedDuringEdit = true; pushStep(currentPhrase, cursorRow); }
-                        else { cursorCol = (cursorCol + 1) % 9; }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (editHeld) { ModifyValue(phrases[currentPhrase][cursorRow], cursorCol, -1, false); arrowPressedDuringEdit = true; pushStep(currentPhrase, cursorRow); }
-                        else { cursorCol = (cursorCol - 1 + 9) % 9; }
-                    }
+                    // NOTE: a second FILE_BROWSER branch used to exist here as an
+                    // `else if` after `handleNavigation(...)`. It was unreachable:
+                    // the block above unconditionally `continue`s whenever the
+                    // current view is FILE_BROWSER, and `ViewManager::handleNavigation`
+                    // returns false without side effects while a modal is active
+                    // (ViewManager.cpp:43) -- so getCurrentView() can never become
+                    // FILE_BROWSER between here and where that branch used to be
+                    // checked. Confirmed dead, removed (CODE_CLEANUP_SPEC.md #2).
+                    } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
+                        m8::ui::phrase::HandlePhraseInput(event, editHeld, arrowPressedDuringEdit,
+                                                          uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAIN) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (editHeld) {
-                            if (chainCol == 0) chains[currentChain][chainRow].phrase = AdjustU8(chains[currentChain][chainRow].phrase, -1, 0, 254, PHRASE_EMPTY);
-                            else chains[currentChain][chainRow].tsp = AdjustS8(chains[currentChain][chainRow].tsp, -1, -128, 127, 0);
-                            pushChainStep(currentChain, chainRow);
-                            arrowPressedDuringEdit = true;
-                        } else { chainRow = (chainRow + 1) % 16; }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (editHeld) {
-                            if (chainCol == 0) chains[currentChain][chainRow].phrase = AdjustU8(chains[currentChain][chainRow].phrase, 1, 0, 254, PHRASE_EMPTY);
-                            else chains[currentChain][chainRow].tsp = AdjustS8(chains[currentChain][chainRow].tsp, 1, -128, 127, 0);
-                            pushChainStep(currentChain, chainRow);
-                            arrowPressedDuringEdit = true;
-                        } else { chainRow = (chainRow - 1 + 16) % 16; }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (editHeld) {
-                            if (chainCol == 0) chains[currentChain][chainRow].phrase = AdjustU8(chains[currentChain][chainRow].phrase, 16, 0, 254, PHRASE_EMPTY);
-                            else chains[currentChain][chainRow].tsp = AdjustS8(chains[currentChain][chainRow].tsp, 12, -128, 127, 0);
-                            pushChainStep(currentChain, chainRow);
-                            arrowPressedDuringEdit = true;
-                        } else { chainCol = (chainCol + 1) % 2; }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (editHeld) {
-                            if (chainCol == 0) chains[currentChain][chainRow].phrase = AdjustU8(chains[currentChain][chainRow].phrase, -16, 0, 254, PHRASE_EMPTY);
-                            else chains[currentChain][chainRow].tsp = AdjustS8(chains[currentChain][chainRow].tsp, -12, -128, 127, 0);
-                            pushChainStep(currentChain, chainRow);
-                            arrowPressedDuringEdit = true;
-                        } else { chainCol = (chainCol - 1 + 2) % 2; }
-                    }
+                    m8::ui::chain::HandleChainInput(event, editHeld, arrowPressedDuringEdit,
+                                                    uiSequencer, currentChain, chainCol, chainRow, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (editHeld) { song[songRow].tracks[songCol] = AdjustU8(song[songRow].tracks[songCol], -1, 0, 254, CHAIN_EMPTY); arrowPressedDuringEdit = true; pushSongStep(songRow, songCol); }
-                        else if (songRow < 255) songRow++;
-                    } else if (event.key.key == SDLK_UP) {
-                        if (editHeld) { song[songRow].tracks[songCol] = AdjustU8(song[songRow].tracks[songCol], 1, 0, 254, CHAIN_EMPTY); arrowPressedDuringEdit = true; pushSongStep(songRow, songCol); }
-                        else if (songRow > 0) songRow--;
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (editHeld) { song[songRow].tracks[songCol] = AdjustU8(song[songRow].tracks[songCol], 16, 0, 254, CHAIN_EMPTY); arrowPressedDuringEdit = true; pushSongStep(songRow, songCol); }
-                        else songCol = (songCol + 1) % 8;
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (editHeld) { song[songRow].tracks[songCol] = AdjustU8(song[songRow].tracks[songCol], -16, 0, 254, CHAIN_EMPTY); arrowPressedDuringEdit = true; pushSongStep(songRow, songCol); }
-                        else songCol = (songCol - 1 + 8) % 8;
-                    }
+                    m8::ui::song::HandleSongInput(event, editHeld, arrowPressedDuringEdit,
+                                                  uiSequencer, songCol, songRow, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
-                    bool isMac = (uiEngineState.instruments[currentInstIndex].type == InstType::INST_MACROSYN);
-                    auto navMap = isMac ? m8::ui::instrument::GetMacrosynNavMap() : m8::ui::instrument::GetSamplerNavMap();
-                    
-                    if (editHeld && (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP || event.key.key == SDLK_LEFT || event.key.key == SDLK_DOWN)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
-                        const m8::engine::Instrument& inst = uiEngineState.instruments[currentInstIndex];
-                        bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
-                        
-                        if (active_cursor == "TYPE") pushParam(m8::engine::ParamID::INST_TYPE, std::clamp<int>(static_cast<int>(inst.type)  + step, 0, 1), currentInstIndex);
-                        else if (active_cursor == "TRANSP") pushParam(m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isMac ? inst.macrosyn.transp : inst.sampler.transp)  + step, 0, 1), currentInstIndex);
-                        else if (active_cursor == "TBL_TIC") pushParam(m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isMac ? inst.macrosyn.tbl_tic : inst.sampler.tbl_tic)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "EQ") pushParam(m8::engine::ParamID::INST_EQ, std::clamp<int>((isMac ? inst.macrosyn.eq : inst.sampler.eq)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "AMP") pushParam(m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac ? inst.macrosyn.amp : inst.sampler.amp)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "LIM") pushParam(m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac ? inst.macrosyn.lim : inst.sampler.lim)  + step, 0, 1), currentInstIndex);
-                        else if (active_cursor == "PAN") pushParam(m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac ? inst.macrosyn.pan : inst.sampler.pan)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "DRY") pushParam(m8::engine::ParamID::INST_DRY, std::clamp<int>((isMac ? inst.macrosyn.dry : inst.sampler.dry)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "CHO") pushParam(m8::engine::ParamID::INST_CHO, std::clamp<int>((isMac ? inst.macrosyn.cho : inst.sampler.cho)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "DEL") pushParam(m8::engine::ParamID::INST_DEL, std::clamp<int>((isMac ? inst.macrosyn.del : inst.sampler.del)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "REV") pushParam(m8::engine::ParamID::INST_REV, std::clamp<int>((isMac ? inst.macrosyn.rev : inst.sampler.rev)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "DEGRADE") pushParam(m8::engine::ParamID::INST_DEGRADE, std::clamp<int>((isMac ? inst.macrosyn.degrade : inst.sampler.degrade)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "FILTER") pushParam(m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac ? inst.macrosyn.filter_type : inst.sampler.filter_type)  + step, 0, 3), currentInstIndex);
-                        else if (active_cursor == "CUTOFF") pushParam(m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isMac ? inst.macrosyn.cutoff : inst.sampler.cutoff)  + step, 0, 255), currentInstIndex);
-                        else if (active_cursor == "RES") pushParam(m8::engine::ParamID::INST_RES, std::clamp<int>((isMac ? inst.macrosyn.res : inst.sampler.res)  + step, 0, 255), currentInstIndex);
-                        else if (!isMac && active_cursor == "SLICE") pushParam(m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice  + step, 0, 255), currentInstIndex);
-                        else if (!isMac && active_cursor == "PLAY") pushParam(m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play  + step, 0, 1), currentInstIndex);
-                        else if (!isMac && active_cursor == "START") pushParam(m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start  + step, 0, 255), currentInstIndex);
-                        else if (!isMac && active_cursor == "LOOP_ST") pushParam(m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st  + step, 0, 255), currentInstIndex);
-                        else if (!isMac && active_cursor == "LENGTH") pushParam(m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length  + step, 0, 255), currentInstIndex);
-                        else if (!isMac && active_cursor == "DETUNE") pushParam(m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune  + step, 0, 255), currentInstIndex);
-                        else if (isMac && active_cursor == "SHAPE") pushParam(m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape  + step, 0, 3), currentInstIndex);
-                        else if (isMac && active_cursor == "TIMBRE") pushParam(m8::engine::ParamID::MAC_TIMBRE, std::clamp<int>(inst.macrosyn.timbre  + step, 0, 255), currentInstIndex);
-                        else if (isMac && active_cursor == "COLOR") pushParam(m8::engine::ParamID::MAC_COLOR, std::clamp<int>(inst.macrosyn.color  + step, 0, 255), currentInstIndex);
-                        else if (isMac && active_cursor == "REDUX") pushParam(m8::engine::ParamID::MAC_REDUX, std::clamp<int>(inst.macrosyn.redux  + step, 0, 255), currentInstIndex);
-                    } else {
-                        if (event.key.key == SDLK_DOWN) {
-                            if (navMap.count(active_cursor) && !navMap[active_cursor].down.empty()) {
-                                active_cursor = navMap[active_cursor].down;
-                            }
-                        } else if (event.key.key == SDLK_UP) {
-                            if (navMap.count(active_cursor) && !navMap[active_cursor].up.empty()) {
-                                active_cursor = navMap[active_cursor].up;
-                            }
-                        } else if (event.key.key == SDLK_RIGHT) {
-                            if (navMap.count(active_cursor) && !navMap[active_cursor].right.empty()) {
-                                active_cursor = navMap[active_cursor].right;
-                            }
-                        } else if (event.key.key == SDLK_LEFT) {
-                            if (navMap.count(active_cursor) && !navMap[active_cursor].left.empty()) {
-                                active_cursor = navMap[active_cursor].left;
-                            }
-                        } else if (event.key.key == SDLK_RETURN) {
-                            if (active_cursor == "SAMPLE_LOAD" || active_cursor == "CMD_LOAD") {
-                                viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
-                            }
-                        }
-                    }
+                    m8::ui::instrument::HandleInstrumentInput(event, editHeld, arrowPressedDuringEdit,
+                                                              uiEngineState, currentInstIndex, active_cursor,
+                                                              commandSink, viewManager);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld) table_cursor_y = (table_cursor_y + 1) % 16;
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld) table_cursor_y = (table_cursor_y - 1 + 16) % 16;
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld) table_cursor_x = (table_cursor_x + 1) % 5;
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld) table_cursor_x = (table_cursor_x - 1 + 5) % 5;
-                    }
+                    m8::ui::table::HandleTableInput(event, editHeld, table_cursor_x, table_cursor_y);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
-                    auto navMap = m8::ui::mods::GetModNavMap(uiEngineState.instruments[currentInstIndex]);
-                    
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld && navMap.count(active_cursor_mod) && !navMap[active_cursor_mod].down.empty()) {
-                            active_cursor_mod = navMap[active_cursor_mod].down;
-                        } else if (editHeld) { /* Fall through to Edit Block */ }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld && navMap.count(active_cursor_mod) && !navMap[active_cursor_mod].up.empty()) {
-                            active_cursor_mod = navMap[active_cursor_mod].up;
-                        } else if (editHeld) { /* Fall through */ }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld && navMap.count(active_cursor_mod) && !navMap[active_cursor_mod].right.empty()) {
-                            active_cursor_mod = navMap[active_cursor_mod].right;
-                        } else if (editHeld) { /* Fall through */ }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld && navMap.count(active_cursor_mod) && !navMap[active_cursor_mod].left.empty()) {
-                            active_cursor_mod = navMap[active_cursor_mod].left;
-                        } else if (editHeld) { /* Fall through */ }
-                    }
-                    
-                    // Value Editing Block
-                    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
-                        int q = active_cursor_mod.back() - '0';
-                        const auto& mod = uiEngineState.instruments[currentInstIndex].mods[q];
-                        
-                        if (active_cursor_mod.find("MOD_TYPE") != std::string::npos) pushParam(m8::engine::ParamID::MOD_TYPE, std::clamp<int>(mod.type  + step, 0, 5), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_DEST") != std::string::npos) pushParam(m8::engine::ParamID::MOD_DEST, std::clamp<int>(mod.dest  + step, 0, 255), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_AMT") != std::string::npos) pushParam(m8::engine::ParamID::MOD_AMT, std::clamp<int>(mod.amt  + step, 0, 255), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_P1") != std::string::npos) pushParam(m8::engine::ParamID::MOD_P1, std::clamp<int>(mod.p1  + step, 0, 255), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_P2") != std::string::npos) pushParam(m8::engine::ParamID::MOD_P2, std::clamp<int>(mod.p2  + step, 0, 255), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_P3") != std::string::npos) pushParam(m8::engine::ParamID::MOD_P3, std::clamp<int>(mod.p3  + step, 0, 255), currentInstIndex, q);
-                        else if (active_cursor_mod.find("MOD_P4") != std::string::npos) pushParam(m8::engine::ParamID::MOD_P4, std::clamp<int>(mod.p4  + step, 0, 255), currentInstIndex, q);
-                    }
+                    m8::ui::mods::HandleModInput(event, editHeld, arrowPressedDuringEdit,
+                                                 uiEngineState, currentInstIndex, active_cursor_mod, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
-                    auto navMap = m8::ui::project::GetProjectNavMap();
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld && navMap.count(project_cursor_id) && !navMap[project_cursor_id].down.empty()) {
-                            project_cursor_id = navMap[project_cursor_id].down;
-                        }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld && navMap.count(project_cursor_id) && !navMap[project_cursor_id].up.empty()) {
-                            project_cursor_id = navMap[project_cursor_id].up;
-                        }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld && navMap.count(project_cursor_id) && !navMap[project_cursor_id].right.empty()) {
-                            project_cursor_id = navMap[project_cursor_id].right;
-                        }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld && navMap.count(project_cursor_id) && !navMap[project_cursor_id].left.empty()) {
-                            project_cursor_id = navMap[project_cursor_id].left;
-                        }
-                    }
-
-                    if (editHeld && (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-                        int step = (event.key.key == SDLK_RIGHT) ? 1 : -1;
-                        if (project_cursor_id == "TEMPO_INT") {
-                            pushParam(m8::engine::ParamID::BPM_INT, std::clamp<int>(uiEngineState.bpm  + step, 20, 999));
-                        } else if (project_cursor_id == "TEMPO_DEC") {
-                            pushParam(m8::engine::ParamID::BPM_FRAC, std::clamp<int>(uiEngineState.bpm_frac  + step, 0, 99));
-                        }
-                    }
+                    m8::ui::project::ProjectActionState projActions{
+                        browserForSongLoad, fileBrowser, viewManager, textInputActive,
+                        textInputBuffer, textInputPrompt, currentSongPath, currentLoadResult,
+                        uiSequencer, missingSamplesMsg
+                    };
+                    m8::ui::project::HandleProjectInput(event, editHeld, arrowPressedDuringEdit,
+                                                        uiEngineState, project_cursor_id, commandSink, projActions);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (editHeld) {
-                            grooves[currentGrooveIndex].steps[groove_cursor_y] = AdjustU8(grooves[currentGrooveIndex].steps[groove_cursor_y], -1, 1, 255, 0); pushGrooveStep(currentGrooveIndex, groove_cursor_y);
-                            arrowPressedDuringEdit = true;
-                        } else {
-                            groove_cursor_y = (groove_cursor_y + 1) % 16;
-                        }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (editHeld) {
-                            grooves[currentGrooveIndex].steps[groove_cursor_y] = AdjustU8(grooves[currentGrooveIndex].steps[groove_cursor_y], 1, 1, 255, 0); pushGrooveStep(currentGrooveIndex, groove_cursor_y);
-                            arrowPressedDuringEdit = true;
-                        } else {
-                            groove_cursor_y = (groove_cursor_y - 1 + 16) % 16;
-                        }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (editHeld) {
-                            grooves[currentGrooveIndex].steps[groove_cursor_y] = AdjustU8(grooves[currentGrooveIndex].steps[groove_cursor_y], 16, 1, 255, 0); pushGrooveStep(currentGrooveIndex, groove_cursor_y);
-                            arrowPressedDuringEdit = true;
-                        }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (editHeld) {
-                            grooves[currentGrooveIndex].steps[groove_cursor_y] = AdjustU8(grooves[currentGrooveIndex].steps[groove_cursor_y], -16, 1, 255, 0); pushGrooveStep(currentGrooveIndex, groove_cursor_y);
-                            arrowPressedDuringEdit = true;
-                        }
-                    }
+                    m8::ui::groove::HandleGrooveInput(event, editHeld, arrowPressedDuringEdit,
+                                                      grooves[currentGrooveIndex], currentGrooveIndex,
+                                                      groove_cursor_y, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
-                    auto navMap = m8::ui::scale::GetScaleNavMap();
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld && navMap.count(scale_cursor_id) && !navMap[scale_cursor_id].down.empty()) {
-                            scale_cursor_id = navMap[scale_cursor_id].down;
-                        }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld && navMap.count(scale_cursor_id) && !navMap[scale_cursor_id].up.empty()) {
-                            scale_cursor_id = navMap[scale_cursor_id].up;
-                        }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld && navMap.count(scale_cursor_id) && !navMap[scale_cursor_id].right.empty()) {
-                            scale_cursor_id = navMap[scale_cursor_id].right;
-                        }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld && navMap.count(scale_cursor_id) && !navMap[scale_cursor_id].left.empty()) {
-                            scale_cursor_id = navMap[scale_cursor_id].left;
-                        }
-                    }
-
-                    if (editHeld && (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_RIGHT) ? 1 : -1;
-                        const auto& scale = uiEngineState.scales[currentScaleIndex];
-                        
-                        if (scale_cursor_id == "KEY") pushParam(m8::engine::ParamID::SCALE_KEY, (scale.key + step + 12) % 12, currentScaleIndex);
-                        else if (scale_cursor_id == "TUNE") pushParam(m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, scale.tune + step);
-                        else if (scale_cursor_id.find("NOTE_EN_") == 0) {
-                            int idx = std::stoi(scale_cursor_id.substr(8));
-                            pushParam(m8::engine::ParamID::SCALE_NOTE_EN, !scale.notes[idx].enable, currentScaleIndex, idx);
-                        } else if (scale_cursor_id.find("NOTE_OFFSET_") == 0) {
-                            int idx = std::stoi(scale_cursor_id.substr(12));
-                            pushParam(m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, idx, scale.notes[idx].offset + step);
-                        }
-                    }
+                    m8::ui::scale::HandleScaleInput(event, editHeld, arrowPressedDuringEdit,
+                                                    uiEngineState, currentScaleIndex, scale_cursor_id, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld) pool_cursor_y = (pool_cursor_y + 1) % 128;
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld) pool_cursor_y = (pool_cursor_y - 1 + 128) % 128;
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld) pool_cursor_x = (pool_cursor_x + 1) % 6;
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld) pool_cursor_x = (pool_cursor_x - 1 + 6) % 6;
-                    }
-
-                    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_UP) ? 1 : -1;
-                        const auto& inst = uiEngineState.instruments[pool_cursor_y];
-                        bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
-                        
-                        if (pool_cursor_x == 0) {
-                            int t = static_cast<int>(inst.type);
-                            pushParam(m8::engine::ParamID::INST_TYPE, (t + step + 3) % 3, pool_cursor_y);
-                        } else if (inst.type != m8::engine::InstType::INST_NONE) {
-                            if (pool_cursor_x == 1) { int v = isMac ? inst.macrosyn.dry : inst.sampler.dry; pushParam(m8::engine::ParamID::INST_DRY, std::clamp<int>(v  + step, 0, 255), pool_cursor_y); }
-                            else if (pool_cursor_x == 2) { int v = isMac ? inst.macrosyn.cho : inst.sampler.cho; pushParam(m8::engine::ParamID::INST_CHO, std::clamp<int>(v  + step, 0, 255), pool_cursor_y); }
-                            else if (pool_cursor_x == 3) { int v = isMac ? inst.macrosyn.del : inst.sampler.del; pushParam(m8::engine::ParamID::INST_DEL, std::clamp<int>(v  + step, 0, 255), pool_cursor_y); }
-                            else if (pool_cursor_x == 4) { int v = isMac ? inst.macrosyn.rev : inst.sampler.rev; pushParam(m8::engine::ParamID::INST_REV, std::clamp<int>(v  + step, 0, 255), pool_cursor_y); }
-                            else if (pool_cursor_x == 5) { int v = isMac ? inst.macrosyn.eq : inst.sampler.eq; pushParam(m8::engine::ParamID::INST_EQ, std::clamp<int>(v  + step, 0, 255), pool_cursor_y); }
-                        }
-                    }
+                    m8::ui::inst_pool::HandleInstPoolInput(event, editHeld, arrowPressedDuringEdit,
+                                                           uiEngineState, pool_cursor_x, pool_cursor_y, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::MIXER) {
-                    auto navMap = m8::ui::mixer::GetMixerNavMap();
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld && navMap.count(active_cursor_mixer) && !navMap[active_cursor_mixer].down.empty()) {
-                            active_cursor_mixer = navMap[active_cursor_mixer].down;
-                        }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld && navMap.count(active_cursor_mixer) && !navMap[active_cursor_mixer].up.empty()) {
-                            active_cursor_mixer = navMap[active_cursor_mixer].up;
-                        }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld && navMap.count(active_cursor_mixer) && !navMap[active_cursor_mixer].right.empty()) {
-                            active_cursor_mixer = navMap[active_cursor_mixer].right;
-                        }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld && navMap.count(active_cursor_mixer) && !navMap[active_cursor_mixer].left.empty()) {
-                            active_cursor_mixer = navMap[active_cursor_mixer].left;
-                        }
-                    }
-                    
-                    // Edit Value logic
-                    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
-                        
-                        const auto& mx = uiEngineState.mixer;
-                        if (active_cursor_mixer == "OUT_VOL") pushParam(m8::engine::ParamID::MIX_OUT_VOL, std::clamp<int>((int)mx.out_vol  + step, 0, 255));
-                        else if (active_cursor_mixer.find("TRK_VOL_") == 0) {
-                            int t = active_cursor_mixer.back() - '0';
-                            pushParam(m8::engine::ParamID::MIX_TRK_VOL, std::clamp<int>((int)mx.track_vol[t]  + step, 0, 255), 0, t);
-                        }
-                        else if (active_cursor_mixer == "MST_CHO") pushParam(m8::engine::ParamID::MIX_CHO_VOL, std::clamp<int>((int)mx.cho_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "MST_DEL") pushParam(m8::engine::ParamID::MIX_DEL_VOL, std::clamp<int>((int)mx.del_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "MST_REV") pushParam(m8::engine::ParamID::MIX_REV_VOL, std::clamp<int>((int)mx.rev_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "IN_VOL") pushParam(m8::engine::ParamID::MIX_IN_VOL, std::clamp<int>((int)mx.in_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "IN_CHO") pushParam(m8::engine::ParamID::MIX_IN_CHO, std::clamp<int>((int)mx.in_cho  + step, 0, 255));
-                        else if (active_cursor_mixer == "IN_DEL") pushParam(m8::engine::ParamID::MIX_IN_DEL, std::clamp<int>((int)mx.in_del  + step, 0, 255));
-                        else if (active_cursor_mixer == "IN_REV") pushParam(m8::engine::ParamID::MIX_IN_REV, std::clamp<int>((int)mx.in_rev  + step, 0, 255));
-                        else if (active_cursor_mixer == "USB_VOL") pushParam(m8::engine::ParamID::MIX_USB_VOL, std::clamp<int>((int)mx.usb_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "USB_CHO") pushParam(m8::engine::ParamID::MIX_USB_CHO, std::clamp<int>((int)mx.usb_cho  + step, 0, 255));
-                        else if (active_cursor_mixer == "USB_DEL") pushParam(m8::engine::ParamID::MIX_USB_DEL, std::clamp<int>((int)mx.usb_del  + step, 0, 255));
-                        else if (active_cursor_mixer == "USB_REV") pushParam(m8::engine::ParamID::MIX_USB_REV, std::clamp<int>((int)mx.usb_rev  + step, 0, 255));
-                        else if (active_cursor_mixer == "MIX_VOL") pushParam(m8::engine::ParamID::MIX_MIX_VOL, std::clamp<int>((int)mx.mix_vol  + step, 0, 255));
-                        else if (active_cursor_mixer == "LIM_VAL") pushParam(m8::engine::ParamID::MIX_LIM_VAL, std::clamp<int>((int)mx.lim_val  + step, 0, 255));
-                        else if (active_cursor_mixer == "DJF_FREQ") pushParam(m8::engine::ParamID::MIX_DJF_FREQ, std::clamp<int>((int)mx.djf_freq  + step, 0, 255));
-                        else if (active_cursor_mixer == "DJF_RES") pushParam(m8::engine::ParamID::MIX_DJF_RES, std::clamp<int>((int)mx.djf_res  + step, 0, 255));
-                        else if (active_cursor_mixer == "DJF_TYP") pushParam(m8::engine::ParamID::MIX_DJF_TYP, std::clamp<int>((int)mx.djf_typ  + step, 0, 255));
-                    }
+                    m8::ui::mixer::HandleMixerInput(event, editHeld, arrowPressedDuringEdit,
+                                                    uiEngineState, active_cursor_mixer, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::EFFECTS) {
-                    auto navMap = m8::ui::effects::GetEffectsNavMap();
-                    if (event.key.key == SDLK_DOWN) {
-                        if (!editHeld && navMap.count(active_cursor_effects) && !navMap[active_cursor_effects].down.empty()) {
-                            active_cursor_effects = navMap[active_cursor_effects].down;
-                        }
-                    } else if (event.key.key == SDLK_UP) {
-                        if (!editHeld && navMap.count(active_cursor_effects) && !navMap[active_cursor_effects].up.empty()) {
-                            active_cursor_effects = navMap[active_cursor_effects].up;
-                        }
-                    } else if (event.key.key == SDLK_RIGHT) {
-                        if (!editHeld && navMap.count(active_cursor_effects) && !navMap[active_cursor_effects].right.empty()) {
-                            active_cursor_effects = navMap[active_cursor_effects].right;
-                        }
-                    } else if (event.key.key == SDLK_LEFT) {
-                        if (!editHeld && navMap.count(active_cursor_effects) && !navMap[active_cursor_effects].left.empty()) {
-                            active_cursor_effects = navMap[active_cursor_effects].left;
-                        }
-                    }
-                    
-                    // Edit Value logic
-                    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-                        arrowPressedDuringEdit = true;
-                        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
-                        const auto& fx = uiEngineState.effects;
-                        
-                        if (active_cursor_effects == "CHO_MOD_DEP") pushParam(m8::engine::ParamID::FX_CHO_MOD_DEPTH, std::clamp<int>(fx.cho_mod_depth  + step, 0, 255));
-                        else if (active_cursor_effects == "CHO_MOD_FRQ") pushParam(m8::engine::ParamID::FX_CHO_MOD_FREQ, std::clamp<int>(fx.cho_mod_freq  + step, 0, 255));
-                        else if (active_cursor_effects == "CHO_WID") pushParam(m8::engine::ParamID::FX_CHO_WIDTH, std::clamp<int>(fx.cho_width  + step, 0, 255));
-                        else if (active_cursor_effects == "CHO_REV") pushParam(m8::engine::ParamID::FX_CHO_REVERB, std::clamp<int>(fx.cho_reverb  + step, 0, 255));
-                        else if (active_cursor_effects == "DEL_TIME_L") pushParam(m8::engine::ParamID::FX_DEL_TIME_L, std::clamp<int>(fx.del_time_l  + step, 0, 255));
-                        else if (active_cursor_effects == "DEL_TIME_R") pushParam(m8::engine::ParamID::FX_DEL_TIME_R, std::clamp<int>(fx.del_time_r  + step, 0, 255));
-                        else if (active_cursor_effects == "DEL_FBK") pushParam(m8::engine::ParamID::FX_DEL_FEEDBACK, std::clamp<int>(fx.del_feedback  + step, 0, 255));
-                        else if (active_cursor_effects == "DEL_WID") pushParam(m8::engine::ParamID::FX_DEL_WIDTH, std::clamp<int>(fx.del_width  + step, 0, 255));
-                        else if (active_cursor_effects == "DEL_REV") pushParam(m8::engine::ParamID::FX_DEL_REVERB, std::clamp<int>(fx.del_reverb  + step, 0, 255));
-                        else if (active_cursor_effects == "REV_SIZE") pushParam(m8::engine::ParamID::FX_REV_SIZE, std::clamp<int>(fx.rev_size  + step, 0, 255));
-                        else if (active_cursor_effects == "REV_DEC") pushParam(m8::engine::ParamID::FX_REV_DECAY, std::clamp<int>(fx.rev_decay  + step, 0, 255));
-                        else if (active_cursor_effects == "REV_MOD_DEP") pushParam(m8::engine::ParamID::FX_REV_MOD_DEPTH, std::clamp<int>(fx.rev_mod_depth  + step, 0, 255));
-                        else if (active_cursor_effects == "REV_MOD_FRQ") pushParam(m8::engine::ParamID::FX_REV_MOD_FREQ, std::clamp<int>(fx.rev_mod_freq  + step, 0, 255));
-                        else if (active_cursor_effects == "REV_WID") pushParam(m8::engine::ParamID::FX_REV_WIDTH, std::clamp<int>(fx.rev_width  + step, 0, 255));
-                    }
+                    m8::ui::effects::HandleEffectsInput(event, editHeld, arrowPressedDuringEdit,
+                                                        uiEngineState, active_cursor_effects, commandSink);
                 }
-                
+
                 if (event.key.key == SDLK_ESCAPE) {
                     running = false;
                 } else if (event.key.key == SDLK_SPACE) {
@@ -728,6 +521,29 @@ int main(int argc, char* argv[]) {
                         }
                     }
                     commandSink.send(cmd);
+                } else if (event.key.key == SDLK_F1) {
+                    // TEMPORARY debug hook — to be replaced by --script mode (Task 1/2)
+                    auto viewTypeToStr = [](m8::ui::ViewType v) -> const char* {
+                        switch (v) {
+                            case m8::ui::ViewType::SONG: return "SONG";
+                            case m8::ui::ViewType::CHAIN: return "CHAIN";
+                            case m8::ui::ViewType::PHRASE: return "PHRASE";
+                            case m8::ui::ViewType::INSTRUMENT: return "INST";
+                            case m8::ui::ViewType::TABLE: return "TABLE";
+                            case m8::ui::ViewType::PROJECT: return "PROJECT";
+                            case m8::ui::ViewType::GROOVE: return "GROOVE";
+                            case m8::ui::ViewType::MIXER: return "MIXER";
+                            case m8::ui::ViewType::INST_MOD: return "MODS";
+                            case m8::ui::ViewType::EFFECTS: return "FX";
+                            case m8::ui::ViewType::SCALE: return "SCALE";
+                            case m8::ui::ViewType::INST_POOL: return "POOL";
+                            case m8::ui::ViewType::FILE_BROWSER: return "BROWSER";
+                            default: return "NONE";
+                        }
+                    };
+                    const char* screenName = viewTypeToStr(viewManager.getCurrentView());
+                    renderer.dumpScreenText("dump_screen.txt");
+                    renderer.dumpJson("dump_json.json", screenName, uiEngineState.bpm);
                 }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
@@ -737,59 +553,79 @@ int main(int argc, char* argv[]) {
                     editHeld = false;
                     if (!arrowPressedDuringEdit) {
                         if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
-                            InsertDefault(phrases[currentPhrase][cursorRow], cursorCol); pushStep(currentPhrase, cursorRow);
+                            m8::ui::phrase::HandlePhraseEditRelease(uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAIN) {
-                            if (chainCol == 0) {
-                                if (chains[currentChain][chainRow].phrase == PHRASE_EMPTY) chains[currentChain][chainRow].phrase = 0;
-                                else chains[currentChain][chainRow].phrase = PHRASE_EMPTY;
-                                pushChainStep(currentChain, chainRow);
-                            }
+                            m8::ui::chain::HandleChainEditRelease(uiSequencer, currentChain, chainCol, chainRow, commandSink);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
-                            if (song[songRow].tracks[songCol] == CHAIN_EMPTY) song[songRow].tracks[songCol] = 0;
-                            else song[songRow].tracks[songCol] = CHAIN_EMPTY;
-                            pushSongStep(songRow, songCol);
+                            m8::ui::song::HandleSongEditRelease(uiSequencer, songCol, songRow, commandSink);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
-                            if (active_cursor == "SAMPLE_LOAD" || active_cursor == "CMD_LOAD") {
-                                viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
-                            }
+                            m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
+                            m8::ui::project::ProjectActionState projActions{
+                                browserForSongLoad, fileBrowser, viewManager, textInputActive,
+                                textInputBuffer, textInputPrompt, currentSongPath, currentLoadResult,
+                                uiSequencer, missingSamplesMsg
+                            };
+                            m8::ui::project::HandleProjectEditRelease(project_cursor_id, uiEngineState, projActions);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                             SDL_Event simEvent;
                             simEvent.type = SDL_EVENT_KEY_DOWN;
                             simEvent.key.key = SDLK_RIGHT;
                             std::string path = fileBrowser.handleInput(simEvent, false);
                             if (!path.empty()) {
-                                m8::engine::SampleData buf;
-                                if (FileBrowser::loadWavFile(path, buf)) {
-                                    std::strncpy(buf.path, path.c_str(), 127);
-                                    buf.path[127] = '\0';
-                                    EngineCommand cmd;
-                                    cmd.type = CommandType::LOAD_SAMPLE;
-                                    cmd.targetId = currentInstIndex;
-                                    cmd.u.sample = buf;
-                                    if (!commandSink.send(cmd)) {
-                                        FileBrowser::freeWavFile(buf);
+                                if (browserForSongLoad) {
+                                    loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+                                                       uiEngineState, currentSongPath,
+                                                       currentLoadResult, missingSamplesMsg);
+                                } else {
+                                    // Load WAV sample
+                                    m8::engine::SampleData buf;
+                                    if (FileBrowser::loadWavFile(path, buf)) {
+                                        std::strncpy(buf.path, path.c_str(), 127);
+                                        buf.path[127] = '\0';
+                                        EngineCommand cmd;
+                                        cmd.type = CommandType::LOAD_SAMPLE;
+                                        cmd.targetId = currentInstIndex;
+                                        cmd.u.sample = buf;
+                                        if (!commandSink.send(cmd)) {
+                                            FileBrowser::freeWavFile(buf);
+                                        }
                                     }
                                 }
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
-                            if (grooves[currentGrooveIndex].steps[groove_cursor_y] == 0) {
-                                grooves[currentGrooveIndex].steps[groove_cursor_y] = 6;
-                            } else {
-                                grooves[currentGrooveIndex].steps[groove_cursor_y] = 0;
-                            }
-                            pushGrooveStep(currentGrooveIndex, groove_cursor_y);
+                            m8::ui::groove::HandleGrooveEditRelease(grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y, commandSink);
                         }
                     }
                 }
             }
         }
 
+        // In script mode, if no audio device is playing, call engine.render()
+        // manually so commands (LOAD_SONG, PLAY_START etc.) are processed. Do NOT
+        // call when a stream exists — the audio callback's render() and a manual
+        // render() would both pop from the SPSC CommandRing concurrently, which is
+        // a data race. The SPSC ring guarantees safety for ONE consumer; two
+        // concurrent consumers (main thread + audio thread) is undefined behavior.
+        if (scriptMode && !stream) {
+            float scratch[kMaxFramesPerChunk * 2];
+            engine.render(scratch, kMaxFramesPerChunk);
+        }
 
+        // Re-read playhead state after script events (e.g. PLAY/STOP) are processed
+        for (int i=0; i<8; i++) playheads[i] = engine.getPlayhead(i);
+        isPlaying = playheads[0].playMode != static_cast<uint8_t>(m8::engine::PlayMode::NONE);
 
         m8::engine::SampleData gcData;
         while (engine.getGcRing().pop(gcData)) {
             FileBrowser::freeWavFile(gcData);
+        }
+
+        // Drain song GC ring
+        void* songGcPtr = nullptr;
+        while (engine.getSongGcRing().pop(songGcPtr)) {
+            delete[] static_cast<uint8_t*>(songGcPtr);
         }
 
         renderer.clear(colorBg);
@@ -827,14 +663,155 @@ int main(int argc, char* argv[]) {
         // Legacy Shared Right side UI has been removed because it is now driven by JSON.
 
         viewManager.renderChrome(renderer, uiEngineState.bpm);
+
+        // Missing samples overlay
+        if (!missingSamplesMsg.empty() && !textInputActive) {
+            renderer.fillRectPixel(0, 0, 320, 240, {0, 0, 0, 220});
+            int y = 2;
+            std::istringstream iss(missingSamplesMsg);
+            std::string line;
+            while (std::getline(iss, line) && y < 28) {
+                if (line.length() > 38) line = line.substr(0, 38);
+                SDL_Color c = (y == 2) ? colorCyan : colorWhite;
+                renderer.drawString(line, 1, y, c);
+                y++;
+            }
+            renderer.drawString("PRESS ANY KEY", 10, 29, colorGrey);
+        }
+
+        // Text input overlay
+        if (textInputActive) {
+            renderer.fillRectPixel(0, 0, 320, 240, {0, 0, 0, 220});
+            renderer.drawString(textInputPrompt, 2, 10, colorCyan);
+            std::string display = textInputBuffer + "_";
+            if (display.length() > 36) display = display.substr(display.length() - 36);
+            renderer.drawString(display, 2, 12, colorWhite);
+            renderer.drawString("ENTER=OK  ESC=CANCEL", 4, 16, colorGrey);
+        }
+
         renderer.present();
-        SDL_Delay(16); 
+
+        // Script mode: run post-render commands (dump / assert / screenshot)
+        if (scriptRunner) {
+            audioActive = (stream != nullptr);  // recompute each frame
+
+            // ScriptAppContext's callbacks are C function pointers (no captures), so
+            // per-frame state is threaded through via a helper struct + void* userData.
+            struct ScriptCtxHelper {
+                Renderer* renderer;
+                bool playing;
+                bool hasErrorFlag;
+                const std::string* errorMsg;
+                const std::string* songName;
+                Engine* engine;
+                m8::engine::Sequencer* seq;
+                m8::engine::EngineState* state;
+                std::string* songPath;
+                m8::io::LoadResult* loadResult;
+                std::string* err_msg;
+                std::string* sampRoot;
+                CommandRing<EngineCommand, 1024>* cmdRing;
+                bool* audioActive;
+            };
+            static ScriptCtxHelper helper; // static so C function pointers can access it
+            helper.renderer   = &renderer;
+            helper.playing    = isPlaying;
+            helper.hasErrorFlag = !missingSamplesMsg.empty();
+            helper.errorMsg   = &missingSamplesMsg;
+            helper.songName   = &currentSongPath;
+            helper.engine     = &engine;
+            helper.seq        = &uiSequencer;
+            helper.state      = &uiEngineState;
+            helper.songPath   = &currentSongPath;
+            helper.loadResult = &currentLoadResult;
+            helper.err_msg    = &missingSamplesMsg;
+            helper.sampRoot   = &sampleRoot;
+            helper.cmdRing    = &commandRing;
+            helper.audioActive = &audioActive;
+
+            ScriptAppContext sctx;
+            sctx.userData = &helper;
+            sctx.renderer = &renderer;
+            sctx.isPlaying = [](void* u) -> bool {
+                return static_cast<ScriptCtxHelper*>(u)->playing;
+            };
+            sctx.hasError = [](void* u) -> bool {
+                return !static_cast<ScriptCtxHelper*>(u)->err_msg->empty();
+            };
+            sctx.getErrorMessage = [](void* u) -> const std::string& {
+                return *static_cast<ScriptCtxHelper*>(u)->errorMsg;
+            };
+            sctx.getSongName = [](void* u) -> const std::string& {
+                return *static_cast<ScriptCtxHelper*>(u)->songName;
+            };
+            sctx.loadSong = [](const std::string& path, void* u) -> bool {
+                auto* h = static_cast<ScriptCtxHelper*>(u);
+                return loadSongIntoEngine(path, *h->sampRoot, *h->cmdRing, *h->seq, *h->state,
+                                          *h->songPath, *h->loadResult, *h->err_msg);
+            };
+            sctx.saveSong = [](const std::string& path, void* u) -> bool {
+                auto* h = static_cast<ScriptCtxHelper*>(u);
+                std::string err;
+                bool ok = m8::io::saveSong(path, *h->loadResult, *h->seq, *h->state, err);
+                if (!ok) *h->err_msg = "SAVE FAILED: " + err;
+                else     h->err_msg->clear();
+                *h->songPath = path;
+                return ok;
+            };
+            sctx.setSampleRoot = [](const std::string& root, void* u) {
+                auto* h = static_cast<ScriptCtxHelper*>(u);
+                *h->sampRoot = root;
+                m8::ui::project::setSampleRoot(root);
+            };
+            sctx.audioActive = helper.audioActive;
+            sctx.renderOffline = [](int seconds, const std::string& path, void* u) -> bool {
+                auto* h = static_cast<ScriptCtxHelper*>(u);
+                if (seconds <= 0) return false;
+
+                // Push PLAY_START in SONG mode
+                EngineCommand playCmd{};
+                playCmd.type     = CommandType::PLAY_START;
+                playCmd.value    = 3;  // SONG mode
+                playCmd.targetId = 0;
+                playCmd.col      = 0;
+                playCmd.row      = 0;
+                h->cmdRing->push(playCmd);
+
+                const int total = static_cast<int>(seconds * kSampleRate);
+                constexpr int kChunk = 512;
+                std::vector<float> audio;
+                audio.reserve(static_cast<size_t>(total) * 2);
+                std::vector<float> buf(kChunk * 2);
+                int done = 0;
+                while (done < total) {
+                    const int n = std::min(kChunk, total - done);
+                    h->engine->render(buf.data(), n);
+                    audio.insert(audio.end(), buf.begin(), buf.begin() + n * 2);
+                    done += n;
+                }
+
+                // Stop playback after render
+                EngineCommand stopCmd{};
+                stopCmd.type = CommandType::PLAY_STOP;
+                h->cmdRing->push(stopCmd);
+
+                writeWav(path, audio, 2, static_cast<int>(kSampleRate));
+                return true;
+            };
+
+            if (!scriptRunner->onFrameEnd(sctx)) {
+                running = false; // let the loop exit cleanly for proper teardown
+            }
+        }
+
+        // In script mode skip real-time delay; in normal mode keep 16 ms frame pacing
+        if (!scriptMode) SDL_Delay(16);
     }
 
     if (stream) {
         SDL_DestroyAudioStream(stream);
     }
 
-    return 0;
+    return scriptRunner ? scriptRunner->getExitCode() : 0;
 }
 

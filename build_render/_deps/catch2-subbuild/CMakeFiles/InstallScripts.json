@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/dev/m8-sdl3/build_render/_deps/catch2-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

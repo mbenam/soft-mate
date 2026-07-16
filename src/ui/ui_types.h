@@ -15,12 +15,14 @@ struct UI_GridCell {
     int width = 0; // Used for proportional slider rendering
 };
 
-// Represents a node in the non-grid Cursor Navigation Graph
+// Represents a node in the non-grid Cursor Navigation Graph. CursorId is a
+// per-screen `enum class` whose NONE value marks "no neighbor in that direction".
+template <typename CursorId>
 struct NavNode {
-    std::string up;
-    std::string down;
-    std::string left;
-    std::string right;
+    CursorId up;
+    CursorId down;
+    CursorId left;
+    CursorId right;
 };
 
 } // namespace ui

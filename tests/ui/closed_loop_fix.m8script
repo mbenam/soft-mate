@@ -1,0 +1,27 @@
+# closed_loop_fix.m8script — Task 7 Phase 2: fix the glitchy patch
+# Load glitchy patch, back AMP down to moderate, save, render.
+
+load artifacts/glitch.m8s
+wait 5
+
+# Navigate to INSTRUMENT screen
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+wait 2
+
+# Navigate to AMP
+key DOWN
+key DOWN
+key RIGHT
+wait 1
+
+# Back AMP down to 0x40 (from 0xFF): enter edit, hold DOWN 0xBF (191)
+key X
+hold DOWN 191
+key X
+wait 2
+
+# Save and render
+save artifacts/fixed.m8s
+render 2 fixed.wav

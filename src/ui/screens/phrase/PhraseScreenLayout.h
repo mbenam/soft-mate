@@ -6,6 +6,12 @@ namespace m8 {
 namespace ui {
 namespace phrase {
 
+// The `.text` (and `.normal_color`) literals below ("F#5", "64", "REP", ...)
+// are placeholders from the layout design pass. PhraseScreen.cpp's interactive-
+// grid loop only reads `.col`/`.row`/`.selected_color` from this table; the
+// actual displayed value always comes from the live `Sequencer`/cursor state.
+// Verified by reading the render loop, not by inspection alone -- do not
+// "fix" these strings expecting them to affect what's on screen.
 inline void InitPhraseGrid(UI_GridCell PhraseGrid[16][9]) {
     PhraseGrid[0][0] = {"F#5", 2, 3, "LABEL_LITE", "", "", false};
     PhraseGrid[0][1] = {"64", 6, 3, "VALUE", "LABEL_LITE", "value", true};

@@ -1,6 +1,0 @@
-C:\dev\m8-sdl3\src\engine\Sequencer.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\Sequencer.obj
-C:\dev\m8-sdl3\src\engine\Engine.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\Engine.obj
-C:\dev\m8-sdl3\src\engine\SynthVoice.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\SynthVoice.obj
-C:\dev\m8-sdl3\src\engine\SamplePool.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\SamplePool.obj
-C:\dev\m8-sdl3\src\engine\SamplerEngine.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\SamplerEngine.obj
-C:\dev\m8-sdl3\build\_deps\daisysp-src\DaisySP-LGPL\Source\Effects\reverbsc.cpp;C:\dev\m8-sdl3\build\m8_engine.dir\Release\reverbsc.obj

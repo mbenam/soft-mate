@@ -120,6 +120,38 @@ void RenderInstPoolScreen(Renderer& renderer,
     }
 }
 
+void HandleInstPoolInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                          engine::EngineState& uiEngineState, int& cursor_x, int& cursor_y,
+                          CommandSink& commandSink) {
+    if (event.key.key == SDLK_DOWN) {
+        if (!editHeld) cursor_y = (cursor_y + 1) % 128;
+    } else if (event.key.key == SDLK_UP) {
+        if (!editHeld) cursor_y = (cursor_y - 1 + 128) % 128;
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (!editHeld) cursor_x = (cursor_x + 1) % 6;
+    } else if (event.key.key == SDLK_LEFT) {
+        if (!editHeld) cursor_x = (cursor_x - 1 + 6) % 6;
+    }
+
+    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN)) {
+        arrowPressedDuringEdit = true;
+        int step = (event.key.key == SDLK_UP) ? 1 : -1;
+        const auto& inst = uiEngineState.instruments[cursor_y];
+        bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
+
+        if (cursor_x == 0) {
+            int t = static_cast<int>(inst.type);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, (t + step + 3) % 3, cursor_y);
+        } else if (inst.type != m8::engine::InstType::INST_NONE) {
+            if (cursor_x == 1) { int v = isMac ? inst.macrosyn.dry : inst.sampler.dry; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>(v + step, 0, 255), cursor_y); }
+            else if (cursor_x == 2) { int v = isMac ? inst.macrosyn.cho : inst.sampler.cho; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>(v + step, 0, 255), cursor_y); }
+            else if (cursor_x == 3) { int v = isMac ? inst.macrosyn.del : inst.sampler.del; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>(v + step, 0, 255), cursor_y); }
+            else if (cursor_x == 4) { int v = isMac ? inst.macrosyn.rev : inst.sampler.rev; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>(v + step, 0, 255), cursor_y); }
+            else if (cursor_x == 5) { int v = isMac ? inst.macrosyn.eq : inst.sampler.eq; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(v + step, 0, 255), cursor_y); }
+        }
+    }
+}
+
 } // namespace inst_pool
 } // namespace ui
 } // namespace m8

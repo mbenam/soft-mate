@@ -15,11 +15,14 @@ struct FileEntry {
 class FileBrowser {
 public:
     FileBrowser();
-    void init(const std::string& startDir);
+    void init(const std::string& startDir, const std::string& filterExtension = "");
     void update(Renderer& renderer, SDL_Color colorWhite, SDL_Color colorCyan, SDL_Color colorRed);
-    
+
     // Returns the selected file path if a file was selected this frame, else empty string
     std::string handleInput(SDL_Event& event, bool editHeld);
+
+    // Set title displayed at top of browser
+    void setTitle(const std::string& t) { title = t; }
 
     static bool loadWavFile(const std::string& path, m8::engine::SampleData& outData);
     static void freeWavFile(m8::engine::SampleData& data);
@@ -28,6 +31,8 @@ private:
     void scanDirectory();
 
     std::string currentDir;
+    std::string filterExt;  // e.g. ".m8s", ".wav", ".m8i" — empty = show all
+    std::string title = "FILE BROWSER";
     std::vector<FileEntry> entries;
     int cursorIndex = 0;
     int scrollOffset = 0;

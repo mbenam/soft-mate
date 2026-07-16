@@ -6,6 +6,11 @@ namespace m8 {
 namespace ui {
 namespace song {
 
+// The `.text`/`.normal_color` literals below are layout-design placeholders.
+// SongScreen.cpp's interactive-grid loop only reads `.col`/`.row`/
+// `.selected_color` from this table; the displayed value always comes from
+// the live `Sequencer`/cursor state. Do not "fix" these strings expecting
+// them to affect what's on screen.
 inline void InitSongGrid(UI_GridCell SongGrid[16][8]) {
     SongGrid[0][0] = {"0A", 3, 3, "LABEL_DIM", "LABEL_LITE", "label", false};
     SongGrid[0][1] = {"0E", 6, 3, "VALUE", "LABEL_LITE", "value", true};

@@ -34,6 +34,13 @@ struct Modulator {
 
 struct SamplerState {
     SampleHandle sample = -1;
+    // Duplicates SampleData::path (the SamplePool's dedup/refcount key) by
+    // design, not oversight: this is the instrument's own record of which
+    // sample it wants, independent of the pool slot's lifecycle. Read by
+    // m8_render's printTrackInfo for display without touching the pool.
+    // Does NOT round-trip through .m8s save/load -- SongIO never touches
+    // this field; the file's own sample_path lives in the library's
+    // Sampler struct and survives via save-by-overlay unchanged.
     char samplePath[128] = {};
     int transp = 1;        // 0 = OFF, 1 = ON
     int tbl_tic = 0xFF;
@@ -226,6 +233,7 @@ public:
 
     Engine(CommandRing<EngineCommand, 1024>& commandRing);
     CommandRing<SampleData, 64>& getGcRing() { return m_gcRing; }
+    CommandRing<void*, 16>& getSongGcRing() { return m_songGcRing; }
     ~Engine() = default;
 
     // Called by the audio thread driver
@@ -511,6 +519,11 @@ private:
     void applyParameterUpdate(const EngineCommand& cmd);
     void doTick();
     void tickTrack(int t);
+    // Silences the voice and emits a NOTE_OFF for track t using current
+    // play-position state. songRowOverride lets SONG-mode callers pass
+    // m_songRow directly (some sites use that instead of
+    // m_state.playSongRow[t] — same as the original inline code did).
+    void emitNoteOff(int t, int songRowOverride = -1);
 public:
     void publishPlayhead(int t);
 
@@ -532,6 +545,7 @@ private:
     uint64_t m_frameCounter = 0;
     void emit(const EngineEvent& e) { m_eventRing.push(e); }
     CommandRing<SampleData, 64> m_gcRing;
+    CommandRing<void*, 16> m_songGcRing;
     SamplePool m_samplePool;
     Sequencer m_sequencer;
     SynthVoice m_voices[8];

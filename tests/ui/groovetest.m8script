@@ -1,0 +1,14 @@
+# groovetest.m8script — regression test for GROOVE screen crash
+# Navigates to GROOVE (previously crashed due to HexU8(0) null-pointer UB)
+# and confirms exit 0. The crash only fires when a groove step == 0xFF;
+# the demo song's groove steps are all 6, so this tests the fixed code path
+# even though it doesn't exercise the 0xFF branch specifically.
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+UP
+key SHIFT+LEFT
+key SHIFT+LEFT
+wait 1
+assert_screen contains "GROOVE"

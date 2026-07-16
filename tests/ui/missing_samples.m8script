@@ -1,0 +1,6 @@
+# missing_samples.m8script — load a song with a missing sample, assert error
+# Now unblocked by the loadSong() fix that populates LoadResult::missing.
+
+load third_party/m8-files-cxx/examples/songs/TEST-FILE.m8s
+wait 2
+assert_error contains "MISSING"

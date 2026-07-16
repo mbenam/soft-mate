@@ -262,3 +262,47 @@ TEST_CASE("B4.9 Fuzz the walker", "[walk]") {
     }
     REQUIRE(true);
 }
+
+TEST_CASE("B4.11 Chain end fires NOTE_OFF", "[walk]") {
+    OfflineHost host;
+    // Phrase 0: note on row 0, empty after
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    // Phrase 1: note on row 0 (different note)
+    setStep(host.sequencer(), 1, 0, 61, 100, 0);
+    // Chain 0: phrase 0 (1 bar), then empty (chain ends)
+    setChain(host.sequencer(), 0, 0, 0);
+    setChain(host.sequencer(), 0, 1, PHRASE_EMPTY);
+    // Song: track 0 uses chain 0
+    setSong(host.sequencer(), 0, 0, 0);
+
+    host.push(playSong(0));
+    host.renderSeconds(3.0);
+
+    auto notesOn = host.noteOnsForTrack(0);
+    auto notesOff = host.noteOffsForTrack(0);
+    REQUIRE(notesOn.size() >= 1);
+    REQUIRE(notesOff.size() >= 1);
+
+    // NOTE_OFF should fire after the chain ends (after 2 bars = 2*16 rows)
+    // At 120 BPM, 6 ticks/row, 16 rows = 96 ticks = 96000 samples
+    // Chain ends at bar 2, so NOTE_OFF should be around sample 96000
+    REQUIRE(notesOff[0].sampleTime > 0);
+}
+
+TEST_CASE("B3.7 Tick spacing at 130 BPM with chunk 512", "[tempo]") {
+    OfflineHost host;
+    EngineCommand cmd; cmd.type = CommandType::UPDATE_PARAM;
+    cmd.paramId = ParamID::BPM_INT; cmd.value = 130;
+    host.push(cmd);
+
+    host.push(playSong(0));
+    host.renderSeconds(10.0, 512);
+
+    auto ticks = host.eventsOfType(EventType::TICK);
+    REQUIRE(ticks.size() > 2);
+
+    for (size_t i = 1; i < ticks.size(); ++i) {
+        uint64_t delta = ticks[i].sampleTime - ticks[i-1].sampleTime;
+        REQUIRE((delta == 923 || delta == 924));
+    }
+}

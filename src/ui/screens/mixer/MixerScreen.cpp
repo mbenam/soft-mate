@@ -21,25 +21,26 @@ static std::string ToHex(int value) {
     return ss.str();
 }
 
-static int ResolveMixerValue(const std::string& fieldId, const engine::MixerState& mx) {
-    if (fieldId == "OUT_VOL") return mx.out_vol;
-    if (fieldId.find("TRK_VOL_") == 0) return mx.track_vol[fieldId.back() - '0'];
-    if (fieldId == "MST_CHO") return mx.cho_vol;
-    if (fieldId == "MST_DEL") return mx.del_vol;
-    if (fieldId == "MST_REV") return mx.rev_vol;
-    if (fieldId == "IN_VOL") return mx.in_vol;
-    if (fieldId == "IN_CHO") return mx.in_cho;
-    if (fieldId == "IN_DEL") return mx.in_del;
-    if (fieldId == "IN_REV") return mx.in_rev;
-    if (fieldId == "USB_VOL") return mx.usb_vol;
-    if (fieldId == "USB_CHO") return mx.usb_cho;
-    if (fieldId == "USB_DEL") return mx.usb_del;
-    if (fieldId == "USB_REV") return mx.usb_rev;
-    if (fieldId == "MIX_VOL") return mx.mix_vol;
-    if (fieldId == "LIM_VAL") return mx.lim_val;
-    if (fieldId == "DJF_FREQ") return mx.djf_freq;
-    if (fieldId == "DJF_RES") return mx.djf_res;
-    if (fieldId == "DJF_TYP") return mx.djf_typ;
+static int ResolveMixerValue(CursorId fieldId, const engine::MixerState& mx) {
+    using C = CursorId;
+    if (fieldId == C::OUT_VOL) return mx.out_vol;
+    if (IsTrackVolCursor(fieldId)) return mx.track_vol[TrackIndexOf(fieldId)];
+    if (fieldId == C::MST_CHO) return mx.cho_vol;
+    if (fieldId == C::MST_DEL) return mx.del_vol;
+    if (fieldId == C::MST_REV) return mx.rev_vol;
+    if (fieldId == C::IN_VOL) return mx.in_vol;
+    if (fieldId == C::IN_CHO) return mx.in_cho;
+    if (fieldId == C::IN_DEL) return mx.in_del;
+    if (fieldId == C::IN_REV) return mx.in_rev;
+    if (fieldId == C::USB_VOL) return mx.usb_vol;
+    if (fieldId == C::USB_CHO) return mx.usb_cho;
+    if (fieldId == C::USB_DEL) return mx.usb_del;
+    if (fieldId == C::USB_REV) return mx.usb_rev;
+    if (fieldId == C::MIX_VOL) return mx.mix_vol;
+    if (fieldId == C::LIM_VAL) return mx.lim_val;
+    if (fieldId == C::DJF_FREQ) return mx.djf_freq;
+    if (fieldId == C::DJF_RES) return mx.djf_res;
+    if (fieldId == C::DJF_TYP) return mx.djf_typ;
     return 0;
 }
 
@@ -61,9 +62,9 @@ static void DrawVerticalBar(Renderer& renderer, int col, int rowBottom, int rowH
     }
 }
 
-void RenderMixerScreen(Renderer& renderer, 
-                       const engine::EngineState& engState, 
-                       const std::string& active_cursor_id) {
+void RenderMixerScreen(Renderer& renderer,
+                       const engine::EngineState& engState,
+                       CursorId active_cursor_id) {
                             
     const engine::MixerState& mx = engState.mixer;
                             
@@ -104,6 +105,58 @@ void RenderMixerScreen(Renderer& renderer,
     }
 
     
+}
+
+void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                       engine::EngineState& uiEngineState, CursorId& cursor_id,
+                       CommandSink& commandSink) {
+    using C = CursorId;
+    auto navMap = GetMixerNavMap();
+    if (event.key.key == SDLK_DOWN) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE) {
+            cursor_id = navMap[cursor_id].down;
+        }
+    } else if (event.key.key == SDLK_UP) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].up != C::NONE) {
+            cursor_id = navMap[cursor_id].up;
+        }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+            cursor_id = navMap[cursor_id].right;
+        }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+            cursor_id = navMap[cursor_id].left;
+        }
+    }
+
+    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
+        arrowPressedDuringEdit = true;
+        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
+
+        const auto& mx = uiEngineState.mixer;
+        if (cursor_id == C::OUT_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_OUT_VOL, std::clamp<int>((int)mx.out_vol + step, 0, 255));
+        else if (IsTrackVolCursor(cursor_id)) {
+            int t = TrackIndexOf(cursor_id);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_TRK_VOL, std::clamp<int>((int)mx.track_vol[t] + step, 0, 255), 0, t);
+        }
+        else if (cursor_id == C::MST_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_CHO_VOL, std::clamp<int>((int)mx.cho_vol + step, 0, 255));
+        else if (cursor_id == C::MST_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DEL_VOL, std::clamp<int>((int)mx.del_vol + step, 0, 255));
+        else if (cursor_id == C::MST_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_REV_VOL, std::clamp<int>((int)mx.rev_vol + step, 0, 255));
+        else if (cursor_id == C::IN_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_VOL, std::clamp<int>((int)mx.in_vol + step, 0, 255));
+        else if (cursor_id == C::IN_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_CHO, std::clamp<int>((int)mx.in_cho + step, 0, 255));
+        else if (cursor_id == C::IN_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_DEL, std::clamp<int>((int)mx.in_del + step, 0, 255));
+        else if (cursor_id == C::IN_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_REV, std::clamp<int>((int)mx.in_rev + step, 0, 255));
+        else if (cursor_id == C::USB_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_VOL, std::clamp<int>((int)mx.usb_vol + step, 0, 255));
+        else if (cursor_id == C::USB_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_CHO, std::clamp<int>((int)mx.usb_cho + step, 0, 255));
+        else if (cursor_id == C::USB_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_DEL, std::clamp<int>((int)mx.usb_del + step, 0, 255));
+        else if (cursor_id == C::USB_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_REV, std::clamp<int>((int)mx.usb_rev + step, 0, 255));
+        else if (cursor_id == C::MIX_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_MIX_VOL, std::clamp<int>((int)mx.mix_vol + step, 0, 255));
+        else if (cursor_id == C::LIM_VAL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_LIM_VAL, std::clamp<int>((int)mx.lim_val + step, 0, 255));
+        else if (cursor_id == C::DJF_FREQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_FREQ, std::clamp<int>((int)mx.djf_freq + step, 0, 255));
+        else if (cursor_id == C::DJF_RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_RES, std::clamp<int>((int)mx.djf_res + step, 0, 255));
+        else if (cursor_id == C::DJF_TYP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_TYP, std::clamp<int>((int)mx.djf_typ + step, 0, 255));
+    }
 }
 
 } // namespace mixer

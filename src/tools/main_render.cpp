@@ -4,11 +4,16 @@
 // Offline renderer. Drives the engine with no audio device and writes WAVs +
 // an event log, so the output can be analysed rather than guessed at.
 //
-//   m8_render                          -> renders everything (see --batch)
-//   m8_render --song --seconds 40      -> the whole demo song
-//   m8_render --phrase 0x0C --track 3  -> one phrase, looped, on one track
-//   m8_render --solo 3                 -> the song with only track 3 audible
-//   m8_render --batch                  -> song + 8 solo tracks + every phrase
+//   m8_render                                    -> renders everything (see --batch)
+//   m8_render --song --seconds 40                -> the whole demo song
+//   m8_render --phrase 0x0C --track 3            -> one phrase, looped, on one track
+//   m8_render --solo 3                           -> the song with only track 3 audible
+//   m8_render --batch                            -> song + 8 solo tracks + every phrase
+//   m8_render --load SONG.m8s --seconds 60       -> load a real .m8s song
+//   m8_render --load SONG.m8s --sample-root /sd  -> resolve samples from SD card
+//   m8_render --load SONG.m8s --batch            -> full batch render of a real song
+//   m8_render --load probe.m8s --note C-4 --instrument 0 --seconds 2.5 --out mine
+//                -> render one instrument in isolation (probe's song row 0)
 //
 // Every render also writes a CSV of the EngineEvent ring: every note-on,
 // note-off and tick with its absolute sample time. That is the ground truth to
@@ -20,6 +25,11 @@
 #include "engine/Engine.h"
 #include "engine/EngineEvents.h"
 #include "engine/CommandRing.h"
+#include "engine/SamplePool.h"
+#include "io/SongIO.h"
+
+#define DR_WAV_IMPLEMENTATION
+#include "engine/dr_wav.h"
 
 #include <cstdio>
 #include <cstring>
@@ -68,6 +78,154 @@ static void writeWav(const std::string& path, const std::vector<float>& interlea
                 static_cast<double>(nFrames) / sampleRate);
 }
 
+// ---------------------------------------------------------------- decoded sample for pre-loading
+
+struct DecodedSample {
+    std::string path;         // relative path from the song
+    std::string resolved;     // absolute path on disk
+    SampleData data{};        // decoded WAV (owned)
+    int instrumentIndex = -1; // which instrument uses this
+    bool loaded = false;
+};
+
+// ---------------------------------------------------------------- pre-load song + samples
+
+struct LoadedSong {
+    m8::io::LoadResult loadResult;
+    std::vector<DecodedSample> samples;  // deduplicated
+    bool ok = false;
+};
+
+static LoadedSong loadSongForRender(const std::string& path, const std::string& sampleRoot) {
+    LoadedSong ls;
+    ls.loadResult = m8::io::loadSong(path, sampleRoot);
+    if (!ls.loadResult.ok) return ls;
+
+    // Build deduplicated sample list with resolved paths
+    std::vector<std::pair<std::string,int>> relPaths; // (path, instIndex)
+    const auto& insts = ls.loadResult.state.instruments;
+    for (int i = 0; i < 128; ++i) {
+        if (insts[i].type == InstType::INST_SAMPLER) {
+            const char* p = insts[i].sampler.samplePath;
+            if (p[0] != '\0') relPaths.push_back({p, i});
+        }
+    }
+    // Deduplicate by path
+    std::sort(relPaths.begin(), relPaths.end());
+    relPaths.erase(std::unique(relPaths.begin(), relPaths.end(),
+                   [](const auto& a, const auto& b){ return a.first == b.first; }),
+                   relPaths.end());
+
+    for (auto& [rel, idx] : relPaths) {
+        DecodedSample ds;
+        ds.path = rel;
+        ds.resolved = sampleRoot.empty() ? rel : sampleRoot + "/" + rel;
+        ds.instrumentIndex = idx;
+
+        // Try to load the WAV
+        unsigned int ch = 0, sr = 0;
+        drwav_uint64 frames = 0;
+        float* pcm = drwav_open_file_and_read_pcm_frames_f32(
+            ds.resolved.c_str(), &ch, &sr, &frames, NULL);
+        if (pcm) {
+            ds.data.data = pcm;
+            ds.data.frames = static_cast<uint32_t>(frames);
+            ds.data.channels = ch;
+            ds.data.sampleRate = sr;
+            std::strncpy(ds.data.path, ds.path.c_str(), sizeof(ds.data.path) - 1);
+            ds.loaded = true;
+        } else {
+            // Try CWD as fallback
+            pcm = drwav_open_file_and_read_pcm_frames_f32(
+                rel.c_str(), &ch, &sr, &frames, NULL);
+            if (pcm) {
+                ds.resolved = rel;
+                ds.data.data = pcm;
+                ds.data.frames = static_cast<uint32_t>(frames);
+                ds.data.channels = ch;
+                ds.data.sampleRate = sr;
+                std::strncpy(ds.data.path, ds.path.c_str(), sizeof(ds.data.path) - 1);
+                ds.loaded = true;
+            }
+        }
+        ls.samples.push_back(std::move(ds));
+    }
+
+    ls.ok = true;
+    return ls;
+}
+
+// Load a song (demo or from file) into a fresh engine
+static void setupEngine(Engine& engine, CommandRing<EngineCommand, 1024>& ring,
+                        const LoadedSong* loadedSong) {
+    if (loadedSong && loadedSong->ok) {
+        // Push combined payload via LOAD_SONG
+        const auto& lr = loadedSong->loadResult;
+        auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
+        *reinterpret_cast<Sequencer*>(buf) = lr.sequencer;
+        *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = lr.state;
+        EngineCommand cmd{};
+        cmd.type = CommandType::LOAD_SONG;
+        cmd.u.song.data = buf;
+        ring.push(cmd);
+
+        // Push LOAD_SAMPLE for each decoded sample
+        for (const auto& ds : loadedSong->samples) {
+            if (!ds.loaded) continue;
+            EngineCommand sampCmd{};
+            sampCmd.type = CommandType::LOAD_SAMPLE;
+            sampCmd.targetId = ds.instrumentIndex;
+            sampCmd.u.sample = ds.data;
+            ring.push(sampCmd);
+        }
+        // Commands are processed on the first sample of the main render.
+        // No warmup needed — PLAY_START resets m_tickPhase which would
+        // cause a spurious tick at the warmup chunk boundary.
+    } else {
+        engine.loadDemoSong();
+    }
+}
+
+// Print per-track instrument info. Must be called AFTER the engine has
+// processed any queued LOAD_SONG command (see the warm-up render at the call
+// site) — reading state before that shows 128 default SAMPLER slots instead
+// of what the loaded song actually contains.
+static void printTrackInfo(Engine& engine) {
+    const auto& state = engine.getStateForInit();
+
+    std::printf("  track  instrument  type\n");
+    for (int i = 0; i < 128; ++i) {
+        const auto& inst = state.instruments[i];
+
+        char name[14];
+        std::memcpy(name, inst.name, 13);
+        name[13] = '\0';
+        // trim trailing spaces
+        for (int c = 12; c >= 0; --c) { if (name[c] == ' ') name[c] = '\0'; else break; }
+
+        // A genuinely-unused slot is INST_NONE with the untouched default
+        // name. Unimplemented types loaded from a song file (FM/Hyper/Wav/
+        // MIDIOut/External) are ALSO InstType::INST_NONE, but SongIO gives
+        // them the file's real name — that's how we tell "empty" apart from
+        // "present but silent", instead of hiding the latter entirely.
+        const bool isDefaultName = (std::strncmp(inst.name, "------------", 12) == 0);
+        if (inst.type == InstType::INST_NONE && isDefaultName) continue;
+
+        const char* typeName = "UNKNOWN";
+        if (inst.type == InstType::INST_SAMPLER) typeName = "SAMPLER";
+        else if (inst.type == InstType::INST_MACROSYN) typeName = "MACROSYN";
+        else if (inst.type == InstType::INST_MIDI) typeName = "MIDI";
+        else if (inst.type == InstType::INST_NONE) typeName = "NONE (unimplemented — silent)";
+
+        if (inst.type == InstType::INST_SAMPLER) {
+            std::printf("  inst %02X  %-12s  %s  sample: %s\n", i, name, typeName,
+                        inst.sampler.samplePath[0] ? inst.sampler.samplePath : "(none)");
+        } else {
+            std::printf("  inst %02X  %-12s  %s\n", i, name, typeName);
+        }
+    }
+}
+
 // ---------------------------------------------------------------- a render
 
 struct Render {
@@ -77,16 +235,30 @@ struct Render {
 
 // mode: 1 = PHRASE, 2 = CHAIN, 3 = SONG
 static Render renderOnce(double seconds, int mode, int targetId, int track, int startRow,
-                          const int* soloTrack = nullptr, int chunk = 512) {
+                          const int* soloTrack = nullptr, const LoadedSong* loadedSong = nullptr,
+                          int chunk = 512) {
     CommandRing<EngineCommand, 1024> ring;
     auto enginePtr = std::make_unique<Engine>(ring);
     Engine& engine = *enginePtr;
-    engine.loadDemoSong();
 
+    setupEngine(engine, ring, loadedSong);
+
+    // Mute non-solo tracks via a queued command rather than mutating engine
+    // state directly. setupEngine() may have already queued a LOAD_SONG
+    // command (when loadedSong is set); LOAD_SONG overwrites the entire
+    // mixer when processed, so a direct mixer edit here would be silently
+    // clobbered before the first render() call. Queuing MIX_TRK_VOL commands
+    // guarantees they run after LOAD_SONG since the ring is FIFO.
     if (soloTrack) {
-        auto& mix = engine.getStateForInit().mixer;
-        for (int t = 0; t < 8; ++t)
-            if (t != *soloTrack) mix.track_vol[t] = 0;
+        for (int t = 0; t < 8; ++t) {
+            if (t == *soloTrack) continue;
+            EngineCommand mute{};
+            mute.type = CommandType::UPDATE_PARAM;
+            mute.paramId = ParamID::MIX_TRK_VOL;
+            mute.row = t;
+            mute.value = 0;
+            ring.push(mute);
+        }
     }
 
     EngineCommand cmd{};
@@ -165,6 +337,10 @@ static void summarise(const Render& r) {
 int main(int argc, char** argv) {
     double seconds = 40.0;
     std::string out = "render";
+    std::string loadPath;
+    std::string sampleRoot;
+    std::string noteStr;
+    int instrumentIsolate = -1;
     int mode = 3, targetId = 0, track = 0, startRow = 0;
     int solo = -1;
     bool batch = (argc == 1);
@@ -176,20 +352,76 @@ int main(int argc, char** argv) {
 
         if      (a == "--seconds") seconds = std::atof(next().c_str());
         else if (a == "--out")     out = next();
+        else if (a == "--load")  { loadPath = next(); batch = false; }
+        else if (a == "--sample-root") sampleRoot = next();
         else if (a == "--song")  { mode = 3; targetId = 0; }
         else if (a == "--chain") { mode = 2; targetId = num(); }
         else if (a == "--phrase"){ mode = 1; targetId = num(); }
         else if (a == "--track")   track = num();
         else if (a == "--row")     startRow = num();
         else if (a == "--solo")  { solo = num(); mode = 3; }
+        else if (a == "--note")      noteStr = next();
+        else if (a == "--instrument") instrumentIsolate = num();
         else if (a == "--batch")   batch = true;
         else { std::printf("unknown arg: %s\n", a.c_str()); return 1; }
+    }
+
+    // Load song if --load specified
+    LoadedSong loadedSong;
+    if (!loadPath.empty()) {
+        std::printf("loading %s ...\n", loadPath.c_str());
+        loadedSong = loadSongForRender(loadPath, sampleRoot);
+        if (!loadedSong.ok) {
+            std::fprintf(stderr, "error: %s\n", loadedSong.loadResult.error.c_str());
+            return 1;
+        }
+
+        // Report missing samples
+        if (!loadedSong.loadResult.missing.empty()) {
+            std::fprintf(stderr, "missing samples:\n");
+            for (const auto& s : loadedSong.loadResult.missing)
+                std::fprintf(stderr, "  %s\n", s.c_str());
+        }
+
+        // Print loaded sample info
+        int loaded = 0, failed = 0;
+        for (const auto& ds : loadedSong.samples) {
+            if (ds.loaded) ++loaded; else ++failed;
+        }
+        std::printf("  samples: %d loaded, %d missing\n", loaded, failed);
+
+        // Print track/instrument info
+        {
+            CommandRing<EngineCommand, 1024> ring;
+            auto enginePtr = std::make_unique<Engine>(ring);
+            Engine& engine = *enginePtr;
+            setupEngine(engine, ring, &loadedSong);
+            // Drain the queued LOAD_SONG/LOAD_SAMPLE commands before reading
+            // state back out. playMode is still NONE at this point (LOAD_SONG
+            // doesn't change it and PLAY_START hasn't been pushed), so this
+            // is a pure command-processing pass with no playback side effects.
+            float warmup[16] = {};
+            engine.render(warmup, 8);
+            printTrackInfo(engine);
+        }
+        std::printf("\n");
+    }
+
+    const LoadedSong* lsPtr = loadedSong.ok ? &loadedSong : nullptr;
+
+    // --note/--instrument isolation: play song row 0 (probe layout), solo the instrument's track
+    if (!noteStr.empty() && instrumentIsolate >= 0) {
+        // The probe puts the note on track 0. Solo track 0 and play song mode from row 0.
+        solo = 0;
+        mode = 3; targetId = 0; track = 0; startRow = 0;
+        std::printf("isolation: instrument %d, note %s -> solo track 0, song row 0\n",
+                   instrumentIsolate, noteStr.c_str());
     }
 
     if (!batch) {
         std::printf("rendering...\n");
         Render r = renderOnce(seconds, mode, targetId, track, startRow,
-                              solo >= 0 ? &solo : nullptr);
+                              solo >= 0 ? &solo : nullptr, lsPtr);
         writeWav(out + ".wav", r.audio, 2, static_cast<int>(kSampleRate));
         writeEvents(out + "_events.csv", r);
         summarise(r);
@@ -199,22 +431,20 @@ int main(int argc, char** argv) {
     // ---------------- batch ----------------
     std::printf("BATCH RENDER\n\n");
 
-    std::printf("[song] full demo, %.0f s\n", seconds);
+    std::printf("[song] full song, %.0f s\n", seconds);
     {
-        Render r = renderOnce(seconds, 3, 0, 0, 0);
+        Render r = renderOnce(seconds, 3, 0, 0, 0, nullptr, lsPtr);
         writeWav("song.wav", r.audio, 2, static_cast<int>(kSampleRate));
         writeEvents("song_events.csv", r);
         summarise(r);
     }
     std::printf("\n");
 
-    static const char* names[8] = { "kick", "snare", "hat", "bass",
-                                    "pad",  "arp",   "lead", "perc" };
     for (int t = 0; t < 8; ++t) {
-        std::printf("[solo %d] %s\n", t, names[t]);
-        Render r = renderOnce(seconds, 3, 0, 0, 0, &t);
+        std::printf("[solo %d]\n", t);
+        Render r = renderOnce(seconds, 3, 0, 0, 0, &t, lsPtr);
         char buf[64];
-        std::snprintf(buf, sizeof(buf), "solo_%d_%s.wav", t, names[t]);
+        std::snprintf(buf, sizeof(buf), "solo_%d.wav", t);
         writeWav(buf, r.audio, 2, static_cast<int>(kSampleRate));
         summarise(r);
     }
@@ -225,10 +455,10 @@ int main(int argc, char** argv) {
         CommandRing<EngineCommand, 1024> ring;
         auto probePtr = std::make_unique<Engine>(ring);
         Engine& probe = *probePtr;
-        probe.loadDemoSong();
+        setupEngine(probe, ring, lsPtr);
         const Sequencer& seq = probe.getSequencer();
 
-        for (int p = 0; p < 64; ++p) {
+        for (int p = 0; p < 256; ++p) {
             int firstInst = -1;
             for (int r = 0; r < 16; ++r)
                 if (seq.phrases[p][r].note != NOTE_EMPTY) {
@@ -237,9 +467,9 @@ int main(int argc, char** argv) {
                 }
             if (firstInst < 0) continue;
 
-            const int t = std::min(firstInst, 7);   // route it to its own track
+            const int t = std::min(firstInst, 7);
             std::printf("[phrase %02X] inst %02X -> track %d\n", p, firstInst, t);
-            Render r = renderOnce(8.0, 1, p, t, 0);
+            Render r = renderOnce(8.0, 1, p, t, 0, nullptr, lsPtr);
             char buf[64];
             std::snprintf(buf, sizeof(buf), "phrase_%02X.wav", p);
             writeWav(buf, r.audio, 2, static_cast<int>(kSampleRate));

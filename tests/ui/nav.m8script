@@ -1,0 +1,54 @@
+# nav.m8script — reach every screen, assert its header
+# Navigation graph from ViewManager: (x,y) coordinates
+# Start: (0,0) = SONG
+
+wait 1
+assert_screen contains "SONG"
+
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "CHAIN"
+
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "PHRASE"
+
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "INST."
+
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "TABLE"
+
+key SHIFT+UP
+wait 1
+assert_screen contains "INST. MODS"
+
+key SHIFT+LEFT
+key SHIFT+LEFT
+wait 1
+assert_screen contains "GROOVE"
+
+key SHIFT+UP
+wait 1
+assert_screen contains "SCALE"
+
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "INSTRUMENT POOL"
+
+key SHIFT+DOWN
+key SHIFT+LEFT
+key SHIFT+LEFT
+wait 1
+assert_screen contains "PROJECT"
+
+key SHIFT+DOWN
+key SHIFT+DOWN
+wait 1
+assert_screen contains "MIXER"
+
+key SHIFT+DOWN
+wait 1
+assert_screen contains "EFFECT SETTINGS"

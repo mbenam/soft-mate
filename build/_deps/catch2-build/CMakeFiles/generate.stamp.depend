@@ -1,7 +1,0 @@
-# CMake generation dependency list for this directory.
-C:/Program Files/CMake/share/cmake-4.4/Modules/CMakeDependentOption.cmake
-C:/Program Files/CMake/share/cmake-4.4/Modules/CMakePackageConfigHelpers.cmake
-C:/Program Files/CMake/share/cmake-4.4/Modules/GNUInstallDirs.cmake
-C:/Program Files/CMake/share/cmake-4.4/Modules/WriteBasicConfigVersionFile.cmake
-C:/dev/m8-sdl3/build/_deps/catch2-src/CMake/CatchConfigOptions.cmake
-C:/dev/m8-sdl3/build/_deps/catch2-src/CMakeLists.txt

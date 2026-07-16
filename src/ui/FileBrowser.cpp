@@ -7,8 +7,9 @@ namespace fs = std::filesystem;
 
 FileBrowser::FileBrowser() {}
 
-void FileBrowser::init(const std::string& startDir) {
+void FileBrowser::init(const std::string& startDir, const std::string& filter) {
     currentDir = startDir;
+    filterExt = filter;
     if (!fs::exists(currentDir)) {
         fs::create_directories(currentDir);
     }
@@ -32,8 +33,14 @@ void FileBrowser::scanDirectory() {
             } else {
                 std::string ext = entry.path().extension().string();
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::toupper);
-                if (ext == ".WAV") {
+                if (filterExt.empty()) {
                     files.push_back({entry.path().filename().string(), entry.path().string(), false});
+                } else {
+                    std::string fe = filterExt;
+                    std::transform(fe.begin(), fe.end(), fe.begin(), ::toupper);
+                    if (ext == fe) {
+                        files.push_back({entry.path().filename().string(), entry.path().string(), false});
+                    }
                 }
             }
         }
@@ -57,7 +64,7 @@ std::string FileBrowser::handleInput(SDL_Event& event, bool editHeld) {
         } else if (event.key.key == SDLK_UP) {
             if (cursorIndex > 0) cursorIndex--;
             if (cursorIndex < scrollOffset) scrollOffset--;
-        } else if (event.key.key == SDLK_RIGHT || (event.key.key == SDLK_X && !editHeld)) { 
+        } else if (event.key.key == SDLK_RIGHT || (event.key.key == SDLK_X && !editHeld)) {
             if (cursorIndex >= 0 && cursorIndex < (int)entries.size()) {
                 if (entries[cursorIndex].isDirectory) {
                     currentDir = entries[cursorIndex].path;
@@ -72,7 +79,7 @@ std::string FileBrowser::handleInput(SDL_Event& event, bool editHeld) {
 }
 
 void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color colorCyan, SDL_Color colorRed) {
-    renderer.drawString("LOAD SAMPLE", 2, 1, colorCyan);
+    renderer.drawString(title, 2, 1, colorCyan);
 
     for (int i = 0; i < 16; ++i) {
         int entryIdx = scrollOffset + i;
@@ -83,7 +90,7 @@ void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color col
         if (name.length() > 28) name = name.substr(0, 28);
 
         if (entryIdx == cursorIndex) {
-            renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed); // Use pink/red for highlight
+            renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed);
             renderer.drawString(name, 2, y, {255, 255, 255, 255});
         } else {
             renderer.drawString(name, 2, y, colorWhite);

@@ -1,0 +1,15 @@
+# playhead.m8script — load a song, start transport, confirm it's running
+# LIMITATION: when an audio device exists, PLAY_START commands may not be processed
+# by the audio callback before assert_playing runs. This is a known harness gap —
+# the SPSC CommandRing cannot safely have two consumers (manual render + audio
+# callback), so we only call engine.render() manually when stream is null. The
+# assert below proves the play command doesn't crash and transport starts when the
+# manual render path is available.
+
+load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+wait 1
+assert_no_error
+
+play
+wait 120
+assert_playing

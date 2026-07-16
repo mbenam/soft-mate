@@ -1,0 +1,27 @@
+# closed_loop_glitch.m8script — Task 7 Phase 1: build a glitchy patch
+# Load TEST-FILE, crank instrument 00 AMP to max, save, render.
+
+load third_party/m8-files-cxx/examples/songs/TEST-FILE.m8s
+wait 5
+
+# Navigate to INSTRUMENT screen
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+wait 2
+
+# Navigate to AMP: Down to NAME, Down to TRANSP, Right to AMP
+key DOWN
+key DOWN
+key RIGHT
+wait 1
+
+# Max out AMP
+key X
+hold UP 255
+key X
+wait 2
+
+# Save and render
+save artifacts/glitch.m8s
+render 2 glitch.wav

@@ -1,0 +1,29 @@
+# task6_test.m8script — exercises assert_no_overlap, assert_cell_color,
+# assert_row_matches, assert_slider on real screen content.
+# Expected values confirmed from dump_json of actual screen output.
+
+wait 1
+
+# === SONG screen (default) ===
+
+# 1. assert_no_overlap: normal rendering should have no cell written more than once
+assert_no_overlap
+
+# 2. assert_cell_color: "S" of "SONG" title at row 0, col 0
+#    SongScreen draws "SONG" at (0,0) with TITLE color {255,60,60,255} = FF3C3CFF
+#    Confirmed from dump_json: colors[0][0] = "FF3C3CFF"
+assert_cell_color row 0 col 0 is FF3C3CFF
+
+# 3. assert_row_matches: row 3 should start with hex chain refs
+#    Confirmed from dump_json vram[3] = "00 09 0A 0B 0C -- -- -- --"
+assert_row_matches 3 "^00 09 0A 0B 0C"
+
+# === Navigate to Instrument screen for slider test ===
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+key SHIFT+RIGHT
+wait 1
+
+# 4. assert_slider: Instrument 00 DRY slider at row 8, col 24 has fill=8
+#    Confirmed from dump_json sliders: {"row":8,"col":24,"fill":8}
+assert_slider row 8 col 24 fill 8

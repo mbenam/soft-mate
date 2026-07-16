@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
+#include "engine/EngineStateUpdater.h"
 
 using namespace m8::test;
 using namespace m8::engine;
@@ -132,6 +133,61 @@ TEST_CASE("B6.4 Playhead is never stale", "[commands]") {
         REQUIRE(p.playMode == static_cast<uint8_t>(PlayMode::PHRASE));
         REQUIRE(p.activeCol == 3);
     }
+}
+
+TEST_CASE("B6.10 UPDATE_PARAM with garbage targetId/row is dropped, not UB", "[commands]") {
+    // Regression for CODE_CLEANUP_SPEC.md #3: EngineStateUpdater used to form
+    // state.instruments[cmd.targetId], inst.mods[cmd.row], and
+    // state.scales[cmd.targetId] unconditionally for every param -- including
+    // mixer/effects params where targetId/row are unrelated and unvalidated.
+    EngineState state;
+
+    // A mixer param with a garbage targetId must not touch instruments/scales
+    // at all (previously: state.instruments[200] / state.scales[200] -- OOB).
+    EngineCommand mixCmd{};
+    mixCmd.type = CommandType::UPDATE_PARAM;
+    mixCmd.paramId = ParamID::MIX_MIX_VOL;
+    mixCmd.targetId = 200;
+    mixCmd.value = 77;
+    EngineStateUpdater::applyParameterUpdate(state, mixCmd);
+    REQUIRE(state.mixer.mix_vol == 77);
+
+    // Out-of-range instrument index: dropped, no crash, nothing valid changed.
+    int prevAmp = state.instruments[0].sampler.amp;
+    EngineCommand instCmd{};
+    instCmd.type = CommandType::UPDATE_PARAM;
+    instCmd.paramId = ParamID::INST_AMP;
+    instCmd.targetId = 999;
+    instCmd.value = 55;
+    EngineStateUpdater::applyParameterUpdate(state, instCmd);
+    REQUIRE(state.instruments[0].sampler.amp == prevAmp);
+
+    // Valid instrument, out-of-range mod row: dropped, no crash.
+    EngineCommand modCmd{};
+    modCmd.type = CommandType::UPDATE_PARAM;
+    modCmd.paramId = ParamID::MOD_TYPE;
+    modCmd.targetId = 0;
+    modCmd.row = 40;
+    modCmd.value = 3;
+    EngineStateUpdater::applyParameterUpdate(state, modCmd);
+    // (no crash is the assertion here; state.instruments[0].mods has only 4 slots)
+
+    // Out-of-range scale index: dropped, no crash.
+    EngineCommand scaleCmd{};
+    scaleCmd.type = CommandType::UPDATE_PARAM;
+    scaleCmd.paramId = ParamID::SCALE_KEY;
+    scaleCmd.targetId = 999;
+    scaleCmd.value = 5;
+    EngineStateUpdater::applyParameterUpdate(state, scaleCmd);
+
+    // Valid indices still work after all the garbage was dropped.
+    EngineCommand validCmd{};
+    validCmd.type = CommandType::UPDATE_PARAM;
+    validCmd.paramId = ParamID::INST_AMP;
+    validCmd.targetId = 0;
+    validCmd.value = 88;
+    EngineStateUpdater::applyParameterUpdate(state, validCmd);
+    REQUIRE(state.instruments[0].sampler.amp == 88);
 }
 
 TEST_CASE("B6.9 Playhead packing round-trip", "[commands]") {

@@ -1,5 +1,0 @@
-# CMake generation dependency list for this directory.
-C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCXXCompilerFlag.cmake
-C:/dev/m8-sdl3/build/_deps/catch2-src/CMake/CatchMiscFunctions.cmake
-C:/dev/m8-sdl3/build/_deps/catch2-src/src/CMakeLists.txt
-C:/dev/m8-sdl3/build/_deps/catch2-src/src/catch2/catch_user_config.hpp.in

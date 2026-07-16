@@ -1,6 +1,7 @@
 #include "ChainScreen.h"
 #include "ChainScreenLayout.h"
 #include "ui/HexFmt.h"
+#include "ui/UiEditHelpers.h"
 #include <iomanip>
 #include <sstream>
 
@@ -127,6 +128,66 @@ void RenderChainScreen(Renderer& renderer,
                 renderer.drawBracket(cell.col, cell.row, 2, {0, 255, 255, 255}); // colorCyan
             }
         }
+    }
+}
+
+void HandleChainInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
+                       engine::Sequencer& uiSequencer, int currentChain,
+                       int& cursor_x, int& cursor_y, CommandSink& commandSink) {
+    auto& chains = uiSequencer.chains;
+    auto pushChainStep = [&]() {
+        m8::engine::EngineCommand cmd;
+        cmd.type = m8::engine::CommandType::SET_CHAIN_STEP;
+        cmd.targetId = currentChain;
+        cmd.row = cursor_y;
+        cmd.u.chainStep = chains[currentChain][cursor_y];
+        commandSink.send(cmd);
+    };
+
+    if (event.key.key == SDLK_DOWN) {
+        if (editHeld) {
+            if (cursor_x == 0) chains[currentChain][cursor_y].phrase = AdjustU8(chains[currentChain][cursor_y].phrase, -1, 0, 254, engine::PHRASE_EMPTY);
+            else chains[currentChain][cursor_y].tsp = AdjustS8(chains[currentChain][cursor_y].tsp, -1, -128, 127, 0);
+            pushChainStep();
+            arrowPressedDuringEdit = true;
+        } else { cursor_y = (cursor_y + 1) % 16; }
+    } else if (event.key.key == SDLK_UP) {
+        if (editHeld) {
+            if (cursor_x == 0) chains[currentChain][cursor_y].phrase = AdjustU8(chains[currentChain][cursor_y].phrase, 1, 0, 254, engine::PHRASE_EMPTY);
+            else chains[currentChain][cursor_y].tsp = AdjustS8(chains[currentChain][cursor_y].tsp, 1, -128, 127, 0);
+            pushChainStep();
+            arrowPressedDuringEdit = true;
+        } else { cursor_y = (cursor_y - 1 + 16) % 16; }
+    } else if (event.key.key == SDLK_RIGHT) {
+        if (editHeld) {
+            if (cursor_x == 0) chains[currentChain][cursor_y].phrase = AdjustU8(chains[currentChain][cursor_y].phrase, 16, 0, 254, engine::PHRASE_EMPTY);
+            else chains[currentChain][cursor_y].tsp = AdjustS8(chains[currentChain][cursor_y].tsp, 12, -128, 127, 0);
+            pushChainStep();
+            arrowPressedDuringEdit = true;
+        } else { cursor_x = (cursor_x + 1) % 2; }
+    } else if (event.key.key == SDLK_LEFT) {
+        if (editHeld) {
+            if (cursor_x == 0) chains[currentChain][cursor_y].phrase = AdjustU8(chains[currentChain][cursor_y].phrase, -16, 0, 254, engine::PHRASE_EMPTY);
+            else chains[currentChain][cursor_y].tsp = AdjustS8(chains[currentChain][cursor_y].tsp, -12, -128, 127, 0);
+            pushChainStep();
+            arrowPressedDuringEdit = true;
+        } else { cursor_x = (cursor_x - 1 + 2) % 2; }
+    }
+}
+
+void HandleChainEditRelease(engine::Sequencer& uiSequencer, int currentChain,
+                             int cursor_x, int cursor_y, CommandSink& commandSink) {
+    auto& chains = uiSequencer.chains;
+    if (cursor_x == 0) {
+        if (chains[currentChain][cursor_y].phrase == engine::PHRASE_EMPTY) chains[currentChain][cursor_y].phrase = 0;
+        else chains[currentChain][cursor_y].phrase = engine::PHRASE_EMPTY;
+
+        m8::engine::EngineCommand cmd;
+        cmd.type = m8::engine::CommandType::SET_CHAIN_STEP;
+        cmd.targetId = currentChain;
+        cmd.row = cursor_y;
+        cmd.u.chainStep = chains[currentChain][cursor_y];
+        commandSink.send(cmd);
     }
 }
 

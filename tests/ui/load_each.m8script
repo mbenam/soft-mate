@@ -1,0 +1,20 @@
+# load_each.m8script — load all four example files, assert each loads
+# Files in third_party/m8-files-cxx/examples/songs/:
+#   DEFAULT.m8s (v2.7.0), TEST-FILE.m8s (v3.0.4),
+#   V4EMPTY.m8s (v4.0.1), V4-1EMPTY.m8s (v4.2.0)
+
+load third_party/m8-files-cxx/examples/songs/DEFAULT.m8s
+wait 1
+assert_no_error
+
+load third_party/m8-files-cxx/examples/songs/TEST-FILE.m8s
+wait 1
+assert_error contains "MISSING"
+
+load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+wait 1
+assert_no_error
+
+load third_party/m8-files-cxx/examples/songs/V4-1EMPTY.m8s
+wait 1
+assert_no_error

@@ -1,5 +1,0 @@
-if(EXISTS "C:/dev/m8-sdl3/build/m8_tests-b12d07c_tests.cmake")
-  include("C:/dev/m8-sdl3/build/m8_tests-b12d07c_tests.cmake")
-else()
-  add_test(m8_tests_NOT_BUILT-b12d07c m8_tests_NOT_BUILT-b12d07c)
-endif()

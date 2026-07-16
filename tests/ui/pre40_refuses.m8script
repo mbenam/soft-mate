@@ -1,0 +1,11 @@
+# pre40_refuses.m8script — save must refuse a pre-4.0 song cleanly
+# DEFAULT.m8s is v2.7.0 (confirmed via version bytes at offset 10-11)
+# Save should fail with error containing "4.0"
+
+load third_party/m8-files-cxx/examples/songs/DEFAULT.m8s
+wait 1
+assert_no_error
+
+save artifacts/should_fail.m8s
+wait 1
+assert_error contains "4.0"
