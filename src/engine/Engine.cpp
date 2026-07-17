@@ -70,6 +70,7 @@ void Engine::processCommands() {
             m_state.playMode = PlayMode::NONE;
             for(int t=0; t<8; ++t) {
                 if (m_voices[t].isActive()) emitNoteOff(t);
+                m_tableState[t] = {};   // reset table state
                 publishPlayhead(t);
             }
         } else if (cmd.type == CommandType::LOAD_SAMPLE) {
@@ -164,6 +165,11 @@ void Engine::processCommands() {
                 m_smoothChoFreq = 0.0f; m_smoothChoDepth = 0.0f;
                 m_smoothDelL = 0.0f; m_smoothDelR = 0.0f;
                 m_songGcRing.push(cmd.u.song.data);
+                for (int i = 0; i < 8; ++i) {
+                    m_voices[i].resetOscillator();
+                    m_tableState[i] = {};
+                }
+                m_tableTickPhase = 0.0;
                 recalcBPM();
             }
         }
@@ -175,6 +181,7 @@ static inline bool valid(int i, int n) { return i >= 0 && i < n; }
 
 void Engine::emitNoteOff(int t, int songRowOverride) {
     m_voices[t].noteOff();
+    m_voices[t].setTableModulation(0.0f, 1.0f);  // clear table modulation
     EngineEvent e_off{};
     e_off.type = EventType::NOTE_OFF;
     e_off.track = t;
@@ -212,8 +219,9 @@ void Engine::tickTrack(int t) {
         }
     }
     
-    // Calculate groove for current track first
-    int grooveId = m_state.project.groove;
+    // Calculate groove for current track — per-track override takes priority
+    int grooveId = m_state.trackGroove[t] >= 0 ? m_state.trackGroove[t]
+                                                : m_state.project.groove;
     int grooveLength = 6;
     int maxGrooveLen = 16;
     if (valid(grooveId, Sequencer::NUM_GROOVES)) {
@@ -288,6 +296,20 @@ void Engine::tickTrack(int t) {
             if (fx.cmd == FxCmd::DEL) m_state.pendingDel[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::KIL) m_state.pendingKil[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::HOP) m_state.nextHop[t] = fx.val;
+            else if (fx.cmd == FxCmd::TBL) {
+                if (fx.val < Sequencer::NUM_TABLES) {
+                    m_tableState[t].assignedTable = fx.val;
+                    m_tableState[t].row = 0;
+                    m_tableState[t].tickCount = 0;
+                    if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
+                        m_tableState[t].tableTickRate = m_state.instruments[m_trackInstrument[t]].getTblTic();
+                    }
+                }
+            }
+            else if (fx.cmd == FxCmd::GRV) {
+                m_state.trackGroove[t] = (fx.val < Sequencer::NUM_GROOVES) ? fx.val : -1;
+                m_state.playGrooveIndex[t] = 0;
+            }
         };
         parseFX(step.fx[0]); parseFX(step.fx[1]); parseFX(step.fx[2]);
         
@@ -311,6 +333,12 @@ void Engine::tickTrack(int t) {
                 if (currentInst->type == InstType::INST_SAMPLER && currentInst->sampler.transp == 0)
                     effTranspose = 0;
                 else if (currentInst->type == InstType::INST_MACROSYN && currentInst->macrosyn.transp == 0)
+                    effTranspose = 0;
+                else if (currentInst->type == InstType::INST_HYPERSYN && currentInst->hyper.transp == 0)
+                    effTranspose = 0;
+                else if (currentInst->type == InstType::INST_FMSYNTH && currentInst->fm.transp == 0)
+                    effTranspose = 0;
+                else if (currentInst->type == InstType::INST_WAVSYNTH && currentInst->wav.transp == 0)
                     effTranspose = 0;
             }
             int midi = step.note + effTranspose;
@@ -359,6 +387,17 @@ void Engine::tickTrack(int t) {
             if (m_state.pendingInst[t]) {
                 notifyTrigSource(m_trackInstrument[t]);
             }
+            // Auto-assign instrument's own table (table index = trackInstrument[t])
+            // and initialize tick rate from tbl_tic. Only if no table was already assigned by TBL FX.
+            if (m_tableState[t].assignedTable < 0) {
+                m_tableState[t].assignedTable = m_trackInstrument[t];
+                m_tableState[t].row = 0;
+                m_tableState[t].tickCount = 0;
+            }
+            // Always sync tick rate from instrument tbl_tic (unless TIC FX overrides it)
+            if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
+                m_tableState[t].tableTickRate = m_state.instruments[m_trackInstrument[t]].getTblTic();
+            }
             m_state.pendingFreq[t] = 0.0f; // Prevent retrigger
         } else if (m_state.pendingVolValid[t]) {
             m_voices[t].setVolume(m_state.pendingVol[t]);
@@ -388,6 +427,54 @@ void Engine::tickTrack(int t) {
             }
         }
     }
+}
+
+void Engine::tickTable(int t) {
+    auto& ts = m_tableState[t];
+    if (ts.assignedTable < 0) return;
+    if (!valid(ts.assignedTable, Sequencer::NUM_TABLES)) return;
+
+    const TableStep* row = &m_sequencer.tables[ts.assignedTable][ts.row];
+
+    // --- Apply table row modulation to the voice ---
+    float tableTransp = static_cast<float>(row->transp);  // semitones (signed)
+    float tableVol = (row->vol == VOL_EMPTY) ? 1.0f : (row->vol / 127.0f);
+
+    m_voices[t].setTableModulation(tableTransp, tableVol);
+
+    // --- Parse table-internal FX (VOL, PIT, HOP, TIC) ---
+    for (int f = 0; f < 3; ++f) {
+        const auto& fx = row->fx[f];
+        if (fx.cmd == FxCmd::HOP) {
+            if (fx.val < Sequencer::ROWS) {
+                ts.row = fx.val;
+                ts.tickCount = 0;
+                // Immediately apply the target row's modulation
+                const TableStep* hopRow = &m_sequencer.tables[ts.assignedTable][ts.row];
+                float hopTransp = static_cast<float>(hopRow->transp);
+                float hopVol = (hopRow->vol == VOL_EMPTY) ? 1.0f : (hopRow->vol / 127.0f);
+                m_voices[t].setTableModulation(hopTransp, hopVol);
+                return;
+            }
+        }
+        else if (fx.cmd == FxCmd::TIC) {
+            ts.perColTickRate[f] = fx.val;
+        }
+        else if (fx.cmd == FxCmd::VOL) {
+            float fxVol = (fx.val <= 127) ? (fx.val / 127.0f) : 1.0f;
+            tableVol *= fxVol;
+            m_voices[t].setTableModulation(tableTransp, tableVol);
+        }
+        else if (fx.cmd == FxCmd::PIT) {
+            tableTransp += static_cast<float>(static_cast<int8_t>(fx.val));
+            m_voices[t].setTableModulation(tableTransp, tableVol);
+        }
+    }
+
+    // --- Advance to next row ---
+    ts.row++;
+    if (ts.row >= Sequencer::ROWS) ts.row = 0; // loop
+    ts.tickCount = 0;
 }
 
 void Engine::doTick() {
@@ -420,6 +507,36 @@ void Engine::doTick() {
         if (allEmpty) {
             m_songRow = 0;
             syncSongRow();
+        }
+    }
+
+    // Tick all tracks' tables independently at their own rate
+    for (int t = 0; t < 8; ++t) {
+        auto& ts = m_tableState[t];
+        if (ts.assignedTable < 0) continue;
+
+        int effectiveRate = ts.tableTickRate;
+
+        // TIC mode 0x00: advance only on note-on (handled in tickTrack), skip here
+        if (effectiveRate == 0x00) continue;
+
+        // TIC modes 0xFC-0xFE: map-based (octave/velocity/note) — advance on note-on only
+        if (effectiveRate >= 0xFC && effectiveRate <= 0xFE) continue;
+
+        // TIC mode 0xFF: 200 Hz fixed rate (240 samples at 48 kHz)
+        if (effectiveRate == 0xFF) {
+            m_tableTickPhase += 1.0;
+            if (m_tableTickPhase >= kTableTickRate200Hz) {
+                m_tableTickPhase -= kTableTickRate200Hz;
+                tickTable(t);
+            }
+            continue;
+        }
+
+        // Normal tick rate (0x01-0xFB): advance every N phrase ticks
+        ts.tickCount++;
+        if (ts.tickCount >= effectiveRate) {
+            tickTable(t);
         }
     }
 }
@@ -464,6 +581,24 @@ void Engine::render(float* buffer, int frames) {
                     cho = inst.macrosyn.cho / 255.0f;
                     del = inst.macrosyn.del / 255.0f;
                     rev = inst.macrosyn.rev / 255.0f;
+                } else if (inst.type == InstType::INST_HYPERSYN) {
+                    pan = inst.hyper.pan / 255.0f;
+                    dry = inst.hyper.dry / 255.0f;
+                    cho = inst.hyper.cho / 255.0f;
+                    del = inst.hyper.del / 255.0f;
+                    rev = inst.hyper.rev / 255.0f;
+                } else if (inst.type == InstType::INST_FMSYNTH) {
+                    pan = inst.fm.pan / 255.0f;
+                    dry = inst.fm.dry / 255.0f;
+                    cho = inst.fm.cho / 255.0f;
+                    del = inst.fm.del / 255.0f;
+                    rev = inst.fm.rev / 255.0f;
+                } else if (inst.type == InstType::INST_WAVSYNTH) {
+                    pan = inst.wav.pan / 255.0f;
+                    dry = inst.wav.dry / 255.0f;
+                    cho = inst.wav.cho / 255.0f;
+                    del = inst.wav.del / 255.0f;
+                    rev = inst.wav.rev / 255.0f;
                 }
             }
             

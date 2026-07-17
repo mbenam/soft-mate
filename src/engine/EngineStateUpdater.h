@@ -96,10 +96,18 @@ struct EngineStateUpdater {
             case ParamID::MOD_P1:
             case ParamID::MOD_P2:
             case ParamID::MOD_P3:
-            case ParamID::MOD_P4: {
+            case ParamID::MOD_P4:
+            case ParamID::WAV_SHAPE:
+            case ParamID::WAV_SIZE:
+            case ParamID::WAV_MULT:
+            case ParamID::WAV_WARP:
+            case ParamID::WAV_SCAN: {
                 if (cmd.targetId < 0 || cmd.targetId >= static_cast<int>(state.instruments.size())) break;
                 auto& inst = state.instruments[cmd.targetId];
                 const bool isMac = (inst.type == InstType::INST_MACROSYN);
+                const bool isHyp = (inst.type == InstType::INST_HYPERSYN);
+                const bool isFm  = (inst.type == InstType::INST_FMSYNTH);
+                const bool isWav = (inst.type == InstType::INST_WAVSYNTH);
 
                 switch (cmd.paramId) {
                     // Instrument Global
@@ -107,22 +115,24 @@ struct EngineStateUpdater {
                         inst.type = static_cast<InstType>(cmd.value);
                         if (inst.type == InstType::INST_SAMPLER) setName(inst.name, "SAMPLER     ");
                         else if (inst.type == InstType::INST_MACROSYN) setName(inst.name, "MACROSYN    ");
+                        else if (inst.type == InstType::INST_HYPERSYN) setName(inst.name, "HYPERSYN    ");
+                        else if (inst.type == InstType::INST_FMSYNTH) setName(inst.name, "FMSYNTH     ");
+                        else if (inst.type == InstType::INST_WAVSYNTH) setName(inst.name, "WAVSYNTH    ");
                         else setName(inst.name, "------------");
                         break;
-                    case ParamID::INST_TRANSP: if (isMac) inst.macrosyn.transp = cmd.value; else inst.sampler.transp = cmd.value; break;
-                    case ParamID::INST_TBL_TIC: if (isMac) inst.macrosyn.tbl_tic = cmd.value; else inst.sampler.tbl_tic = cmd.value; break;
-                    case ParamID::INST_EQ: if (isMac) inst.macrosyn.eq = cmd.value; else inst.sampler.eq = cmd.value; break;
-                    case ParamID::INST_AMP: if (isMac) inst.macrosyn.amp = cmd.value; else inst.sampler.amp = cmd.value; break;
-                    case ParamID::INST_LIM: if (isMac) inst.macrosyn.lim = cmd.value; else inst.sampler.lim = cmd.value; break;
-                    case ParamID::INST_PAN: if (isMac) inst.macrosyn.pan = cmd.value; else inst.sampler.pan = cmd.value; break;
-                    case ParamID::INST_DRY: if (isMac) inst.macrosyn.dry = cmd.value; else inst.sampler.dry = cmd.value; break;
-                    case ParamID::INST_CHO: if (isMac) inst.macrosyn.cho = cmd.value; else inst.sampler.cho = cmd.value; break;
-                    case ParamID::INST_DEL: if (isMac) inst.macrosyn.del = cmd.value; else inst.sampler.del = cmd.value; break;
-                    case ParamID::INST_REV: if (isMac) inst.macrosyn.rev = cmd.value; else inst.sampler.rev = cmd.value; break;
-                    case ParamID::INST_DEGRADE: if (isMac) inst.macrosyn.degrade = cmd.value; else inst.sampler.degrade = cmd.value; break;
-                    case ParamID::INST_FILTER: if (isMac) inst.macrosyn.filter_type = cmd.value; else inst.sampler.filter_type = cmd.value; break;
-                    case ParamID::INST_CUTOFF: if (isMac) inst.macrosyn.cutoff = cmd.value; else inst.sampler.cutoff = cmd.value; break;
-                    case ParamID::INST_RES: if (isMac) inst.macrosyn.res = cmd.value; else inst.sampler.res = cmd.value; break;
+                    case ParamID::INST_TRANSP: if (isHyp) inst.hyper.transp = cmd.value; else if (isMac) inst.macrosyn.transp = cmd.value; else if (isFm) inst.fm.transp = cmd.value; else if (isWav) inst.wav.transp = cmd.value; else inst.sampler.transp = cmd.value; break;
+                    case ParamID::INST_TBL_TIC: if (isHyp) inst.hyper.tbl_tic = cmd.value; else if (isMac) inst.macrosyn.tbl_tic = cmd.value; else if (isFm) inst.fm.tbl_tic = cmd.value; else if (isWav) inst.wav.tbl_tic = cmd.value; else inst.sampler.tbl_tic = cmd.value; break;
+                    case ParamID::INST_EQ: if (isHyp) inst.hyper.eq = cmd.value; else if (isMac) inst.macrosyn.eq = cmd.value; else if (isFm) inst.fm.eq = cmd.value; else if (isWav) inst.wav.eq = cmd.value; else inst.sampler.eq = cmd.value; break;
+                    case ParamID::INST_AMP: if (isHyp) inst.hyper.amp = cmd.value; else if (isMac) inst.macrosyn.amp = cmd.value; else if (isFm) inst.fm.amp = cmd.value; else if (isWav) inst.wav.amp = cmd.value; else inst.sampler.amp = cmd.value; break;
+                    case ParamID::INST_LIM: if (isHyp) inst.hyper.lim = cmd.value; else if (isMac) inst.macrosyn.lim = cmd.value; else if (isFm) inst.fm.lim = cmd.value; else if (isWav) inst.wav.lim = cmd.value; else inst.sampler.lim = cmd.value; break;
+                    case ParamID::INST_PAN: if (isHyp) inst.hyper.pan = cmd.value; else if (isMac) inst.macrosyn.pan = cmd.value; else if (isFm) inst.fm.pan = cmd.value; else if (isWav) inst.wav.pan = cmd.value; else inst.sampler.pan = cmd.value; break;
+                    case ParamID::INST_DRY: if (isHyp) inst.hyper.dry = cmd.value; else if (isMac) inst.macrosyn.dry = cmd.value; else if (isFm) inst.fm.dry = cmd.value; else if (isWav) inst.wav.dry = cmd.value; else inst.sampler.dry = cmd.value; break;
+                    case ParamID::INST_CHO: if (isHyp) inst.hyper.cho = cmd.value; else if (isMac) inst.macrosyn.cho = cmd.value; else if (isFm) inst.fm.cho = cmd.value; else if (isWav) inst.wav.cho = cmd.value; else inst.sampler.cho = cmd.value; break;
+                    case ParamID::INST_DEL: if (isHyp) inst.hyper.del = cmd.value; else if (isMac) inst.macrosyn.del = cmd.value; else if (isFm) inst.fm.del = cmd.value; else if (isWav) inst.wav.del = cmd.value; else inst.sampler.del = cmd.value; break;
+                    case ParamID::INST_REV: if (isHyp) inst.hyper.rev = cmd.value; else if (isMac) inst.macrosyn.rev = cmd.value; else if (isFm) inst.fm.rev = cmd.value; else if (isWav) inst.wav.rev = cmd.value; else inst.sampler.rev = cmd.value; break;
+                    case ParamID::INST_FILTER: if (isHyp) inst.hyper.filter_type = cmd.value; else if (isMac) inst.macrosyn.filter_type = cmd.value; else if (isFm) inst.fm.filter_type = cmd.value; else if (isWav) inst.wav.filter_type = cmd.value; else inst.sampler.filter_type = cmd.value; break;
+                    case ParamID::INST_CUTOFF: if (isHyp) inst.hyper.cutoff = cmd.value; else if (isMac) inst.macrosyn.cutoff = cmd.value; else if (isFm) inst.fm.cutoff = cmd.value; else if (isWav) inst.wav.cutoff = cmd.value; else inst.sampler.cutoff = cmd.value; break;
+                    case ParamID::INST_RES: if (isHyp) inst.hyper.res = cmd.value; else if (isMac) inst.macrosyn.res = cmd.value; else if (isFm) inst.fm.res = cmd.value; else if (isWav) inst.wav.res = cmd.value; else inst.sampler.res = cmd.value; break;
 
                     // Sampler
                     case ParamID::SAMP_PLAY: inst.sampler.play = cmd.value; break;
@@ -137,6 +147,28 @@ struct EngineStateUpdater {
                     case ParamID::MAC_TIMBRE: inst.macrosyn.timbre = cmd.value; break;
                     case ParamID::MAC_COLOR: inst.macrosyn.color = cmd.value; break;
                     case ParamID::MAC_REDUX: inst.macrosyn.redux = cmd.value; break;
+
+                    // FMSynth
+                    case ParamID::FM_ALGO: inst.fm.algo = cmd.value; break;
+                    case ParamID::FM_OP_SHAPE: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].shape = cmd.value; break;
+                    case ParamID::FM_OP_RATIO: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].ratio = cmd.value; break;
+                    case ParamID::FM_OP_RATIO_FINE: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].ratio_fine = cmd.value; break;
+                    case ParamID::FM_OP_LEVEL: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].level = cmd.value; break;
+                    case ParamID::FM_OP_FB: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].feedback = cmd.value; break;
+                    case ParamID::FM_OP_RETRIG: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].retrigger = cmd.value; break;
+                    case ParamID::FM_OP_MOD_A: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].mod_a = cmd.value; break;
+                    case ParamID::FM_OP_MOD_B: if (cmd.row >= 0 && cmd.row < 4) inst.fm.ops[cmd.row].mod_b = cmd.value; break;
+                    case ParamID::FM_MOD1: inst.fm.mod1 = cmd.value; break;
+                    case ParamID::FM_MOD2: inst.fm.mod2 = cmd.value; break;
+                    case ParamID::FM_MOD3: inst.fm.mod3 = cmd.value; break;
+                    case ParamID::FM_MOD4: inst.fm.mod4 = cmd.value; break;
+
+                    // WavSynth Specific
+                    case ParamID::WAV_SHAPE: inst.wav.shape = cmd.value; break;
+                    case ParamID::WAV_SIZE: inst.wav.size = cmd.value; break;
+                    case ParamID::WAV_MULT: inst.wav.mult = cmd.value; break;
+                    case ParamID::WAV_WARP: inst.wav.warp = cmd.value; break;
+                    case ParamID::WAV_SCAN: inst.wav.scan = cmd.value; break;
 
                     // Modulators — additionally bounds-check row against mods[4]
                     case ParamID::MOD_TYPE:

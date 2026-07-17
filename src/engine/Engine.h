@@ -14,7 +14,7 @@
 namespace m8 {
 namespace engine {
 
-enum class InstType { INST_SAMPLER, INST_MACROSYN, INST_MIDI, INST_NONE };
+enum class InstType { INST_SAMPLER, INST_MACROSYN, INST_HYPERSYN, INST_FMSYNTH, INST_WAVSYNTH, INST_MIDI, INST_NONE };
 
 enum class ModType { 
     AHD_ENV = 0, ADSR_ENV, DRUM_ENV, LFO, TRIG_ENV, TRACKING 
@@ -85,6 +85,88 @@ struct MacrosynState {
     int rev = 0x00;
 };
 
+struct WavSynthState {
+    int transp = 1;        // 0 = OFF, 1 = ON
+    int tbl_tic = 0xFF;
+    int eq = 0;            // 0 = --
+
+    int shape = 0;         // 0=Pulse12..8=Noise (9 base shapes), 9+=wavetable index
+    int size = 0x80;       // horizontal size (0-255, controls waveform width)
+    int mult = 0x00;       // multiplication / repeat count (hard-sync-like effect)
+    int warp = 0x80;       // push shape to one side (0=left, 0x80=center, 0xFF=right)
+    int scan = 0x00;       // on base shapes: mirror position (0-200%)
+
+    int filter_type = 0;   // 0-7 standard, 8-11 WAV filter modes
+    int cutoff = 0xFF;
+    int res = 0x00;
+    int amp = 0x00;
+    int lim = 0;           // 0=CLIP, 1=SIN, 2=FOLD, 3=WRAP, 4=POST, 5=POST:AD
+    int pan = 0x80;
+    int dry = 0xC0;
+    int cho = 0x00;
+    int del = 0x00;
+    int rev = 0x00;
+};
+
+struct HyperState {
+    int transp = 1;        // 0 = OFF, 1 = ON
+    int tbl_tic = 0xFF;
+    int eq = 0;            // 0 = --
+    int scale = 0xFF;      // scale index (0xFF = off)
+    int shift = 128;     // note shift (0x80 = no shift)
+    int swarm = 0x80;      // supersaw detune/spread
+    int width = 0x80;      // stereo width
+    int subosc = 0x00;     // sub oscillator level
+    int default_chord[7] = {0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C}; // MIDI notes
+    int chords[16][6] = {}; // 16 chord slots, 6 notes each
+    int filter_type = 0;   // 0 = OFF, 1 = LP, 2 = HP, 3 = BP
+    int cutoff = 0xFF;
+    int res = 0x00;
+    int amp = 0x00;
+    int lim = 0;           // 0 = CLIP, 1 = SIN, etc.
+    int pan = 0x80;
+    int dry = 0xC0;
+    int cho = 0x00;
+    int del = 0x00;
+    int rev = 0x00;
+};
+
+struct FMSynthState {
+    int transp = 1;
+    int tbl_tic = 0xFF;
+    int eq = 0;
+    int algo = 0;
+
+    struct FMOp {
+        int shape = 0;
+        int ratio = 0;
+        int ratio_fine = 0;
+        int level = 0;
+        int feedback = 0;
+        int retrigger = 1;
+        int mod_a = 0;
+        int mod_b = 0;
+    };
+
+    FMOp ops[4];
+
+    int mod1 = 0x80;
+    int mod2 = 0x80;
+    int mod3 = 0x80;
+    int mod4 = 0x80;
+
+    int filter_type = 0;
+    int cutoff = 0xFF;
+    int res = 0x00;
+    int amp = 0x00;
+    int lim = 0;
+    int pan = 0x80;
+    int dry = 0xC0;
+    int cho = 0x00;
+    int del = 0x00;
+    int rev = 0x00;
+};
+
 template <size_t N>
 inline void setName(char (&dst)[N], const char* src) {
     size_t i = 0;
@@ -107,7 +189,21 @@ struct Instrument {
     char name[13] = "------------";
     SamplerState sampler;
     MacrosynState macrosyn;
+    HyperState hyper;
+    FMSynthState fm;
+    WavSynthState wav;
     Modulator mods[4];
+
+    int getTblTic() const {
+        switch (type) {
+        case InstType::INST_SAMPLER:  return sampler.tbl_tic;
+        case InstType::INST_MACROSYN: return macrosyn.tbl_tic;
+        case InstType::INST_HYPERSYN: return hyper.tbl_tic;
+        case InstType::INST_FMSYNTH:  return fm.tbl_tic;
+        case InstType::INST_WAVSYNTH: return wav.tbl_tic;
+        default: return 0xFF;
+        }
+    }
 };
 
 struct ProjectSettings {
@@ -174,6 +270,14 @@ struct EffectsState {
     int rev_width = 0xFF;
 };
 
+struct TableState {
+    int assignedTable = -1;     // -1 = no table assigned; 0..255 = table index
+    int row = 0;                // current table row (0..15)
+    int tickCount = 0;          // counts ticks within current row
+    int tableTickRate = 0;      // from tbl_tic: 0=on-trigger, 1-0xFB=ticks/row, 0xFC-0xFE=maps, 0xFF=200Hz
+    int perColTickRate[3] = {-1, -1, -1}; // per-column TIC overrides (-1 = use tableTickRate)
+};
+
 struct EngineState {
     int bpm = 120;
     int bpm_frac = 0;
@@ -197,6 +301,7 @@ struct EngineState {
     int pendingDel[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int pendingKil[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int nextHop[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    int trackGroove[8] = {-1, -1, -1, -1, -1, -1, -1, -1}; // -1 = use project.groove
 
     std::vector<Instrument> instruments;
     ProjectSettings project;
@@ -519,6 +624,7 @@ private:
     void applyParameterUpdate(const EngineCommand& cmd);
     void doTick();
     void tickTrack(int t);
+    void tickTable(int t);
     // Silences the voice and emits a NOTE_OFF for track t using current
     // play-position state. songRowOverride lets SONG-mode callers pass
     // m_songRow directly (some sites use that instead of
@@ -559,6 +665,10 @@ private:
     int m_trackInstrument[8] = {0}; // Currently active instrument index per track
     int m_songRow = 0;               // Shared song row for SONG mode
     bool m_songRowAdvance = false;   // True when any chain ended this tick
+    
+    TableState m_tableState[8]; // one per track
+    double m_tableTickPhase = 0.0;
+    static constexpr double kTableTickRate200Hz = 48000.0 / 200.0; // 240 samples per tick
     
     float m_smoothChoFreq = 0.0f;
     float m_smoothChoDepth = 0.0f;

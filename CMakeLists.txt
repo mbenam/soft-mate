@@ -75,8 +75,17 @@ add_library(m8_engine STATIC
     src/io/SongIO.cpp
     src/analysis/AudioMetrics.cpp
     ${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source/Effects/reverbsc.cpp
+    src/engine/braids/analog_oscillator.cc
+    src/engine/braids/digital_oscillator.cc
+    src/engine/braids/macro_oscillator.cc
+    src/engine/braids/resources.cc
+    src/engine/braids/quantizer.cc
+    src/engine/stmlib/utils/random.cc
 )
-target_include_directories(m8_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(m8_engine PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/engine
+)
 target_link_libraries(m8_engine PUBLIC DaisySP m8_files_cpp kissfft)
 
 # Add executable
@@ -147,6 +156,11 @@ add_executable(m8_makesong src/tools/main_makesong.cpp)
 target_link_libraries(m8_makesong PRIVATE m8_engine)
 target_include_directories(m8_makesong PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Startup-song composer — authors songs/sunrise.m8s (data, not hard-coded).
+add_executable(m8_composesong src/tools/main_composesong.cpp)
+target_link_libraries(m8_composesong PRIVATE m8_engine)
+target_include_directories(m8_composesong PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # -------------------------------------------------------------------
 # Hardware capture tool (miniaudio header-only, no engine, no SDL)
 # -------------------------------------------------------------------
@@ -186,6 +200,10 @@ add_executable(m8_tests
     tests/test_persistence.cpp
     tests/test_audio.cpp
     tests/test_ui_scripts.cpp
+    tests/test_macrosynth.cpp
+    tests/test_fmsynth.cpp
+    tests/test_wavsynth.cpp
+    tests/test_tables.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

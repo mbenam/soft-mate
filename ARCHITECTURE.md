@@ -13,9 +13,12 @@
 
 A software clone of the **Dirtywave M8 tracker** written in C++20, built with CMake.
 It reproduces the M8's 320×240 tracker UI (SDL3), its Song → Chain → Phrase
-sequencing model, a per-track voice engine (sampler + saw synth) with M8-style
-modulators, a send-effects bus (chorus / delay / reverb via DaisySP), and
-**real `.m8s` song-file persistence** through the `m8-files-cxx` submodule.
+sequencing model, a per-track voice engine (sampler + **all four M8 synth
+engines**: MacroSynth via a ported Mutable Instruments **Braids**, plus
+HyperSynth / FMSynth / WavSynth) with M8-style modulators and per-instrument
+**Tables** (sub-sequencers), a send-effects bus (chorus / delay / reverb via
+DaisySP), and **real `.m8s` song-file persistence** through the `m8-files-cxx`
+submodule.
 
 The repo is structured so that the *entire audio engine is testable without SDL
 or an audio device*, and the *entire UI is testable without a human* via a
@@ -30,9 +33,10 @@ scripting harness.
 | `m8_render` | `src/tools/main_render.cpp` | `m8_engine` | Offline WAV renderer + event-CSV logger. Headless ground truth. |
 | `m8_analyze` | `src/tools/main_analyze.cpp` | `m8_engine` | WAV metrics checker (peak/DC/crest/clip/silence), `--diff` mode. |
 | `m8_makeprobe` | `src/tools/main_makeprobe.cpp` | `m8_files_cpp` only | Generates minimal `.m8s` probe songs (one instrument, one note). |
+| `m8_composesong` / `m8_makesong` | `src/tools/main_composesong.cpp` / `main_makesong.cpp` | `m8_engine` | Author songs to `.m8s` as data. `m8_composesong` writes `songs/sunrise.m8s` (the startup song). |
 | `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. `--batch`, `--keyjazz`. |
 | `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop; `--load-file` loads a probe fully unattended (Tier 3). |
-| `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | ~80 test cases across 13 files. |
+| `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | 128 test cases across ~20 files (verified 2026-07-17). |
 
 Third-party: `third_party/m8-files-cxx` (git submodule — `.m8s` read/write),
 `third_party/kissfft` (FFT for analysis), `third_party/miniaudio` (capture tool
@@ -113,12 +117,31 @@ This is the most important thing to understand. Everything else hangs off it.
 ### The voice (`SynthVoice`, `SamplerEngine`, `Envelopes.h`, `Lfo.h`, `Modulation.h`)
 
 - 8 voices, strictly **one per track, monophonic**.
-- Instrument types: `INST_SAMPLER` (full sample playback: FWD/REV/loop/ping-pong/
-  osc modes, region from start/loop_st/length bytes, linear interpolation,
-  detune at 1/16-semitone steps, sample-rate ratio correction) and
-  `INST_MACROSYN` (currently **just a polyBLEP saw** — shape/timbre/color/redux
-  are stored and editable but do not affect sound). `INST_MIDI`/`INST_NONE`
-  render nothing.
+- Instrument types (`InstType`): `INST_SAMPLER`, `INST_MACROSYN`, `INST_HYPERSYN`,
+  `INST_FMSYNTH`, `INST_WAVSYNTH`, `INST_MIDI`, `INST_NONE`. The render paths live in
+  `SynthVoice::renderSample` (booleans `isBraids`/`isHyper`/`isFM`/`isWav`; the polyBLEP saw
+  is now only the fallback for none-of-the-above):
+  - `INST_SAMPLER` — full sample playback: FWD/REV/loop/ping-pong/osc modes, region from
+    start/loop_st/length bytes, linear interpolation, detune at 1/16-semitone steps,
+    sample-rate ratio correction.
+  - `INST_MACROSYN` — **a real Mutable Instruments Braids port** (`src/engine/braids/` +
+    `src/engine/stmlib/`, MIT). Shapes `0x00–0x2B` drive `braids::MacroOscillator` (rendered in
+    24-sample blocks into `m_braidsBuffer`); `shape` picks the model, `timbre`/`color` map to
+    its two parameters. Shapes above `0x2B` fall back to the polyBLEP saw. Bundled wave data:
+    `braids/data/waves.bin`, `map.bin`.
+  - `INST_HYPERSYN` — supersaw: `default_chord[]` notes × detuned polyBLEP saws with `swarm`
+    spread, stereo `width`, `shift` transpose, and a `subosc`.
+  - `INST_FMSYNTH` — 4-operator / 12-algorithm FM with procedural wavetable oscillators
+    (`initFMWavetables`), per-op ratio/level/feedback/retrigger + mod-slot decode. *Reference
+    approximation, not hardware-verified* (see `FMSYNTH_IMPLEMENTATION.md` §10).
+  - `INST_WAVSYNTH` — 9 base shapes generated per note-on (`generateWavShape`) with
+    SIZE/MULT/WARP/SCAN shaping and WAV filter modes 8–11. *Approximation; wavetable shapes 9+
+    alias to sine* (`WAVSYNTH_IMPLEMENTATION.md` §10).
+  - `INST_MIDI`/`INST_NONE` render nothing.
+- **Tables** (per-instrument sub-sequencers) execute at tick time: `Engine::tickTable()` applies
+  each row's transpose/volume to the voice (`SynthVoice::setTableModulation`) and runs table FX
+  (HOP/TIC/VOL/PIT); assigned via phrase FX `TBL`, with `GRV` setting a per-track groove override
+  (`trackGroove[8]`). See `TABLE_IMPLEMENTATION.md` / `FX_COMMANDS_SPEC.md`.
 - Per-voice DSP chain: sample/osc → degrade (sample-and-hold decimator) →
   amp drive (up to 8×) → limiter modes (CLIP / SIN fold / FOLD / WRAP) →
   SVF filter (LP/HP/BP) → gate ramp (3 ms anti-click) × volume.
@@ -143,11 +166,15 @@ This is the most important thing to understand. Everything else hangs off it.
   file bytes** in `LoadResult::original`.
 - `saveSong` **re-parses the original bytes and overlays engine state onto that
   song object**, then `write_over`s the original buffer. This is the mechanism
-  that preserves unimplemented instrument types (FM, HyperSynth, WavSynth,
-  MIDI out, EQs...) byte-for-byte. Pre-4.0 files load read-only
-  (`writable == false`); save refuses them.
-- FM/Hyper/Wav instruments load as `INST_NONE` (silent) but **round-trip
-  intact** — verified by test L7.
+  that preserves unimplemented data (MIDI out, EQs, unmodelled fields...)
+  byte-for-byte. Pre-4.0 files load read-only (`writable == false`); save
+  refuses them.
+- Sampler, MacroSynth, HyperSynth, FMSynth, and WavSynth instruments all now
+  **load into their engine types and save back** (`convertSongToEngine` /
+  `convertEngineToSong` / `buildSongFromEngine` each have a branch per type);
+  modeled fields are overlaid so the byte-identical round-trip still holds for
+  untouched data (test L7). `INST_MIDI`/external types still load as `INST_NONE`
+  (silent) but round-trip intact.
 
 ### UI (`src/main.cpp`, `src/ui/**`)
 
@@ -223,7 +250,10 @@ sequencer walks (song/chain/phrase, transpose, empty-chain sync), FX
 overflow, sample-pool refcounting/reload-while-playing/GC-exactly-once,
 sampler play modes, all modulator types (incl. a fuzz test M18), TSan smoke
 test (concurrent render + command spam), demo-song audio metrics, `.m8s`
-byte-identical round-trips, and the UI script regression.
+byte-identical round-trips, the UI script regression, and the synth/table
+engines: `[macrosynth]` (all 44 Braids shapes finite/non-silent/no-clip),
+`[hypersynth]`, `[fmsynth]` (12 algos), `[wavsynth]` (9 shapes), and
+`[tables]` — each asserting zero allocation on the audio thread.
 
 ---
 
@@ -330,17 +360,26 @@ specifically built to catch.
   playhead highlighting, M8-style key model.
 - UI scripting harness with 16 command types and screen-content assertions;
   crash regressions pinned by scripts (`groovetest`, `pre40_refuses`, ...).
+- All four M8 synth engines audible: MacroSynth (ported Braids), HyperSynth (supersaw),
+  FMSynth (4-op/12-algo), WavSynth (9 shapes + SIZE/MULT/WARP/SCAN) — each with load/save
+  and offline "finite / non-silent / params change the spectrum" tests.
+- Tables execute at tick time (per-row transpose/volume + HOP/TIC/VOL/PIT FX), assigned via
+  phrase `TBL`; `GRV` per-track groove override.
 - Hardware ground-truth pipeline (probe generator → **unattended framebuffer-verified
   load on the headless** (`m8_nav`) → serial+USB capture → analyzer with hard numeric
-  gates → spectral A/B). Sampler parity validated offline; MacroSynth parity awaits Braids.
+  gates → spectral A/B). Sampler parity validated offline; MacroSynth is a faithful Braids
+  port; FM/Wav/Hyper are reference-approximations awaiting the hardware A/B acceptance gate.
 - RT-safety enforcement in tests: allocation counting, TSan smoke test,
   NaN/Inf/clip gates on every rendered chunk, ring-overflow resync tests.
 
 **Stored/editable but NOT yet audible (known stubs — don't mistake for bugs):**
-- MacroSynth shape/timbre/color/redux (always polyBLEP saw today).
-- Tables (data structures + Table screen exist; no tick-time execution).
+- MacroSynth `redux` and shapes above `0x2B` (the saw fallback). FM/Wav/Hyper *fidelity*
+  gaps: FM mod-routing encoding + mod index are un-tuned guesses, WavSynth wavetable shapes
+  9+ alias to sine. These make sound but aren't hardware-parity-verified.
 - Scales (16 scales editable; note→frequency ignores them).
-- FX commands VOL, PIT, REV in phrase steps (parsed from files, not executed).
+- FX commands VOL, PIT in *phrase* steps (parsed, not executed — they *do* run inside Tables);
+  REV is a stub everywhere. Many M8 FX commands (ARP/RET/RND/scale/arp/mixer sends...) absent —
+  see `FX_COMMANDS_SPEC.md`.
 - Mixer: input/USB channels, DJ filter, limiter value, `mix_vol`.
 - Effects: chorus width/reverb-send, delay width/reverb-send, reverb size /
   mod depth/freq / width (reverb LP is hardcoded 10 kHz; only decay is live).
@@ -538,8 +577,8 @@ specifically built to catch.
 
 | If you are about to… | Beware |
 |---|---|
-| Implement tables / scales / VOL+PIT FX | Do it inside `tickTrack`/`doTick` on the audio thread using existing state only; times in ticks; add OfflineHost tests first (the suite's naming convention is `B*/M*/L*/A*` + spec ID). |
-| Implement real MacroSynth shapes | Keep per-voice state in `SynthVoice`; init in ctor (no lazy allocation); reset on `LOAD_SONG` if it has feedback/state. |
+| Implement scales / phrase-level VOL+PIT FX (tables are **done**) | Do it inside `tickTrack`/`doTick` on the audio thread using existing state only; times in ticks; add OfflineHost tests first (the suite's naming convention is `B*/M*/L*/A*` + spec ID). Tables already work this way — see `Engine::tickTable`. |
+| Refine synth fidelity (Braids parity, FM/Wav tuning) | Per-voice DSP state lives in `SynthVoice`; **note the FM/Wav wavetables are lazily generated on first render** (`initFMWavetables`/`generateWavShape`) — that's a one-time fill of pre-sized member buffers, not a heap allocation, so it stays RT-safe, but reset any feedback/phase state on `LOAD_SONG`. Validate offline against `m8_spectrum`; the hardware A/B is the acceptance gate. |
 | Add a new screen | Follow `screens/<name>/` pattern: Render function + Layout header + NavNode map; wire into `ViewManager::getViewAt`, `main.cpp` input + render dispatch, and add a `.m8script`. |
 | Add a new persisted field | Extend *both* converters in `SongIO.cpp` (`convertSongToEngine` / `convertEngineToSong`) and confirm the byte-identical round-trip tests still pass. |
 | Touch `CommandRing` / rings | Re-run the TSan config (`-DM8_SANITIZE=tsan`) and `test_rt_safety`; keep capacity a power of two; keep payloads POD. |

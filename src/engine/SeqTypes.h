@@ -12,7 +12,7 @@ inline constexpr uint8_t INST_EMPTY  = 0xFF;
 inline constexpr uint8_t CHAIN_EMPTY = 0xFF;
 inline constexpr uint8_t PHRASE_EMPTY= 0xFF;
 
-enum class FxCmd : uint8_t { NONE = 0, VOL, PIT, DEL, REV, HOP, KIL };
+enum class FxCmd : uint8_t { NONE = 0, VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC };
 
 struct FxSlot {
     FxCmd   cmd = FxCmd::NONE;

@@ -372,8 +372,95 @@ static void convertSongToEngine(const m8::Song& song,
                 for (int m = 0; m < 4; ++m)
                     libModToEngine(inst.synth_params.mods[m], engInst.mods[m]);
             }
+            else if constexpr (std::is_same_v<T, m8::HyperSynth>) {
+                engInst.type = engine::InstType::INST_HYPERSYN;
+                engine::setName(engInst.name, inst.name.c_str());
+                auto& h = engInst.hyper;
+                h.transp  = inst.transpose ? 1 : 0;
+                h.tbl_tic = inst.table_tick;
+                h.scale = inst.scale;
+                h.shift = inst.shift;
+                h.swarm = inst.swarm;
+                h.width = inst.width;
+                h.subosc = inst.subosc;
+                for (int c = 0; c < 7; ++c)
+                    h.default_chord[c] = inst.default_chord[c];
+                for (int s = 0; s < 16; ++s)
+                    for (int n = 0; n < 6; ++n)
+                        h.chords[s][n] = inst.chords[s][n];
+                h.amp = inst.synth_params.volume;
+                h.filter_type = inst.synth_params.filter_type;
+                h.cutoff = inst.synth_params.filter_cutoff;
+                h.res = inst.synth_params.filter_res;
+                h.lim = inst.synth_params.amp_type;
+                h.pan = inst.synth_params.mixer_pan;
+                h.dry = inst.synth_params.mixer_dry;
+                h.cho = inst.synth_params.mixer_chorus;
+                h.del = inst.synth_params.mixer_delay;
+                h.rev = inst.synth_params.mixer_reverb;
+                for (int m = 0; m < 4; ++m)
+                    libModToEngine(inst.synth_params.mods[m], engInst.mods[m]);
+            }
+            else if constexpr (std::is_same_v<T, m8::FMSynth>) {
+                engInst.type = engine::InstType::INST_FMSYNTH;
+                engine::setName(engInst.name, inst.name.c_str());
+                auto& fm = engInst.fm;
+                fm.transp  = inst.transpose ? 1 : 0;
+                fm.tbl_tic = inst.table_tick;
+                fm.algo    = static_cast<int>(inst.algo);
+                for (int i = 0; i < 4; ++i) {
+                    fm.ops[i].shape      = static_cast<int>(inst.operators[i].shape);
+                    fm.ops[i].ratio      = inst.operators[i].ratio;
+                    fm.ops[i].ratio_fine = inst.operators[i].ratio_fine;
+                    fm.ops[i].level      = inst.operators[i].level;
+                    fm.ops[i].feedback   = inst.operators[i].feedback;
+                    fm.ops[i].retrigger  = inst.operators[i].retrigger;
+                    fm.ops[i].mod_a      = inst.operators[i].mod_a;
+                    fm.ops[i].mod_b      = inst.operators[i].mod_b;
+                }
+                fm.mod1 = inst.mod1;
+                fm.mod2 = inst.mod2;
+                fm.mod3 = inst.mod3;
+                fm.mod4 = inst.mod4;
+                fm.amp         = inst.synth_params.volume;
+                fm.filter_type = inst.synth_params.filter_type;
+                fm.cutoff      = inst.synth_params.filter_cutoff;
+                fm.res         = inst.synth_params.filter_res;
+                fm.lim         = inst.synth_params.amp_type;
+                fm.pan         = inst.synth_params.mixer_pan;
+                fm.dry         = inst.synth_params.mixer_dry;
+                fm.cho         = inst.synth_params.mixer_chorus;
+                fm.del         = inst.synth_params.mixer_delay;
+                fm.rev         = inst.synth_params.mixer_reverb;
+                for (int m = 0; m < 4; ++m)
+                    libModToEngine(inst.synth_params.mods[m], engInst.mods[m]);
+            }
+            else if constexpr (std::is_same_v<T, m8::WavSynth>) {
+                engInst.type = engine::InstType::INST_WAVSYNTH;
+                engine::setName(engInst.name, inst.name.c_str());
+                auto& ws = engInst.wav;
+                ws.transp  = inst.transpose ? 1 : 0;
+                ws.tbl_tic = inst.table_tick;
+                ws.shape   = static_cast<int>(inst.shape);
+                ws.size    = inst.size;
+                ws.mult    = inst.mult;
+                ws.warp    = inst.warp;
+                ws.scan    = inst.scan;
+                ws.amp         = inst.synth_params.volume;
+                ws.filter_type = inst.synth_params.filter_type;
+                ws.cutoff      = inst.synth_params.filter_cutoff;
+                ws.res         = inst.synth_params.filter_res;
+                ws.lim         = inst.synth_params.amp_type;
+                ws.pan         = inst.synth_params.mixer_pan;
+                ws.dry         = inst.synth_params.mixer_dry;
+                ws.cho         = inst.synth_params.mixer_chorus;
+                ws.del         = inst.synth_params.mixer_delay;
+                ws.rev         = inst.synth_params.mixer_reverb;
+                for (int m = 0; m < 4; ++m)
+                    libModToEngine(inst.synth_params.mods[m], engInst.mods[m]);
+            }
             else {
-                // Unimplemented types (FMSynth, HyperSynth, WavSynth, MIDIOut, External)
+                // Unimplemented types (MIDIOut, External)
                 engInst.type = engine::InstType::INST_NONE;
                 engine::setName(engInst.name, inst.name.c_str());
             }
@@ -495,6 +582,93 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             mac.reductor   = static_cast<uint8_t>(m.redux);
             engineMacrosynToLibSynthParams(m, mac.synth_params);
         }
+        else if (engInst.type == engine::InstType::INST_HYPERSYN &&
+                 std::holds_alternative<m8::HyperSynth>(song.instruments[i])) {
+            auto& hyp = std::get<m8::HyperSynth>(song.instruments[i]);
+            const auto& h = engInst.hyper;
+            hyp.transpose  = (h.transp != 0);
+            hyp.table_tick = static_cast<uint8_t>(h.tbl_tic);
+            hyp.scale      = static_cast<uint8_t>(h.scale);
+            hyp.shift      = static_cast<uint8_t>(h.shift);
+            hyp.swarm      = static_cast<uint8_t>(h.swarm);
+            hyp.width      = static_cast<uint8_t>(h.width);
+            hyp.subosc     = static_cast<uint8_t>(h.subosc);
+            for (int c = 0; c < 7; ++c)
+                hyp.default_chord[c] = static_cast<uint8_t>(h.default_chord[c]);
+            for (int s = 0; s < 16; ++s)
+                for (int n = 0; n < 6; ++n)
+                    hyp.chords[s][n] = static_cast<uint8_t>(h.chords[s][n]);
+            hyp.synth_params.volume = static_cast<uint8_t>(h.amp);
+            hyp.synth_params.filter_type = static_cast<uint8_t>(h.filter_type);
+            hyp.synth_params.filter_cutoff = static_cast<uint8_t>(h.cutoff);
+            hyp.synth_params.filter_res = static_cast<uint8_t>(h.res);
+            hyp.synth_params.amp_type = static_cast<uint8_t>(h.lim);
+            hyp.synth_params.mixer_pan = static_cast<uint8_t>(h.pan);
+            hyp.synth_params.mixer_dry = static_cast<uint8_t>(h.dry);
+            hyp.synth_params.mixer_chorus = static_cast<uint8_t>(h.cho);
+            hyp.synth_params.mixer_delay = static_cast<uint8_t>(h.del);
+            hyp.synth_params.mixer_reverb = static_cast<uint8_t>(h.rev);
+            for (int m = 0; m < 4; ++m)
+                hyp.synth_params.mods[m] = engineModToLib(engInst.mods[m]);
+        }
+        else if (engInst.type == engine::InstType::INST_FMSYNTH &&
+                 std::holds_alternative<m8::FMSynth>(song.instruments[i])) {
+            auto& fms = std::get<m8::FMSynth>(song.instruments[i]);
+            const auto& fm = engInst.fm;
+            fms.transpose  = (fm.transp != 0);
+            fms.table_tick = static_cast<uint8_t>(fm.tbl_tic);
+            fms.algo       = static_cast<m8::FmAlgo>(fm.algo);
+            for (int k = 0; k < 4; ++k) {
+                fms.operators[k].shape      = static_cast<m8::FMWave>(fm.ops[k].shape);
+                fms.operators[k].ratio      = static_cast<uint8_t>(fm.ops[k].ratio);
+                fms.operators[k].ratio_fine = static_cast<uint8_t>(fm.ops[k].ratio_fine);
+                fms.operators[k].level      = static_cast<uint8_t>(fm.ops[k].level);
+                fms.operators[k].feedback   = static_cast<uint8_t>(fm.ops[k].feedback);
+                fms.operators[k].retrigger  = static_cast<uint8_t>(fm.ops[k].retrigger);
+                fms.operators[k].mod_a      = static_cast<uint8_t>(fm.ops[k].mod_a);
+                fms.operators[k].mod_b      = static_cast<uint8_t>(fm.ops[k].mod_b);
+            }
+            fms.mod1 = static_cast<uint8_t>(fm.mod1);
+            fms.mod2 = static_cast<uint8_t>(fm.mod2);
+            fms.mod3 = static_cast<uint8_t>(fm.mod3);
+            fms.mod4 = static_cast<uint8_t>(fm.mod4);
+            fms.synth_params.volume        = static_cast<uint8_t>(fm.amp);
+            fms.synth_params.filter_type   = static_cast<uint8_t>(fm.filter_type);
+            fms.synth_params.filter_cutoff = static_cast<uint8_t>(fm.cutoff);
+            fms.synth_params.filter_res    = static_cast<uint8_t>(fm.res);
+            fms.synth_params.amp_type      = static_cast<uint8_t>(fm.lim);
+            fms.synth_params.mixer_pan     = static_cast<uint8_t>(fm.pan);
+            fms.synth_params.mixer_dry     = static_cast<uint8_t>(fm.dry);
+            fms.synth_params.mixer_chorus  = static_cast<uint8_t>(fm.cho);
+            fms.synth_params.mixer_delay   = static_cast<uint8_t>(fm.del);
+            fms.synth_params.mixer_reverb  = static_cast<uint8_t>(fm.rev);
+            for (int m = 0; m < 4; ++m)
+                fms.synth_params.mods[m] = engineModToLib(engInst.mods[m]);
+        }
+        else if (engInst.type == engine::InstType::INST_WAVSYNTH &&
+                 std::holds_alternative<m8::WavSynth>(song.instruments[i])) {
+            auto& wvs = std::get<m8::WavSynth>(song.instruments[i]);
+            const auto& ws = engInst.wav;
+            wvs.transpose  = (ws.transp != 0);
+            wvs.table_tick = static_cast<uint8_t>(ws.tbl_tic);
+            wvs.shape      = static_cast<m8::WavShape>(ws.shape);
+            wvs.size       = static_cast<uint8_t>(ws.size);
+            wvs.mult       = static_cast<uint8_t>(ws.mult);
+            wvs.warp       = static_cast<uint8_t>(ws.warp);
+            wvs.scan       = static_cast<uint8_t>(ws.scan);
+            wvs.synth_params.volume        = static_cast<uint8_t>(ws.amp);
+            wvs.synth_params.filter_type   = static_cast<uint8_t>(ws.filter_type);
+            wvs.synth_params.filter_cutoff = static_cast<uint8_t>(ws.cutoff);
+            wvs.synth_params.filter_res    = static_cast<uint8_t>(ws.res);
+            wvs.synth_params.amp_type      = static_cast<uint8_t>(ws.lim);
+            wvs.synth_params.mixer_pan     = static_cast<uint8_t>(ws.pan);
+            wvs.synth_params.mixer_dry     = static_cast<uint8_t>(ws.dry);
+            wvs.synth_params.mixer_chorus  = static_cast<uint8_t>(ws.cho);
+            wvs.synth_params.mixer_delay   = static_cast<uint8_t>(ws.del);
+            wvs.synth_params.mixer_reverb  = static_cast<uint8_t>(ws.rev);
+            for (int m = 0; m < 4; ++m)
+                wvs.synth_params.mods[m] = engineModToLib(engInst.mods[m]);
+        }
         // Any other case (INST_NONE, or engine type != library type): leave the
         // original instrument bytes untouched.
     }
@@ -541,10 +715,65 @@ static m8::Song buildSongFromEngine(const engine::Sequencer& seq,
                 ms.synth_params.mods[k] = engineModToLib(e.mods[k]);
             ms.synth_params.associated_eq = 0xFF;
             base.instruments[i] = ms;
+        } else if (e.type == engine::InstType::INST_HYPERSYN) {
+            m8::HyperSynth hyp{};
+            hyp.number = static_cast<uint8_t>(i);
+            hyp.name = trimName(e.name);
+            hyp.synth_params = {};
+            hyp.synth_params.mixer_pan = 0x80;
+            for (int k = 0; k < 4; ++k)
+                hyp.synth_params.mods[k] = engineModToLib(e.mods[k]);
+            hyp.synth_params.associated_eq = 0xFF;
+            base.instruments[i] = hyp;
+        } else if (e.type == engine::InstType::INST_FMSYNTH) {
+            m8::FMSynth fms{};
+            fms.number = static_cast<uint8_t>(i);
+            fms.name = trimName(e.name);
+            fms.algo = m8::FmAlgo::Algo0;
+            for (int k = 0; k < 4; ++k) {
+                fms.operators[k].shape = m8::FMWave::Sin;
+                fms.operators[k].ratio = 1;
+                fms.operators[k].ratio_fine = 0;
+                fms.operators[k].level = 0xFF;
+                fms.operators[k].feedback = 0;
+                fms.operators[k].retrigger = 1;
+                fms.operators[k].mod_a = 0;
+                fms.operators[k].mod_b = 0;
+            }
+            fms.mod1 = 0x80; fms.mod2 = 0x80; fms.mod3 = 0x80; fms.mod4 = 0x80;
+            fms.synth_params = {};
+            fms.synth_params.mixer_pan = 0x80;
+            for (int k = 0; k < 4; ++k)
+                fms.synth_params.mods[k] = engineModToLib(e.mods[k]);
+            fms.synth_params.associated_eq = 0xFF;
+            base.instruments[i] = fms;
+        } else if (e.type == engine::InstType::INST_WAVSYNTH) {
+            m8::WavSynth wvs{};
+            wvs.number = static_cast<uint8_t>(i);
+            wvs.name = trimName(e.name);
+            wvs.shape = m8::WavShape::Sine;
+            wvs.size = 0x80;
+            wvs.mult = 0x00;
+            wvs.warp = 0x80;
+            wvs.scan = 0x00;
+            wvs.synth_params = {};
+            wvs.synth_params.mixer_pan = 0x80;
+            for (int k = 0; k < 4; ++k)
+                wvs.synth_params.mods[k] = engineModToLib(e.mods[k]);
+            wvs.synth_params.associated_eq = 0xFF;
+            base.instruments[i] = wvs;
         } else {
             base.instruments[i] = std::monostate{};
         }
     }
+
+    // Project header fields convertEngineToSong doesn't set (they live in the
+    // file header, not the data sections). loadSong reads these back into
+    // project.name / project.transpose, so set them for the round-trip.
+    std::string nm(state.project.name);
+    while (!nm.empty() && (nm.back() == ' ' || nm.back() == '\0')) nm.pop_back();
+    base.name = nm;
+    base.transpose = static_cast<uint8_t>(state.project.transpose);
 
     // Overlays sequencer + instrument screen params (play/slice/start/loop/
     // length/degrade/transpose/table_tick/synth-params/fine_pitch). Leaves the

@@ -1,0 +1,8 @@
+# startup_song.m8script — the app must boot with the SUNRISE startup song
+# LOADED FROM DISK (songs/sunrise.m8s), not the hard-coded demo. Renders the
+# boot-loaded song so its audio can be compared against the offline renderer.
+wait 2
+assert_no_error
+assert_song_name sunrise.m8s
+render 6 startup_sunrise.wav
+assert_no_error

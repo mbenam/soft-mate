@@ -28,6 +28,7 @@
 #include <cstring>
 #include <memory>
 #include <vector>
+#include <filesystem>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -151,6 +152,65 @@ static bool loadSongIntoEngine(const std::string& path, const std::string& sampl
         missingSamplesMsg.clear();
     }
     return true;
+}
+
+// loadSongIntoEngine() loads the song structure but not its sample data. Decode
+// each sampler instrument's WAV (resolved under sampleRoot) and push a
+// LOAD_SAMPLE so the audio thread installs it — mirrors the offline renderer's
+// setup. Missing samples are simply skipped (the instrument stays silent; the
+// missing-samples overlay is driven separately by loadSongIntoEngine).
+static void loadSongSamples(const EngineState& state, const std::string& sampleRoot,
+                            CommandRing<EngineCommand, 1024>& commandRing) {
+    for (int i = 0; i < 128; ++i) {
+        if (state.instruments[i].type != InstType::INST_SAMPLER) continue;
+        const char* mpath = state.instruments[i].sampler.samplePath;
+        if (mpath[0] == '\0') continue;
+        std::string rel = mpath;
+        if (!rel.empty() && rel[0] == '/') rel = rel.substr(1);   // M8 paths are absolute
+        std::string resolved = sampleRoot.empty() ? rel : sampleRoot + "/" + rel;
+
+        SampleData buf{};
+        if (!FileBrowser::loadWavFile(resolved, buf) && !FileBrowser::loadWavFile(rel, buf))
+            continue;  // missing on disk — leave the instrument silent
+        std::strncpy(buf.path, mpath, sizeof(buf.path) - 1);
+        buf.path[sizeof(buf.path) - 1] = '\0';
+
+        EngineCommand cmd{};
+        cmd.type = CommandType::LOAD_SAMPLE;
+        cmd.targetId = i;
+        cmd.u.sample = buf;
+        if (!commandRing.push(cmd)) FileBrowser::freeWavFile(buf);
+    }
+}
+
+// Locate the startup song. Its committed location is <repo>/songs/, but the app
+// is commonly launched from build/Release/ (or elsewhere), so a bare relative
+// "songs/..." fails and the app would silently fall back to the demo. Search the
+// CWD first, then directories relative to the executable (repo root is
+// build/Release/../../). On success, returns the song path and its containing
+// "songs" dir as the sample root (the song's "/samples/..." resolve under it).
+static bool findStartupSong(const std::string& fileName,
+                            std::string& outSong, std::string& outSampleRoot) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::vector<fs::path> roots = { fs::path("songs") };
+    if (const char* base = SDL_GetBasePath()) {   // SDL3: owned by SDL, do not free
+        fs::path b(base);
+        roots.push_back(b / "songs");
+        roots.push_back(b / ".." / "songs");
+        roots.push_back(b / ".." / ".." / "songs");
+        roots.push_back(b / ".." / ".." / ".." / "songs");
+    }
+    for (const auto& r : roots) {
+        if (fs::exists(r / fileName, ec)) {
+            fs::path canon = fs::weakly_canonical(r, ec);
+            if (ec) canon = r;
+            outSampleRoot = canon.string();
+            outSong = (canon / fileName).string();
+            return true;
+        }
+    }
+    return false;
 }
 
 int main(int argc, char* argv[]) {
@@ -302,9 +362,25 @@ int main(int argc, char* argv[]) {
     // input handling was extracted out of main() (CODE_CLEANUP_SPEC.md #1) --
     // every call site now lives in the screens/<name>/ files that use it.
 
-    engine.loadDemoSong();
-    uiSequencer = engine.getSequencerForInit();
-    uiEngineState = engine.getStateForInit();
+    // Startup song is LOADED from disk (data, not hard-coded into the app). The
+    // in-code demo is only a fallback if the song file is missing.
+    {
+        std::string startupSong, startupRoot;
+        bool loaded = false;
+        if (findStartupSong("sunrise.m8s", startupSong, startupRoot)) {
+            sampleRoot = startupRoot;
+            m8::ui::project::setSampleRoot(sampleRoot);
+            loaded = loadSongIntoEngine(startupSong, sampleRoot, commandRing, uiSequencer,
+                                        uiEngineState, currentSongPath, currentLoadResult,
+                                        missingSamplesMsg);
+            if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
+        }
+        if (!loaded) {
+            engine.loadDemoSong();
+            uiSequencer = engine.getSequencerForInit();
+            uiEngineState = engine.getStateForInit();
+        }
+    }
 
     // ─── Script runner setup ───────────────────────────────────────────────
     std::unique_ptr<ScriptRunner> scriptRunner;

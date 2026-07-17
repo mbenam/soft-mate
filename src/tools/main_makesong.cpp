@@ -189,6 +189,10 @@ int main(int argc, char** argv) {
         if (ea.type == engine::InstType::INST_MACROSYN) {
             chk("mac.cutoff", ea.macrosyn.cutoff, eb.macrosyn.cutoff);
             chk("mac.amp",    ea.macrosyn.amp,    eb.macrosyn.amp);
+        } else if (ea.type == engine::InstType::INST_HYPERSYN) {
+            chk("hyp.cutoff", ea.hyper.cutoff, eb.hyper.cutoff);
+            chk("hyp.amp",    ea.hyper.amp,    eb.hyper.amp);
+            chk("hyp.swarm",  ea.hyper.swarm,  eb.hyper.swarm);
         } else if (ea.type == engine::InstType::INST_SAMPLER) {
             chk("smp.amp",    ea.sampler.amp,     eb.sampler.amp);
             chk("smp.rev",    ea.sampler.rev,     eb.sampler.rev);

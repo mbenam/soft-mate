@@ -53,6 +53,15 @@ enum class ParamID {
     // Macrosyn Specific
     MAC_SHAPE, MAC_TIMBRE, MAC_COLOR, MAC_REDUX,
 
+    // FMSynth Specific
+    FM_ALGO,
+    FM_OP_SHAPE, FM_OP_RATIO, FM_OP_RATIO_FINE, FM_OP_LEVEL, FM_OP_FB,
+    FM_OP_RETRIG, FM_OP_MOD_A, FM_OP_MOD_B,
+    FM_MOD1, FM_MOD2, FM_MOD3, FM_MOD4,
+
+    // WavSynth Specific
+    WAV_SHAPE, WAV_SIZE, WAV_MULT, WAV_WARP, WAV_SCAN,
+
     // Modulators
     MOD_TYPE, MOD_DEST, MOD_AMT, MOD_P1, MOD_P2, MOD_P3, MOD_P4,
 
