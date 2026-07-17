@@ -303,7 +303,17 @@ void Engine::tickTrack(int t) {
         float v = 0.64f;
         
         if (step.note != NOTE_EMPTY) {
-            int midi = step.note + transpose;
+            // The instrument TRANSP flag gates chain/song transpose: ON (1, the
+            // default) follows transpose; OFF (0) plays the written note unchanged
+            // (used e.g. for drum samples that must not pitch-shift with transpose).
+            int effTranspose = transpose;
+            if (currentInst) {
+                if (currentInst->type == InstType::INST_SAMPLER && currentInst->sampler.transp == 0)
+                    effTranspose = 0;
+                else if (currentInst->type == InstType::INST_MACROSYN && currentInst->macrosyn.transp == 0)
+                    effTranspose = 0;
+            }
+            int midi = step.note + effTranspose;
             if (midi < 0) midi = 0;
             if (midi > 127) midi = 127;
             freq = 440.0f * std::pow(2.0f, (midi - 69) / 12.0f);

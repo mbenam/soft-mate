@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <span>
 
 namespace m8::io {
 
@@ -334,7 +335,11 @@ static void convertSongToEngine(const m8::Song& song,
                 engine::setName(engInst.name, inst.name.c_str());
                 auto& s = engInst.sampler;
                 std::strncpy(s.samplePath, inst.sample_path.c_str(), sizeof(s.samplePath) - 1);
-                s.detune = 0x80;
+                s.transp  = inst.transpose ? 1 : 0;
+                s.tbl_tic = inst.table_tick;
+                // DETUNE: file fine_pitch is signed (0 == centre); engine detune is
+                // unsigned (0x80 == centre). Convert with a signed re-centre.
+                s.detune  = static_cast<int>(static_cast<int8_t>(inst.synth_params.fine_pitch)) + 0x80;
                 s.play = inst.play_mode;
                 s.slice = inst.slice;
                 s.start = inst.start;
@@ -347,6 +352,8 @@ static void convertSongToEngine(const m8::Song& song,
                 engInst.type = engine::InstType::INST_MACROSYN;
                 engine::setName(engInst.name, inst.name.c_str());
                 auto& ms = engInst.macrosyn;
+                ms.transp  = inst.transpose ? 1 : 0;
+                ms.tbl_tic = inst.table_tick;
                 ms.shape = inst.shape;
                 ms.timbre = inst.timbre;
                 ms.color = inst.color;
@@ -449,6 +456,101 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     fx.reverb_mod_depth = state.effects.rev_mod_depth;
     fx.reverb_mod_freq = state.effects.rev_mod_freq;
     fx.reverb_width = state.effects.rev_width;
+
+    // Instruments — overlay the fields our engine models onto the ORIGINAL song
+    // instruments. We only touch modeled/screen-exposed fields; every other byte
+    // (pitch, amp_limit, env_*_amt, lfo_*_amt, mods, associated_eq, sample_path,
+    // number) is preserved from the file that was re-read at the start of saveSong().
+    // That preservation is what keeps the byte-identical round-trip test passing.
+    for (size_t i = 0; i < song.instruments.size() && i < 128; ++i) {
+        const auto& engInst = state.instruments[i];
+
+        if (engInst.type == engine::InstType::INST_SAMPLER &&
+            std::holds_alternative<m8::Sampler>(song.instruments[i])) {
+            auto& smp = std::get<m8::Sampler>(song.instruments[i]);
+            const auto& s = engInst.sampler;
+            smp.transpose  = (s.transp != 0);
+            smp.table_tick = static_cast<uint8_t>(s.tbl_tic);
+            smp.play_mode  = static_cast<uint8_t>(s.play);
+            smp.slice      = static_cast<uint8_t>(s.slice);
+            smp.start      = static_cast<uint8_t>(s.start);
+            smp.loop_start = static_cast<uint8_t>(s.loop_st);
+            smp.length     = static_cast<uint8_t>(s.length);
+            smp.degrade    = static_cast<uint8_t>(s.degrade);
+            engineSamplerToLibSynthParams(s, smp.synth_params); // volume/filter/lim/pan/dry/sends
+            // DETUNE: engine detune is unsigned with 0x80 == centre; the file's
+            // fine_pitch is SIGNED with 0 == centre. See the WARNING in §1.3.
+            smp.synth_params.fine_pitch = static_cast<uint8_t>(s.detune - 0x80);
+        }
+        else if (engInst.type == engine::InstType::INST_MACROSYN &&
+                 std::holds_alternative<m8::MacroSynth>(song.instruments[i])) {
+            auto& mac = std::get<m8::MacroSynth>(song.instruments[i]);
+            const auto& m = engInst.macrosyn;
+            mac.transpose  = (m.transp != 0);
+            mac.table_tick = static_cast<uint8_t>(m.tbl_tic);
+            mac.shape      = static_cast<uint8_t>(m.shape);
+            mac.timbre     = static_cast<uint8_t>(m.timbre);
+            mac.color      = static_cast<uint8_t>(m.color);
+            mac.degrade    = static_cast<uint8_t>(m.degrade);
+            mac.reductor   = static_cast<uint8_t>(m.redux);
+            engineMacrosynToLibSynthParams(m, mac.synth_params);
+        }
+        // Any other case (INST_NONE, or engine type != library type): leave the
+        // original instrument bytes untouched.
+    }
+}
+
+// Build a full m8::Song from engine state, starting from `base` (a valid V4+
+// song parsed from a template). Pre-creates each instrument variant to match the
+// engine's type and fills the fields convertEngineToSong does NOT write (name,
+// sample_path, mods/envelopes); convertEngineToSong then overlays the screen
+// params (incl. fine_pitch) and the whole sequencer. This is how a song built
+// only in the engine — with no source file — becomes a real, reloadable .m8s.
+static m8::Song buildSongFromEngine(const engine::Sequencer& seq,
+                                    const engine::EngineState& state,
+                                    m8::Song base) {
+    auto trimName = [](const char* n) {
+        std::string s(n);
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\0')) s.pop_back();
+        return s;
+    };
+
+    base.instruments.resize(m8::Song::N_INSTRUMENTS);
+    for (size_t i = 0; i < base.instruments.size(); ++i) {
+        if (i >= state.instruments.size()) { base.instruments[i] = std::monostate{}; continue; }
+        const auto& e = state.instruments[i];
+
+        if (e.type == engine::InstType::INST_SAMPLER) {
+            m8::Sampler smp{};
+            smp.number = static_cast<uint8_t>(i);
+            smp.name = trimName(e.name);
+            smp.sample_path = e.sampler.samplePath;   // the engine's own record
+            smp.synth_params = {};
+            smp.synth_params.mixer_pan = 0x80;
+            for (int k = 0; k < 4; ++k)
+                smp.synth_params.mods[k] = engineModToLib(e.mods[k]);
+            smp.synth_params.associated_eq = 0xFF;
+            base.instruments[i] = smp;                // screen params overlaid below
+        } else if (e.type == engine::InstType::INST_MACROSYN) {
+            m8::MacroSynth ms{};
+            ms.number = static_cast<uint8_t>(i);
+            ms.name = trimName(e.name);
+            ms.synth_params = {};
+            ms.synth_params.mixer_pan = 0x80;
+            for (int k = 0; k < 4; ++k)
+                ms.synth_params.mods[k] = engineModToLib(e.mods[k]);
+            ms.synth_params.associated_eq = 0xFF;
+            base.instruments[i] = ms;
+        } else {
+            base.instruments[i] = std::monostate{};
+        }
+    }
+
+    // Overlays sequencer + instrument screen params (play/slice/start/loop/
+    // length/degrade/transpose/table_tick/synth-params/fine_pitch). Leaves the
+    // name/sample_path/mods we set above intact.
+    convertEngineToSong(seq, state, base);
+    return base;
 }
 
 // ---- Public API ----
@@ -537,6 +639,62 @@ bool saveSong(const std::string& path, const LoadResult& origin,
             error = "cannot write file";
             return false;
         }
+        return true;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    } catch (...) {
+        error = "unknown error";
+        return false;
+    }
+}
+
+bool saveNewSong(const std::string& path, const std::string& templatePath,
+                 const engine::Sequencer& seq, const engine::EngineState& state,
+                 std::string& error) {
+    try {
+        auto tmpl = readFile(templatePath);
+        if (tmpl.empty()) { error = "cannot read template: " + templatePath; return false; }
+
+        m8::BinaryReader r(tmpl);
+        m8::Song base = m8::Song::from_reader(r);
+        if (!base.version.at_least(4, 0)) {
+            error = "template is pre-4.0 — cannot author a writable song from it";
+            return false;
+        }
+
+        m8::Song song = buildSongFromEngine(seq, state, std::move(base));
+
+        // Full write. Song::write() only serialises the data sections (song/
+        // phrases/chains/tables/instruments/eqs), NOT the header region (tempo,
+        // name, mixer, grooves) or the effects block — so write_over would keep
+        // the TEMPLATE's tempo/mixer/effects, which is wrong for a song authored
+        // from scratch. Write the whole file, seeding unwritten regions (scales,
+        // tables, midi mappings, padding) from the template bytes.
+        const m8::Offsets& o = song.version.at_least(4, 1) ? m8::V4_1_OFFSETS : m8::V4_OFFSETS;
+        m8::BinaryWriter writer(std::move(tmpl));
+        const char sig[10] = {'M','8','V','E','R','S','I','O','N','\0'};
+        writer.write_bytes(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(sig), 10));
+        writer.write(static_cast<uint8_t>((song.version.minor << 4) | song.version.patch));
+        writer.write(static_cast<uint8_t>(song.version.major));
+        writer.write(0);
+        writer.write(0);
+        writer.write_string(song.directory, 128);
+        writer.write(song.transpose);
+        writer.write_f32_le(song.tempo);
+        writer.write(song.quantize);
+        writer.write_string(song.name, 12);
+        song.midi_settings.write(writer);
+        writer.write(song.key);
+        writer.skip(18);
+        song.mixer_settings.write(writer);
+        writer.seek(o.groove);
+        for (const auto& g : song.grooves) g.write(writer);
+        song.write(writer);                        // data sections (seeks internally)
+        writer.seek(o.effect_settings);
+        song.effects_settings.write(writer, song.version);
+        auto out = writer.finish();
+        if (!writeFile(path, out)) { error = "cannot write file: " + path; return false; }
         return true;
     } catch (const std::exception& e) {
         error = e.what();

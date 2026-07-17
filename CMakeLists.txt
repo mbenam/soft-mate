@@ -140,6 +140,14 @@ target_include_directories(m8_makeprobe PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/m8-files-cxx/src)
 
 # -------------------------------------------------------------------
+# Opening-song generator — writes songs/opening.m8s + its drum samples
+# (no SDL). Regenerates the committed demo song from engine state.
+# -------------------------------------------------------------------
+add_executable(m8_makesong src/tools/main_makesong.cpp)
+target_link_libraries(m8_makesong PRIVATE m8_engine)
+target_include_directories(m8_makesong PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# -------------------------------------------------------------------
 # Hardware capture tool (miniaudio header-only, no engine, no SDL)
 # -------------------------------------------------------------------
 add_executable(m8_capture src/tools/main_capture.cpp)

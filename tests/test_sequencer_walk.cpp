@@ -102,6 +102,29 @@ TEST_CASE("B4.7 Transpose", "[walk]") {
 }
 
 
+TEST_CASE("B4.12 Instrument TRANSP OFF ignores chain transpose", "[walk]") {
+    OfflineHost host;
+    // Instrument 0: a sampler with TRANSP OFF must ignore the chain's transpose.
+    auto& st = host.engine().getStateForInit();
+    st.instruments[0].type = InstType::INST_SAMPLER;
+    st.instruments[0].sampler.transp = 0;  // OFF
+
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);   // C-4 on instrument 0
+    setChain(host.sequencer(), 0, 0, 0, 12);   // +12
+    setChain(host.sequencer(), 0, 1, 0, -12);  // -12
+
+    host.push(playChain(0, 0));
+    host.renderSeconds(3.0);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 2);
+
+    float f_base = 440.0f * std::pow(2.0f, (60 - 69) / 12.0f);
+    // Both notes play at the written pitch — transpose suppressed by TRANSP OFF.
+    REQUIRE(std::abs(notes[0].frequency - f_base) < 1e-3);
+    REQUIRE(std::abs(notes[1].frequency - f_base) < 1e-3);
+}
+
 TEST_CASE("B4.6 Eight independent tracks", "[walk]") {
     OfflineHost host;
     

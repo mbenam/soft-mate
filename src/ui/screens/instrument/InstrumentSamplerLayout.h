@@ -98,7 +98,7 @@ inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetSamplerInteract
             {"", 10, 12, "SLIDER_BG", "LABEL_LITE", "slider", false, 6}
         }},
         {C::CHO, {
-            {"CHO", 17, 12, "LABEL_DIM", "LABEL_LITE", "label", false, 0},
+            {"MFX", 17, 12, "LABEL_DIM", "LABEL_LITE", "label", false, 0},
             {"00", 21, 12, "VALUE", "LABEL_LITE", "value", true, 0},
             {"", 24, 12, "SLIDER_BG", "LABEL_LITE", "slider", false, 6}
         }},

@@ -5,6 +5,7 @@
 #include "Lfo.h"
 #include "Modulation.h"
 #include "SamplerEngine.h"
+#include "ZdfFilter.h"
 #include "daisysp.h"
 
 namespace m8 {
@@ -31,6 +32,13 @@ public:
     void triggerModsWithSource(uint8_t src);
 
 private:
+    // Sampler amp/filter stage helpers. applyFilter dispatches FILTER types
+    // (1-4 via the non-ZDF SVF, 6/7 via the ZDF SVF; 5 passes through). the
+    // limiter/waveshaper implements the LIM modes. Both are used by the sampler
+    // render path; the ordering relative to the filter depends on POST mode.
+    float applyFilter(float in, int type, float cutoffHz, float res);
+    static float applyLimiter(float x, int mode);
+
     const Instrument* m_instrument = nullptr;
     bool m_active = false;
     bool m_finished = false;
@@ -51,6 +59,7 @@ private:
     SamplerEngine m_sampler;
     daisysp::Oscillator m_osc;
     daisysp::Svf m_filter;
+    ZdfSvf m_zdf;   // FILTER 06/07 (ZDF LP/HP); m_filter serves the non-ZDF types
 
     AhdEnv  m_ahdEnv[4];
     AdsrEnv m_adsrEnv[4];

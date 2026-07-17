@@ -34,7 +34,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 96 cases
+- **Tests**: Catch2 v3 — 109 cases
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -56,7 +56,7 @@ Targets:
   drives the device closed-loop: `--load-file NAME` loads any probe on the headless **fully
   unattended** (browser navigation, filename verified on screen before load); `--keys` /
   `--dump-screen` / `--json` for scripted control + inspection. Serial only (no engine/SDL/audio).
-- `m8_tests` — 96 cases
+- `m8_tests` — 109 cases
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -90,8 +90,9 @@ word.
 
 ### Sequencer
 Song→chain→phrase across 8 tracks, all advancing the song row together (empty chain = rest).
-Chain transpose. Groove/swing. FX `DEL`/`KIL`/`HOP` (clamped). Bounds-checked, fuzzed 10k under
-ASan. Note release on chain end.
+Chain transpose, **gated per-instrument by the TRANSP flag** (TRANSP OFF ignores transpose, e.g.
+for drum samples — `Engine.cpp`, test B4.12). Groove/swing. FX `DEL`/`KIL`/`HOP` (clamped).
+Bounds-checked, fuzzed 10k under ASan. Note release on chain end.
 
 ### Audio engine
 Stereo, 8 monophonic voices, per-track vol, equal-power pan, per-instrument dry/chorus/delay/
@@ -101,7 +102,27 @@ master bus. Tempo verified on real songs.
 ### Sampler (`M8_SAMPLER_SPEC_V2.md`, hardware-verified)
 Region `[LOOP ST, LOOP ST+LENGTH]` sample-relative. Play modes 00–08, reflecting overshoot.
 Stereo reads, linear interp, `double` phase. Root C-4, DETUNE 1/16 semitone, SR correction.
-`LOOP ST`/`LENGTH` live per-sample. DEGRADE, AMP, LIM (CLIP/SIN/FOLD/WRAP), FILTER (LP/HP/BP/BS).
+`LOOP ST`/`LENGTH` live per-sample. DEGRADE, AMP, LIM (CLIP/SIN/FOLD/WRAP + POST/POST:AD),
+FILTER (LP/HP/BP/BS + ZDF LP/HP).
+**Instrument screen sealed (2026-07-17):** every SAMPLER-screen field now loads, renders (where
+modeled), is editable, **and saves** — see Persistence. `DETUNE` loads/saves correctly (file
+`fine_pitch` is a *signed* offset, engine detune is *unsigned* 0x80-centre: `detune = fine_pitch +
+0x80`); the previous hardcode-to-centre bug is gone. `TRANSP` loads/saves and now gates transpose
+in the engine.
+**Note tracking (2026-07-17):** the sampler is now chromatic — a note above root C-4 plays the
+sample proportionally faster/higher (`SynthVoice.cpp`, `kSamplerRootMidi = 60`; test S-NOTE1:
+C-4 → 262 Hz, C-5 → 525 Hz). This was previously absent (`kSamplerRootMidi` was dead code): every
+note played at one pitch, so sampler melodies didn't work. Demo drums are triggered at C-4, so they
+are unaffected. *Behaviour change:* a real song that plays a sampler at non-root notes now repitches
+(as hardware does) where before it did not.
+**Phase 4 DSP (2026-07-17):** FILTER 06/07 (ZDF LP/HP) implemented as a topology-preserving-transform
+SVF (Cytomic/Zavalishin reference, `ZdfFilter.h`; tests S-ZDF1/2/3 — pass/stop band + high-res
+stability). LIM 04/05 (POST / POST:AD) implemented: for these modes the AMP gain and its clipping
+apply *after* the filter (hard clip / `tanh` soft clip; test S-LIM-POST). All offline math-reference
+tests, no hardware needed.
+Remaining sampler *behavior* (not screen coverage): SLICE playback, REPITCH/BPM play modes 09–0E,
+sample REC/EDIT, FILTER 05 (LP>HP), LIM 06–08 (POST:W1–W3) — see the notes below and
+`M8_SAMPLER_COMPLETION_SPEC.md` Phases 2–4.
 
 ### Modulation (`M8_MODULATION_SPEC.md`, hardware-verified)
 No built-in amp env (gate + anti-click ramp; amp env is a mod slot). Envelope times in **ticks,
@@ -115,6 +136,12 @@ Load/save real `.m8s` via `m8-files-cxx`. **Byte-identical round-trip** on V4/V4
 **preserved on save** (L7). Missing samples don't fail the load (L6). Save refuses pre-4.0.
 File browser + Project LOAD/SAVE + SAMPLE ROOT wired. **A song written on real hardware plays
 correctly**, verified end to end.
+**Instrument edits now persist (2026-07-17):** `convertEngineToSong` gained the instrument
+overlay loop it was missing — Sampler and MacroSynth screen fields (play/slice/start/loop/length/
+degrade/transpose/table_tick + the synth-params subset + DETUNE via `fine_pitch`) are written back
+on save, overlaying only modeled fields so the byte-identical round-trip still holds (tests S-RT1,
+S-DET2). Previously the `engine→file` mappers were dead code and instrument edits were silently
+discarded on save. (MacroSynth `shape/timbre/color` now round-trip too — groundwork for Braids.)
 
 ### Analysis + capture tooling (`M8_AUDIO_ANALYSIS_SPEC.md` Parts A–D, `M8_CAPTURE_SPEC.md`)
 - **kissfft** vendored; `magnitudeSpectrum()` with a baked-in Hann window.
@@ -184,7 +211,7 @@ correctly**, verified end to end.
 `loadDemoSong()` — "Night Drive", 16 bars, C minor, 124 BPM, swing, building dynamics, drums
 generated in code. Scaffolding.
 
-### Tests — 96 cases
+### Tests — 109 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio]`. Offline against `m8_engine`, no audio device. All pass under
 x64 ASan. Weightiest: B8.1, B3.3, B4.9 (10k fuzz), B7.2, L4, L7, M2, M12, A3, A5.
@@ -297,9 +324,29 @@ is implemented and verified.
 - **`INST_MACROSYN` is a POLYBLEP saw.** Not Braids. `shape`/`timbre`/`color`/`redux` ignored.
   **This is why real MacroSynth songs play right notes but sound wrong. It is the next feature,
   and the parity rig (`m8_makeprobe` + `m8_capture` + `m8_spectrum`) exists for exactly this.**
-- **`PLAY` 09–0E** (REPITCH/BPM) fall back. Need SLICE.
-- **`LIM` 05–08**, **`FILTER` 06/07** (ZDF), **LFO 0x0D–0x16** alias to simpler forms.
-  **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
+  The sound source today is a single DaisySP `WAVE_POLYBLEP_SAW` oscillator (`SynthVoice.cpp:12`,
+  `:223`), identical for every patch — it is NOT one of the M8's models (even shape `00` on hardware
+  is Braids' CSAW, not a generic saw). **Forward plan (decided 2026-07-17):** keep the saw but
+  **demote it to an explicit fallback** — port Braids models shape-by-shape (Braids = Mutable
+  Instruments, MIT), and the saw only renders for shapes not yet ported (so the app never goes
+  silent mid-port). Once a shape is covered by a real Braids model, the saw must not be its voice.
+  It is also the sound of the melodic tracks in the committed opening song (`songs/opening.m8s`).
+- **`PLAY` 09–0E** (REPITCH/BPM) fall back to the nearest 00–08 mode. Screen-mapped (device photos,
+  2026-07-17): REPITCH modes expose a **STEPS** parameter, BPM modes a **BPM** parameter, in the row
+  under PLAY (default `0x80`). Confirmed STEPS is **not** the DETUNE/`fine_pitch` byte — it's a
+  separate stored byte (likely `synth_params.pitch`, unconfirmed). Still blocked on the **tempo
+  formula** (STEPS→count, ratio law, REP-repitch vs BPM-timestretch), which needs an audio capture —
+  guessing it would violate `AGENTS.md` §4. See memory `sampler-slice-repitch-hw`.
+- **`SLICE` playback** ignored (value stored/saved only). Encoding now **hardware-verified** (device
+  screen, 2026-07-17): `00`=OFF, `01`=FILE (WAV-embedded markers, needs cue-chunk parsing),
+  `02`–`0x80` = 2–128 equal divisions (byte value = slice count). Equal-division playback is now
+  implementable — the note→slice base (C-1 = MIDI 24, derived from C-4=60) and the START/LENGTH
+  interaction want a quick audible confirm first. FILE-marker mode is a separate feature. See memory
+  `sampler-slice-repitch-hw`.
+- **`FILTER` 05** (LP>HP) passes through (not modeled). **`LIM` 06–08** (POST:W1–W3) fall back to
+  post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`
+  0x0D–0x16** alias to simpler forms. **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
+  (`FILTER` 06/07 ZDF and `LIM` 04/05 POST/POST:AD are now implemented — see Sampler above.)
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
@@ -333,7 +380,7 @@ MODDST 00 OFF 01 VOLUME 02 PITCH 03 LOOP ST 04 LENGTH 05 DEGRADE 06 CUTOFF
 AMT    bipolar, 0x80 neutral / 0x00 inverted / 0xFF full
 LFOTRG 00 FREE 01 RETRIG 02 HOLD 03 ONCE
 TRKSRC 00 NOTE 01 VELOCITY 02 VEL. TAKE      TRIGSRC = instrument index (sidechain)
-Root C-4 (MIDI 60)   DETUNE 1/16 semitone/step, 0x80 centre
+Root C-4 (MIDI 60)   DETUNE 1/16 semitone/step, 0x80 centre (file fine_pitch is signed offset, engine detune is unsigned: detune = fine_pitch + 0x80)
 Env times IN TICKS, tempo-relative
 LOOP window [LOOP ST, LOOP ST+LENGTH], relative to the WHOLE SAMPLE  (only inference; test S6)
 ```
@@ -438,9 +485,13 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
    stored/preserved today but never executed at tick time. Affects many real songs.
 3. **WavSynth / FMSynth / HyperSynth** — standard wavetable / phase-mod FM / supersaw. Data
    already preserved on load/save; silent on play. Same reference-then-offline-test pattern.
-4. **SLICE**, then the REPITCH / BPM play modes that depend on it.
-5. **Scales** (note→frequency), **stereo voice path**, ZDF filters, the aliased LIM/LFO modes,
-   FX `VOL`/`PIT`/`REV`, project EQ/limiter/DJF — quality/coverage cleanups.
+4. **SLICE** (equal-division encoding now hardware-verified — implementable; FILE-marker mode and
+   the note-base/START-interaction confirm remain), then the REPITCH / BPM play modes, which are
+   still **blocked on a device capture** for the STEPS/BPM byte + tempo formula (see Placeholders);
+   do not guess the formula.
+5. **Scales** (note→frequency), **stereo voice path**, FILTER 05 (LP>HP), the aliased LIM 06–08 /
+   LFO modes, FX `VOL`/`PIT`/`REV`, project EQ/limiter/DJF — quality/coverage cleanups. (ZDF
+   filters and LIM POST/POST:AD are **done** — 2026-07-17.)
 6. **Hardware audio-parity acceptance pass** (once the above land): resolve the USB-capture-level
    config (Known issues), use sustaining parity probes, and confirm capture-vs-render distance
    shrinks toward zero — first for the sampler (already at parity), then per Braids model.

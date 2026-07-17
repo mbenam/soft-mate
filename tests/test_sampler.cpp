@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
 #include "engine/SamplerEngine.h"
+#include "engine/ZdfFilter.h"
 #include <vector>
 #include <cstring>
 #include <cstdio>
@@ -9,6 +10,26 @@
 using namespace m8::test;
 using namespace m8::engine;
 using namespace std;
+
+// RMS of a `freqHz` sine after passing through the ZDF SVF, measured over the
+// steady-state second half (past the filter's transient). `wantHp` selects the
+// high-pass output, otherwise low-pass. Input sine amplitude is 1.0, so the
+// return value is directly the magnitude response at that frequency.
+static float zdfResponse(bool wantHp, float freqHz, float cutoffHz, float res) {
+    ZdfSvf f;
+    f.reset();
+    f.setParams(cutoffHz, res, 48000.0f);
+    const int n = 24000;
+    double sumSq = 0.0;
+    for (int i = 0; i < n; ++i) {
+        float in = std::sin(6.2831853f * freqHz * i / 48000.0f);
+        float hp = 0.0f;
+        float lp = f.process(in, hp);
+        float out = wantHp ? hp : lp;
+        if (i >= n / 2) sumSq += double(out) * double(out);
+    }
+    return float(std::sqrt(sumSq / (n / 2)));
+}
 
 static SampleData makeRamp(int frames, int channels = 1, int sr = 48000) {
     SampleData sd{};
@@ -360,4 +381,41 @@ TEST_CASE("S21 Pool full - incoming freed via GC", "[sampler]") {
         if (gc.data == bufs[128].data()) overflowInGc++;
     }
     REQUIRE(overflowInGc == 1);
+}
+
+TEST_CASE("S-ZDF1 ZDF low-pass passes lows, attenuates highs", "[sampler]") {
+    const float cutoff = 2000.0f, res = 0.3f;
+    float pass = zdfResponse(false, 100.0f, cutoff, res);    // well below cutoff
+    float stop = zdfResponse(false, 12000.0f, cutoff, res);  // well above cutoff
+    // rms of a unit sine is ~0.707; the pass band should be near that.
+    REQUIRE(pass > 0.6f);
+    REQUIRE(stop < 0.1f);
+    REQUIRE(pass / stop > 8.0f);   // clear low-pass slope
+}
+
+TEST_CASE("S-ZDF2 ZDF high-pass passes highs, attenuates lows", "[sampler]") {
+    const float cutoff = 2000.0f, res = 0.3f;
+    float pass = zdfResponse(true, 12000.0f, cutoff, res);   // well above cutoff
+    float stop = zdfResponse(true, 100.0f, cutoff, res);     // well below cutoff
+    REQUIRE(pass > 0.6f);
+    REQUIRE(stop < 0.1f);
+    REQUIRE(pass / stop > 8.0f);   // clear high-pass slope
+}
+
+TEST_CASE("S-ZDF3 ZDF filter stays finite and bounded under noise", "[sampler]") {
+    ZdfSvf f;
+    f.reset();
+    f.setParams(1000.0f, 0.95f, 48000.0f);   // high resonance stress
+    uint32_t rng = 0x12345678u;
+    float peak = 0.0f;
+    for (int i = 0; i < 96000; ++i) {
+        rng = rng * 1664525u + 1013904223u;
+        float in = (float(rng >> 8) / 8388608.0f) - 1.0f;   // white noise ~[-1,1]
+        float hp = 0.0f;
+        float lp = f.process(in, hp);
+        REQUIRE(std::isfinite(lp));
+        REQUIRE(std::isfinite(hp));
+        peak = std::max(peak, std::fabs(lp));
+    }
+    REQUIRE(peak < 100.0f);   // does not blow up even at high resonance
 }

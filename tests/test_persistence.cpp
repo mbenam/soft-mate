@@ -469,3 +469,97 @@ TEST_CASE("T0 makeprobe round-trip in CI", "[io]") {
     // Clean up
     std::filesystem::remove(outPath);
 }
+
+TEST_CASE("S-RT1 sampler fields round-trip through save/reload", "[io]") {
+    auto a = loadSong("hwtest_out/probes/probe_sampler.m8s", "hwtest_out");
+    REQUIRE(a.ok);
+    REQUIRE(a.writable);
+
+    auto& s = a.state.instruments[0].sampler;
+    a.state.instruments[0].type = InstType::INST_SAMPLER;
+    s.play = 2;
+    s.start = 0x11;
+    s.loop_st = 0x22;
+    s.length = 0x33;
+    s.slice = 0x44;
+    s.degrade = 0x55;
+    s.amp = 0x66;
+    s.filter_type = 1;
+    s.cutoff = 0x77;
+    s.res = 0x18;
+    s.lim = 1;
+    s.pan = 0x40;
+    s.dry = 0x50;
+    s.cho = 0x10;
+    s.del = 0x20;
+    s.rev = 0x30;
+    s.detune = 0x90;
+    s.transp = 0;
+    s.tbl_tic = 0x0F;
+
+    std::string err;
+    bool saved = saveSong("temp_rt_sampler.m8s", a, a.sequencer, a.state, err);
+    REQUIRE(saved);
+    REQUIRE(err.empty());
+
+    auto b = loadSong("temp_rt_sampler.m8s", "hwtest_out");
+    REQUIRE(b.ok);
+    REQUIRE(b.state.instruments[0].type == InstType::INST_SAMPLER);
+    const auto& s2 = b.state.instruments[0].sampler;
+    REQUIRE(s2.play == 2);
+    REQUIRE(s2.start == 0x11);
+    REQUIRE(s2.loop_st == 0x22);
+    REQUIRE(s2.length == 0x33);
+    REQUIRE(s2.slice == 0x44);
+    REQUIRE(s2.degrade == 0x55);
+    REQUIRE(s2.amp == 0x66);
+    REQUIRE(s2.filter_type == 1);
+    REQUIRE(s2.cutoff == 0x77);
+    REQUIRE(s2.res == 0x18);
+    REQUIRE(s2.lim == 1);
+    REQUIRE(s2.pan == 0x40);
+    REQUIRE(s2.dry == 0x50);
+    REQUIRE(s2.cho == 0x10);
+    REQUIRE(s2.del == 0x20);
+    REQUIRE(s2.rev == 0x30);
+    REQUIRE(s2.detune == 0x90);
+    REQUIRE(s2.transp == 0);
+    REQUIRE(s2.tbl_tic == 0x0F);
+
+    std::filesystem::remove("temp_rt_sampler.m8s");
+}
+
+TEST_CASE("S-DET2 detune loads/saves signed fine_pitch correctly", "[io]") {
+    auto a = loadSong("hwtest_out/probes/probe_sampler.m8s", "hwtest_out");
+    REQUIRE(a.ok);
+
+    // Test case 1: detune = 0x90 (+16) -> fine_pitch = 0x10 (+16)
+    a.state.instruments[0].sampler.detune = 0x90;
+    std::string err;
+    REQUIRE(saveSong("temp_det1.m8s", a, a.sequencer, a.state, err));
+    
+    auto b = loadSong("temp_det1.m8s", "hwtest_out");
+    REQUIRE(b.ok);
+    REQUIRE(b.state.instruments[0].sampler.detune == 0x90);
+
+    // Verify file bytes directly
+    auto data1 = readFile("temp_det1.m8s");
+    m8::BinaryReader r1(data1);
+    m8::Song song1 = m8::Song::from_reader(r1);
+    REQUIRE(std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch == 0x10);
+    
+    std::filesystem::remove("temp_det1.m8s");
+
+    // Test case 2: fine_pitch = 0xF0 (-16) -> detune = 0x70
+    std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch = 0xF0;
+    auto outData = song1.write_over(data1);
+    std::ofstream out("temp_det2.m8s", std::ios::binary);
+    out.write(reinterpret_cast<char*>(outData.data()), outData.size());
+    out.close();
+
+    auto c = loadSong("temp_det2.m8s", "hwtest_out");
+    REQUIRE(c.ok);
+    REQUIRE(c.state.instruments[0].sampler.detune == 0x70);
+
+    std::filesystem::remove("temp_det2.m8s");
+}

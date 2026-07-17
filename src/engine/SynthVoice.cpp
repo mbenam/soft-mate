@@ -28,6 +28,7 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
     if (m_instrument && m_instrument->type == InstType::INST_SAMPLER) {
         m_sampler.computeRegion(m_instrument->sampler);
     }
+    m_zdf.reset();
 
     for (int i = 0; i < 4; ++i) {
         if (m_instrument) {
@@ -153,7 +154,18 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         const SampleData* sd = m_sampler.data();
         float dataSr = sd ? float(sd->sampleRate) : kSampleRate;
         float detuneSemis = (s.detune - 128) * kDetuneSemisPerStep;
-        float semis = detuneSemis + mt.pitch * 12.0f;
+        // Note tracking: the M8 sampler is chromatic with root C-4 (MIDI 60).
+        // A note above the root plays the sample proportionally faster/higher;
+        // the root note itself plays at natural pitch. m_frequency is the note's
+        // frequency (0 only if never triggered). REPITCH/BPM play modes (09-0E,
+        // not yet modeled) would derive pitch from tempo instead — see
+        // M8_SAMPLER_COMPLETION_SPEC.md Phase 2.
+        float noteSemis = 0.0f;
+        if (m_frequency > 0.0f) {
+            constexpr float kRootFreq = 440.0f * 0.5946035575f; // 440*2^((60-69)/12) = C-4
+            noteSemis = 12.0f * std::log2(m_frequency / kRootFreq);
+        }
+        float semis = noteSemis + detuneSemis + mt.pitch * 12.0f;
         float srRatio = dataSr / kSampleRate;
         float ratio = std::exp2(semis / 12.0f) * srRatio;
         ratio = std::clamp(ratio, 1e-4f, 32.0f);
@@ -182,41 +194,24 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         }
 
         float ampVal = std::clamp(1.0f + (s.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-        sample *= ampVal;
 
         int limMode = s.lim;
-        switch (limMode) {
-        case 0: sample = std::clamp(sample, -1.0f, 1.0f); break;
-        case 1: sample = std::sin(sample * 1.5707963f); break;
-        case 2: sample = std::clamp(sample * 2.0f, -1.0f, 1.0f) - std::clamp(sample, -0.5f, 0.5f); break;
-        case 3: { float x = sample - std::floor(sample); sample = x * 4.0f - 1.0f; } break;
-        default: sample = std::clamp(sample, -1.0f, 1.0f); break;
-        }
-
         int filterType = s.filter_type;
         float baseCutoff = 20.0f * std::pow(2.0f, (s.cutoff / 255.0f) * 10.0f);
-        float baseRes = s.res / 255.0f;
-        float finalCutoff = baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f);
-        finalCutoff = std::clamp(finalCutoff, 20.0f, 20000.0f);
-        float finalRes = std::clamp(baseRes + mt.res, 0.0f, 1.0f);
+        float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
+        float finalRes = std::clamp(s.res / 255.0f + mt.res, 0.0f, 1.0f);
 
-        bool postFilter = (limMode >= 4);
-        if (postFilter && filterType > 0) {
-            m_filter.SetFreq(finalCutoff);
-            m_filter.SetRes(finalRes);
-            m_filter.Process(sample);
-            if (filterType == 1) sample = m_filter.Low();
-            else if (filterType == 2) sample = m_filter.High();
-            else if (filterType == 3) sample = m_filter.Band();
-            else if (filterType == 4) sample = sample - m_filter.Band();
-        } else if (!postFilter && filterType > 0) {
-            m_filter.SetFreq(finalCutoff);
-            m_filter.SetRes(finalRes);
-            m_filter.Process(sample);
-            if (filterType == 1) sample = m_filter.Low();
-            else if (filterType == 2) sample = m_filter.High();
-            else if (filterType == 3) sample = m_filter.Band();
-            else if (filterType == 4) sample = sample - m_filter.Band();
+        // LIM 04-08 (POST modes) apply the AMP gain and its clipping AFTER the
+        // filter stage (manual p.55: "amplification applied ... after the filter
+        // stage"); LIM 00-03 amplify+shape first, then filter.
+        if (limMode < 4) {
+            sample *= ampVal;
+            sample = applyLimiter(sample, limMode);
+            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
+        } else {
+            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
+            sample *= ampVal;
+            sample = applyLimiter(sample, limMode);
         }
 
         float effVol = m_velocityTakeover ? 1.0f : m_currentVolume;
@@ -273,6 +268,46 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
     float volMod = m_gate * (1.0f + mt.volume);
     if (volMod < 0.0f) volMod = 0.0f;
     return std::clamp(sample * effVol * volMod, -1.0f, 1.0f);
+}
+
+// FILTER dispatch. Types 1-4 use the DaisySP (non-ZDF) SVF; 6/7 use the ZDF SVF
+// (ZdfFilter.h). Type 5 (LP>HP) is not modeled yet and passes through — see
+// status.md Placeholders.
+float SynthVoice::applyFilter(float in, int type, float cutoffHz, float res) {
+    if (type <= 0) return in;
+    if (type == 6 || type == 7) {              // ZDF LP / HP
+        m_zdf.setParams(cutoffHz, res, kSampleRate);
+        float hp = 0.0f;
+        float lp = m_zdf.process(in, hp);
+        return (type == 6) ? lp : hp;
+    }
+    if (type == 5) return in;                  // LP>HP: not modeled, pass through
+    m_filter.SetFreq(cutoffHz);
+    m_filter.SetRes(res);
+    m_filter.Process(in);
+    switch (type) {
+    case 1: return m_filter.Low();
+    case 2: return m_filter.High();
+    case 3: return m_filter.Band();
+    case 4: return in - m_filter.Band();       // band-stop (notch)
+    default: return in;
+    }
+}
+
+// LIM waveshaper / limiter. 00-03 are the pre-filter shapers; 04 (POST) and 05
+// (POST:AD) are the post-filter hard/soft clippers. 06-08 (POST:W1-W3) are
+// "folding distortions" whose exact transfer curves are not hardware-verified,
+// so they fall back to hard clip rather than guess — see status.md.
+float SynthVoice::applyLimiter(float x, int mode) {
+    switch (mode) {
+    case 0: return std::clamp(x, -1.0f, 1.0f);                                       // CLIP
+    case 1: return std::sin(x * 1.5707963f);                                         // SIN
+    case 2: return std::clamp(x * 2.0f, -1.0f, 1.0f) - std::clamp(x, -0.5f, 0.5f);   // FOLD
+    case 3: { float f = x - std::floor(x); return f * 4.0f - 1.0f; }                 // WRAP
+    case 4: return std::clamp(x, -1.0f, 1.0f);                                       // POST (hard)
+    case 5: return std::tanh(x);                                                     // POST:AD (soft)
+    default: return std::clamp(x, -1.0f, 1.0f);                                      // POST:W1-W3
+    }
 }
 
 } // namespace engine
