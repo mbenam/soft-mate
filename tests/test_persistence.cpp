@@ -11,6 +11,7 @@
 #include <fstream>
 #include <cmath>
 #include <memory>
+#include <filesystem>
 
 using namespace m8::io;
 using namespace m8::engine;
@@ -424,4 +425,47 @@ TEST_CASE("L11 loadSong reports no missing for V4EMPTY (no samples referenced)",
     auto result = loadSong(songPath("V4EMPTY.m8s"), "");
     REQUIRE(result.ok);
     REQUIRE(result.missing.empty());
+}
+
+#ifdef _WIN32
+#include <windows.h>
+static std::string getTestExeDir() {
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::filesystem::path p(path);
+    return p.parent_path().string();
+}
+#else
+static std::string getTestExeDir() {
+    return "build/Release";
+}
+#endif
+
+TEST_CASE("T0 makeprobe round-trip in CI", "[io]") {
+    std::string exeDir = getTestExeDir();
+    std::string makeprobePath = exeDir + "/m8_makeprobe.exe";
+    std::string outPath = "T0_probe.m8s";
+    
+    // Clean up any stale probe file
+    std::filesystem::remove(outPath);
+    
+    std::string cmd = "\"" + makeprobePath + "\" --type macrosynth --shape 0x00 --timbre 0x40 --color 0x80 --note C-4 --out " + outPath;
+    int rc = std::system(cmd.c_str());
+    REQUIRE(rc == 0);
+    REQUIRE(std::filesystem::exists(outPath));
+    
+    // Load and verify
+    auto result = loadSong(outPath, "");
+    REQUIRE(result.ok);
+    REQUIRE(result.state.instruments[0].type == InstType::INST_MACROSYN);
+    REQUIRE(result.state.instruments[0].macrosyn.shape == 0x00);
+    REQUIRE(result.state.instruments[0].macrosyn.timbre == 0x40);
+    REQUIRE(result.state.instruments[0].macrosyn.color == 0x80);
+    
+    // Verify sequence
+    REQUIRE(result.sequencer.phrases[0][0].note == 60); // C-4
+    REQUIRE(result.sequencer.phrases[0][0].instr == 0);
+    
+    // Clean up
+    std::filesystem::remove(outPath);
 }

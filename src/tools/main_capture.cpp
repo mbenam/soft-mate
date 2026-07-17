@@ -34,6 +34,8 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <fstream>
+#include <iostream>
 
 // ---- Win32 serial ---------------------------------------------------------
 
@@ -137,32 +139,33 @@ static void serialEnable(SerialPort& sp) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
-static void serialPressStart(SerialPort& sp) {
-    // Press START (bit 3 = 0x08)
-    uint8_t press = 0x08;
+static void serialPressStart(SerialPort& sp, uint8_t pressMask) {
     sp.sendByte('C');
-    sp.sendByte(press);
+    sp.sendByte(pressMask);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     // Release
-    uint8_t release = 0x00;
     sp.sendByte('C');
-    sp.sendByte(release);
+    sp.sendByte(0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }
 
-static void serialStop(SerialPort& sp) {
-    // Send stop: typically pressing the stop key combo or just releasing all buttons
-    // For the M8, pressing the right key combo stops playback.
-    // We'll send a few button taps to trigger stop.
-    // The simplest: press 'A' (which in song view stops playback)
-    uint8_t press = 0x10;  // KEY_A
+static void serialStop(SerialPort& sp, uint8_t stopMask) {
     sp.sendByte('C');
-    sp.sendByte(press);
+    sp.sendByte(stopMask);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    uint8_t release = 0x00;
     sp.sendByte('C');
-    sp.sendByte(release);
+    sp.sendByte(0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+// Keyjazz: play a live note on the currently-selected instrument ('K' note vel),
+// note-off with 'K' 0xFF. Same command m8c uses — triggers the synth engine
+// directly, no song/sequencer, so it's a from-scratch note for synth parity.
+static void serialKeyjazzOn(SerialPort& sp, uint8_t note, uint8_t vel) {
+    sp.sendByte('K'); sp.sendByte(note); sp.sendByte(vel);
+}
+static void serialKeyjazzOff(SerialPort& sp) {
+    sp.sendByte('K'); sp.sendByte(0xFF);
 }
 
 // ---- miniaudio capture ----------------------------------------------------
@@ -272,6 +275,94 @@ static std::vector<float> trimToOnset(const std::vector<float>& audio,
     return trimmed;
 }
 
+// ---- batch file (Tier 2, M8_HARDWARE_TEST_SPEC.md §9.3) -------------------
+//
+// One `name<TAB>label` pair per line. `name` is the probe filename the operator
+// loads on the device (informational, printed in the prompt); `label` names the
+// output WAV (<out-dir>/<label>.wav). Blank lines and lines starting with '#'
+// are skipped.
+
+struct BatchEntry { std::string name; std::string label; };
+
+static std::vector<BatchEntry> readBatchFile(const std::string& path, bool& ok) {
+    std::vector<BatchEntry> entries;
+    std::ifstream f(path);
+    if (!f) {
+        std::fprintf(stderr, "cannot open batch file %s\n", path.c_str());
+        ok = false;
+        return entries;
+    }
+    std::string line;
+    int lineNo = 0;
+    while (std::getline(f, line)) {
+        ++lineNo;
+        if (!line.empty() && line.back() == '\r') line.pop_back(); // tolerate CRLF
+        if (line.empty() || line[0] == '#') continue;
+        size_t tab = line.find('\t');
+        if (tab == std::string::npos) {
+            std::fprintf(stderr, "batch file %s:%d: missing tab, expected 'name<TAB>label': %s\n",
+                        path.c_str(), lineNo, line.c_str());
+            ok = false;
+            continue;
+        }
+        entries.push_back({ line.substr(0, tab), line.substr(tab + 1) });
+    }
+    return entries;
+}
+
+// Runs one press-start / wait / press-stop / trim cycle against an already-open
+// serial port and an already-running capture device, resetting the shared frame
+// buffer first. Shared by single-shot and batch modes so the serial port and
+// audio device are opened exactly once per process regardless of how many
+// notes get captured.
+static std::vector<float> captureOnce(SerialPort& serial, CaptureData& captureData,
+                                      uint8_t startMask, uint8_t stopMask,
+                                      double seconds, float preRollMs, float tailSeconds,
+                                      int keyjazzNote, uint8_t keyjazzVel) {
+    {
+        std::lock_guard<std::mutex> lock(captureData.mtx);
+        captureData.frames.clear();
+    }
+    captureData.done.store(false);
+
+    const bool keyjazz = keyjazzNote >= 0;
+    std::printf("capture: recording %.1f s...\n", seconds);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    if (keyjazz) {
+        serialKeyjazzOn(serial, static_cast<uint8_t>(keyjazzNote), keyjazzVel);
+        std::printf("serial: keyjazz note-on (note %d, vel 0x%02X)\n", keyjazzNote, keyjazzVel);
+    } else {
+        serialPressStart(serial, startMask);
+        std::printf("serial: play sent (start-mask: 0x%02X)\n", startMask);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
+
+    captureData.done.store(true);
+    if (keyjazz) {
+        serialKeyjazzOff(serial);
+        std::printf("serial: keyjazz note-off\n");
+    } else {
+        serialStop(serial, stopMask);
+        std::printf("serial: stop sent (stop-mask: 0x%02X)\n", stopMask);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    std::vector<float> frames;
+    {
+        std::lock_guard<std::mutex> lock(captureData.mtx);
+        frames = captureData.frames;
+    }
+    std::printf("capture: stopped, %zu frames captured\n", frames.size() / 2);
+
+    auto trimmed = trimToOnset(frames, 48000, preRollMs);
+    if (tailSeconds > 0.0f) {
+        size_t maxFrames = static_cast<size_t>(tailSeconds * 48000);
+        if (trimmed.size() / 2 > maxFrames) trimmed.resize(maxFrames * 2);
+    }
+    return trimmed;
+}
+
 // ---- main -----------------------------------------------------------------
 
 int main(int argc, char** argv) {
@@ -283,6 +374,14 @@ int main(int argc, char** argv) {
     double seconds = 3.0;
     float preRollMs = 5.0f;
     float tailSeconds = 0.0f;  // optional fixed tail trim
+    // M8 keybits (as m8c speaks them over the 'C' controller byte): PLAY = 1<<3 = 0x08.
+    // PLAY is a *toggle* — pressing it starts playback from the cursor, pressing it again
+    // stops. So the stop mask is the same key as start, not a separate one. Both are
+    // empirically pinned per M8_HARDWARE_TEST_SPEC.md §5; these are the defaults.
+    uint8_t startMask = 0x08;
+    uint8_t stopMask = 0x08;
+    int keyjazzNote = -1;          // >=0 => play a live note instead of PLAY toggle
+    uint8_t keyjazzVel = 0x7F;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -296,14 +395,40 @@ int main(int argc, char** argv) {
         else if (a == "--seconds")  seconds = std::atof(next().c_str());
         else if (a == "--pre-roll") preRollMs = static_cast<float>(std::atof(next().c_str()));
         else if (a == "--tail")     tailSeconds = static_cast<float>(std::atof(next().c_str()));
+        else if (a == "--start-mask") startMask = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
+        else if (a == "--stop-mask")  stopMask  = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
+        else if (a == "--keyjazz")    keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0)); // MIDI note (60=C-4)
+        else if (a == "--keyjazz-vel") keyjazzVel = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
     }
 
     if (port.empty()) {
-        std::fprintf(stderr, "usage: m8_capture --port COM4 --audio M8 [--seconds 3] [--out out.wav]\n");
+        std::fprintf(stderr,
+            "usage: m8_capture --port COM4 --audio M8 [--seconds 3] [--out out.wav]\n"
+            "                  [--start-mask 0x08] [--stop-mask 0x08]\n"
+            "       m8_capture --port COM4 --audio M8 --batch probes.txt --out-dir refs/\n");
         return 1;
     }
     if (audioMatch.empty()) audioMatch = "M8";
+
+    // Batch mode: validate the batch file up front, before touching serial or audio,
+    // so a typo in the file (or a missing --out-dir) fails immediately instead of after
+    // the operator has already reached for the device.
+    std::vector<BatchEntry> batchEntries;
+    if (!batchFile.empty()) {
+        if (outDir.empty()) {
+            std::fprintf(stderr, "--batch requires --out-dir\n");
+            return 1;
+        }
+        bool batchOk = true;
+        batchEntries = readBatchFile(batchFile, batchOk);
+        if (!batchOk) return 1;
+        if (batchEntries.empty()) {
+            std::fprintf(stderr, "no entries found in batch file %s\n", batchFile.c_str());
+            return 1;
+        }
+        std::filesystem::create_directories(outDir);
+    }
 
     // Open serial port
     SerialPort serial;
@@ -346,57 +471,57 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Start capture
+    // Start capture. The device stays running for the whole process — including the
+    // full batch loop below — so it is started and stopped exactly once regardless of
+    // how many notes get captured.
     if (ma_device_start(&device) != MA_SUCCESS) {
         std::fprintf(stderr, "miniaudio: device start failed\n");
         ma_device_uninit(&device);
         ma_context_uninit(&context);
         return 1;
     }
-    std::printf("capture: started, recording %.1f s...\n", seconds);
 
-    // Send play command
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    serialPressStart(serial);
-    std::printf("serial: play sent\n");
+    if (!batchEntries.empty()) {
+        // Tier 2 (M8_HARDWARE_TEST_SPEC.md §9.3): loop the name<TAB>label list. The one
+        // human touch per probe is the reload the prompt asks for; capture itself is
+        // identical to single-shot mode, just repeated.
+        std::printf("batch: %zu probe(s) to capture into %s/\n", batchEntries.size(), outDir.c_str());
+        size_t ok = 0;
+        for (size_t i = 0; i < batchEntries.size(); ++i) {
+            const auto& e = batchEntries[i];
+            std::printf("\n[%zu/%zu] Load '%s' on the device now.\n", i + 1, batchEntries.size(), e.name.c_str());
+            std::printf("Press Enter when ready to capture (label: %s)... ", e.label.c_str());
+            std::fflush(stdout);
+            std::string dummy;
+            std::getline(std::cin, dummy);
 
-    // Wait for recording duration
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
+            auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
+            std::string path = outDir + "/" + e.label + ".wav";
+            writeWav(path, trimmed, 2, 48000);
+            ++ok;
+        }
+        std::printf("\nbatch complete: %zu/%zu captured\n", ok, batchEntries.size());
+    } else {
+        auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
 
-    // Stop
-    captureData.done.store(true);
-    serialStop(serial);
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    ma_device_stop(&device);
-    std::printf("capture: stopped, %zu frames captured\n", captureData.frames.size() / 2);
-
-    // Trim to onset
-    auto trimmed = trimToOnset(captureData.frames, 48000, preRollMs);
-
-    // Optional tail trim
-    if (tailSeconds > 0.0f) {
-        size_t maxFrames = static_cast<size_t>(tailSeconds * 48000);
-        if (trimmed.size() / 2 > maxFrames) {
-            trimmed.resize(maxFrames * 2);
+        if (!outPath.empty()) {
+            writeWav(outPath, trimmed, 2, 48000);
+        } else if (!outDir.empty()) {
+            std::filesystem::create_directories(outDir);
+            // Default filename from timestamp
+            auto now = std::chrono::system_clock::now();
+            auto epoch = now.time_since_epoch();
+            auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
+            char filename[64];
+            std::snprintf(filename, sizeof(filename), "capture_%lld.wav", millis);
+            std::string path = outDir + "/" + filename;
+            writeWav(path, trimmed, 2, 48000);
+        } else {
+            std::fprintf(stderr, "no output path specified\n");
         }
     }
 
-    // Write output
-    if (!outPath.empty()) {
-        writeWav(outPath, trimmed, 2, 48000);
-    } else if (!outDir.empty()) {
-        std::filesystem::create_directories(outDir);
-        // Default filename from timestamp
-        auto now = std::chrono::system_clock::now();
-        auto epoch = now.time_since_epoch();
-        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
-        char filename[64];
-        std::snprintf(filename, sizeof(filename), "capture_%lld.wav", millis);
-        std::string path = outDir + "/" + filename;
-        writeWav(path, trimmed, 2, 48000);
-    } else {
-        std::fprintf(stderr, "no output path specified\n");
-    }
+    ma_device_stop(&device);
 
     // Cleanup
     serial.close();

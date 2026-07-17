@@ -1,15 +1,25 @@
 # M8 Tracker Clone — Status
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 A software clone of the **Dirtywave M8 Tracker**: the tracker workflow, the 2D view
 navigation, the custom UI layout, and the audio engine.
 
 **Where it stands:** songs written on real M8 hardware load, save, and play through this
 engine — correct tempo, sample-accurate, note release, no DC, no glitches. The full audio
-analysis + hardware capture toolchain is built. The one thing real songs *don't* do yet is
-sound like the original, because **MacroSynth is still a placeholder saw** — which is the next
-target, and now has a parity-testing rig ready for it.
+analysis + hardware capture toolchain is built, **now including unattended, framebuffer-verified
+device control** (`m8_nav`, Tier 3 — the harness loads probes on the headless itself, no human
+touch). The one thing real songs *don't* do yet is sound like the original, because
+**MacroSynth is still a placeholder saw** — which is the next target.
+
+**Direction (decided 2026-07-17).** Implement the remaining synths/features from their known
+**reference algorithms** (MacroSynth = open-source Mutable Instruments **Braids**; FM/wavetable/
+supersaw are standard, well-documented DSP), validated by **offline math/spectral unit tests**
+(`m8_analyze`/`AudioMetrics`, no hardware). Hardware audio parity with the real M8 is demoted
+from a development *driver* to a later *acceptance gate*: the parity rig is built and stays, but
+chasing per-unit capture config (USB capture level, output taper) was stalling the actual
+feature work, and porting the reference DSP gets us closer to the M8 than curve-fitting to a
+capture anyway. See **Roadmap**.
 
 Split into **Implemented** / **Placeholders** / **Not implemented**. "Implemented" means done
 and tested. "Placeholder" means it makes noise but is not the real thing.
@@ -40,7 +50,12 @@ Targets:
 - `m8_spectrum` — A/B spectral comparison against a hardware reference (fundamental, harmonic/
   sideband table, centroid, log-spectral distance); `--json` for a render→compare→adjust loop
 - `m8_makeprobe` — generates probe `.m8s` files (one instrument, one note; `--sweep`)
-- `m8_capture` — drives the headless over serial + records USB audio → trimmed WAV
+- `m8_capture` — drives the headless over serial + records USB audio → trimmed WAV;
+  `--batch` (loop a probe list), `--keyjazz N` (play a live note instead of the PLAY toggle)
+- `m8_nav` — **NEW.** Decodes the M8 serial *display* (SLIP framebuffer) into a text grid and
+  drives the device closed-loop: `--load-file NAME` loads any probe on the headless **fully
+  unattended** (browser navigation, filename verified on screen before load); `--keys` /
+  `--dump-screen` / `--json` for scripted control + inspection. Serial only (no engine/SDL/audio).
 - `m8_tests` — 96 cases
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
@@ -130,8 +145,40 @@ correctly**, verified end to end.
 - **`m8_makeprobe`** — generates probe `.m8s` (one instrument/note; `--type`, `--sweep`).
   Round-trip verified: params read back what was set.
 - **`m8_render --note --instrument`** — single-note isolation for A/B.
-- **`m8_capture`** — Win32 serial + miniaudio capture, onset-trimmed WAV, `--batch`. Standalone
-  (no engine, no SDL). *Code complete; not yet exercised against the device for a real capture.*
+- **`m8_capture`** — Win32 serial + miniaudio capture, onset-trimmed WAV, `--start-mask`/
+  `--stop-mask`. Standalone (no engine, no SDL). Proven against a real headless (firmware 6.5.2):
+  pinned PLAY-toggle masks, captured a clean C-4. **`--batch` now loops a `name<TAB>label` list**
+  (opens serial+audio once, prompts per probe). **`--keyjazz N`** plays a live note on the
+  current instrument (`K note vel` … `K 0xFF`) instead of the PLAY toggle — a from-scratch note
+  with no song.
+- **`m8_nav` (Tier 3, `M8_HARDWARE_TEST_SPEC.md` §8.2b) — hardware-verified.** Decodes the M8's
+  SLIP display protocol (`0xFD` draw-char → text grid, `0xFE` rect → highlight/clear, `0xFF`
+  system info → hw/firmware) exactly as m8c does; auto-detects the cell pitch. `--load-file`
+  is a **closed-loop** navigator (read the screen, steer, re-read — never blind key-counting,
+  which the M8's ~150 ms key auto-repeat defeats): normalises the start screen (the device keeps
+  whatever view it was left on — no auto-home), climbs to PROJECT, opens LOAD, accepts the
+  "LOSE CHANGES?" confirm, scrolls the file list, verifies the highlighted filename, loads, and
+  leaves the device on SONG. Direction masks pinned live via the framebuffer (SHIFT `0x10`,
+  UP `0x40`, DOWN `0x20`, LEFT `0x80`, RIGHT `0x04`, EDIT `0x01`, OPT `0x02` = back/cancel;
+  PLAY `0x08` was already pinned). Proven on the real headless: loaded `probe_sampler`/
+  `probe_shape_*` unattended.
+- **Two bugs found and fixed during the parity build (both real product bugs):**
+  1. `m8_makeprobe`'s `buildProbeSong` serialised `song.midi_settings` but never initialised
+     it (`MidiSettings` has no default initialisers), so every probe carried ~25 bytes of
+     **uninitialised memory** in the MIDI-routing block. Garbage there routes the M8's tracks
+     to MIDI I/O instead of internal audio ⇒ the device played **silence**. It was invisible
+     because it's uninitialised memory (`probe_selftest`, written first, happened to get zeros
+     and worked; the sweep loop reused dirty memory). Fixed with `song.midi_settings = {}`;
+     probes are now deterministic and byte-identical to the known-good self-test probe.
+  2. `SongIO.cpp convertSongToEngine` read a `Sampler`'s `sample_path` from the file but never
+     copied it into the **engine** instrument's `samplePath`, so `m8_render` (which keys sample
+     loading off `state.instruments[i].sampler.samplePath`) could not load **any** sampler's
+     sample for a loaded song — the sampler rendered silent. Fixed (one `strncpy` in the
+     sampler branch); the sampler oracle now renders correctly.
+- **Sampler parity probe (`--type sampler --sample-path`, §9.1)** — `m8_makeprobe` now builds a
+  sampler probe (bundled sine WAV), `verifyRoundTrip` is type-aware, and our engine's render of
+  it **matches the source sine** (fundamental 263 Hz both, harmonic Δ −0.4 dB) — an offline
+  proof that our sampler is faithful. This is the honest timbre gate MacroSynth can't be yet.
 
 ### Demo song
 `loadDemoSong()` — "Night Drive", 16 bars, C minor, 124 BPM, swing, building dynamics, drums
@@ -291,6 +338,21 @@ Env times IN TICKS, tempo-relative
 LOOP window [LOOP ST, LOOP ST+LENGTH], relative to the WHOLE SAMPLE  (only inference; test S6)
 ```
 
+### Serial control protocol (`m8_capture`) — pinned 2026-07-16, firmware 6+
+
+Empirically pinned per `M8_HARDWARE_TEST_SPEC.md` §5 against a real headless on COM3, using
+the captured audio as the oracle (not a human ear). Recorded in `hw_buttons.json`.
+
+```
+Controller byte: 'C' <keymask>, then 'C' 0x00 to release.
+PLAY   0x08   Start playback from cursor. It is a TOGGLE — pressing PLAY again STOPS.
+             => start_mask == stop_mask == 0x08. There is NO separate stop key.
+```
+
+The old defaults (`start 0x08` guess was right; `stop 0x10 = KEY_A` was wrong) are fixed in
+`main_capture.cpp`. `m8_hwtest.ps1` confirms STOP by re-pressing the toggle and verifying
+silence, not by sweeping for a distinct key (a sweep is actively wrong for a toggle).
+
 Captured with `m8_client.py` / `m8_enum.py`. **Not present in this checkout** (referenced as
 "repo" but not found in this working tree — likely predate this checkout or live elsewhere).
 Future captures use the C++ `m8_capture`.
@@ -320,8 +382,21 @@ Future captures use the C++ `m8_capture`.
   (DC L 0.0087, crest 4.0 dB) is the legitimate `MAC` instrument droning because it has no
   volume envelope in the file — a MacroSynth-fidelity gap, not a bug; TEST-FILE is a type-
   coverage probe, not expected to pass the audio-quality gate outright.
-- **`m8_capture` unproven against the device** — code complete, but no real capture taken yet.
-  Verify the trim on a real WAV before trusting it.
+- **`m8_capture` — PROVEN against the device (firmware 6.5.2, COM3).** Onset trim verified on
+  real captured WAVs; PLAY-toggle masks pinned. See the serial-control-protocol block under
+  Hardware-verified constants.
+- **OPEN: USB capture level ~100× too low after a device power-cycle.** On 2026-07-17 every
+  capture came back ~100× quieter than the earlier session — even a sampler playing a bundled
+  **full-scale sine** (sample confirmed loaded on-device) captured at peak ≈ 0.006–0.04.
+  Raising the M8 `OUTPUT VOL` (mixer) did **not** change the capture, because that control feeds
+  the headphone/line out, not the USB audio tap. Leading hypothesis: the **Windows recording
+  level** for "Digital Audio Interface (M8)" was reset by USB re-enumeration on power-cycle
+  (Tier 1's loud captures pre-dated the reboot). Not yet confirmed/fixed — and now lower
+  priority, since audio parity is an acceptance gate, not a blocker for feature work. A second,
+  independent issue: the probe's amp is an AHD→VOLUME mod that **decays to zero** and the single
+  sequenced note doesn't retrigger fast enough, so captures are a ~0.5 s blip, not a sustained
+  tone. When parity work resumes, give parity probes a **sustaining** amp (drop the decaying
+  mod) so there's a steady tone to spectrum-analyse.
 - **`main_stage1.cpp`** dead weight. **SDL3** pinned to a preview tag in some checkouts.
 - **`LoadResult::missing` — FIXED.** `loadSong()` now resolves each sample path against
   `sampleRoot` (with CWD fallback) and populates `missing` for unresolved paths. Script
@@ -348,16 +423,27 @@ Future captures use the C++ `m8_capture`.
 
 ## Roadmap
 
-1. **Macrosyn (Braids oscillator models)** — the biggest gap. Real songs already play the right
-   notes; they just sound like a saw. The parity loop is now fully built:
-   `m8_makeprobe` → load on headless → `m8_capture` → `m8_render --load --note` → `m8_spectrum`.
-   **Next step: exercise `m8_capture` against the real headless once** (it's code-complete but
-   unproven — see Known issues), then feed the resulting WAV pair into `m8_spectrum` to see the
-   actual gap before touching any oscillator code.
-2. **Tables** — the sub-sequencer.
-3. **Stereo voice path.**
-4. **SLICE**, then REPITCH/BPM play modes.
-5. **WavSynth / FMSynth / HyperSynth** (data already preserved).
+**Strategy (2026-07-17):** build each feature from its **reference algorithm** and validate with
+**offline** math/spectral unit tests (Catch2 + `AudioMetrics`); treat M8 hardware capture as a
+later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` → `m8_nav
+--load-file` → `m8_capture` → `m8_render` → `m8_spectrum`) is built and waits for that gate.
+
+1. **MacroSynth → Braids** — the biggest audible gap. Real songs already play the right notes;
+   they just sound like a saw. MacroSynth *is* Mutable Instruments **Braids** (open-source, MIT),
+   so this is a **port of the reference DSP**, not reverse-engineering. Validate offline: correct
+   fundamental + harmonic structure per model, and that `shape`/`timbre`/`color` actually change
+   the spectrum (they are carried into engine state but ignored by the oscillator today —
+   `SynthVoice.cpp:12`/`:228`).
+2. **Tables** — the per-instrument modulation sub-sequencer. Biggest *non-synth* functional gap;
+   stored/preserved today but never executed at tick time. Affects many real songs.
+3. **WavSynth / FMSynth / HyperSynth** — standard wavetable / phase-mod FM / supersaw. Data
+   already preserved on load/save; silent on play. Same reference-then-offline-test pattern.
+4. **SLICE**, then the REPITCH / BPM play modes that depend on it.
+5. **Scales** (note→frequency), **stereo voice path**, ZDF filters, the aliased LIM/LFO modes,
+   FX `VOL`/`PIT`/`REV`, project EQ/limiter/DJF — quality/coverage cleanups.
+6. **Hardware audio-parity acceptance pass** (once the above land): resolve the USB-capture-level
+   config (Known issues), use sustaining parity probes, and confirm capture-vs-render distance
+   shrinks toward zero — first for the sampler (already at parity), then per Braids model.
 
 ---
 
@@ -371,12 +457,19 @@ Future captures use the C++ `m8_capture`.
   every task closed, no open work against it.
 - `M8_AUDIO_ANALYSIS_SPEC.md` — **Parts A–D implemented.** Part E (hardware capture rig) is
   code-complete but deferred to `M8_CAPTURE_SPEC.md`'s own unproven-against-device status below.
-- `M8_CAPTURE_SPEC.md` — implemented (capture unproven against device)
-- `M8_HARDWARE_TEST_SPEC.md` — **new.** How to validate `m8_makeprobe` + `m8_capture` against
-  the real headless with a machine-decided verdict (uses `m8_spectrum` / `m8_analyze --json` as
-  the pitch/health oracle). Tiered by automation level; Tier 1 (one human load, everything else
-  automated) needs only glue. Records the current-state gaps it depends on: makeprobe only
-  round-trips macrosynth, capture `--batch` unimplemented, button masks unverified.
+- `M8_CAPTURE_SPEC.md` — implemented; **proven against the device 2026-07-16** (firmware 6+,
+  COM3). Button masks pinned (PLAY toggle = 0x08), a clean C-4 macrosynth probe captured.
+- `M8_HARDWARE_TEST_SPEC.md` — **Tier 1 PASSING; Tier 2 + Tier 3 enablers now built
+  (2026-07-17).** `m8_hwtest.ps1` chains makeprobe → render oracle → capture → analyze →
+  spectrum into one `verdict.json`; T0 (makeprobe round-trip) runs in CI (`test_persistence.cpp`,
+  `[io]`). **Tier 2:** `m8_capture --batch` implemented. **Tier 3 (§8.2b):** `m8_nav` decodes
+  the SLIP framebuffer and loads probes on the headless **fully unattended** (see the tooling
+  section) — the last human step is gone. **§9.1 sampler probe:** implemented and validated
+  offline (our render matches the bundled sine). The one remaining open item is device-side, not
+  tooling: USB captures are ~100× too quiet since a power-cycle (Known issues) — deferred,
+  because audio parity is now an acceptance gate, not an active driver (see Roadmap). Earlier
+  fixes stand: the spectrum fundamental estimator uses autocorrelation (a bright Braids timbre
+  defeats a spectral global-max).
 - `CODE_CLEANUP_SPEC.md` — **new.** Fix list for the `ARCHITECTURE.md` §5.2 code critique
   (11 items, tiered correctness → hygiene → structural refactors). Tracks its own status per
   item; `ARCHITECTURE.md` gets a `[FIXED — CODE_CLEANUP_SPEC #N]` annotation as each closes.

@@ -75,7 +75,8 @@ static m8::Song buildProbeSong(
     uint8_t noteVal,
     int shape, int timbre, int color,
     int volume, int filterType, int filterCutoff, int filterRes,
-    float tempo)
+    float tempo,
+    const std::string& samplePath = "")
 {
     m8::Song song;
 
@@ -88,6 +89,15 @@ static m8::Song buildProbeSong(
     song.name = "PROBE";
     song.key = 0;
 
+    // MidiSettings is a plain struct with no default initialisers (types.hpp), and
+    // it IS serialised into the file (writeSongFile) — so leaving it default gives
+    // the probe 25 bytes of uninitialised memory in the MIDI block. That is not
+    // cosmetic: garbage in track_input_mode / track_input_channel routes the M8's
+    // tracks to MIDI input/output instead of internal audio, and the device plays
+    // SILENCE. Zero it so every probe is deterministic and audible (matches the
+    // known-good probe_selftest, which happened to get zeros here).
+    song.midi_settings = {};
+
     // Default grooves (6 rows = standard timing)
     song.grooves.resize(m8::Song::N_GROOVES);
     for (size_t i = 0; i < m8::Song::N_GROOVES; ++i) {
@@ -95,9 +105,16 @@ static m8::Song buildProbeSong(
         song.grooves[i].steps = {6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6};
     }
 
-    // Song steps: row 0, track 0 = chain 0x00
+    // Song steps: fill track 0 with chain 0x00 for all 16 song rows. The phrase is
+    // 16 rows (~2 s at 120 BPM), so a single song row would leave the tail of a fixed
+    // 3 s capture silent and fail the longest_silence health gate. Repeating the chain
+    // keeps the device producing sound for the whole capture window; the AHD envelope's
+    // long hold means each retrigger lands before the previous note decays, so it reads
+    // as a continuous tone (the pitch window only sees the first, clean note).
     song.song.steps.fill(0xFF);
-    song.song.steps[0] = 0x00;  // row 0, track 0
+    for (size_t i = 0; i < 16; ++i) {
+        song.song.steps[i * 8] = 0x00;
+    }
 
     // Phrase 0x00: row 0 = note, instrument 0, full velocity (0x80)
     song.phrases.resize(m8::Song::N_PHRASES);
@@ -129,7 +146,7 @@ static m8::Song buildProbeSong(
     }
 
     // SynthParams for mod slot 0: AHD -> VOLUME with long hold+decay
-    // so the note sustains >= 1.5s at 120 BPM
+    // so the note sustains >= 1.5s at 120 BPM (spec M8_HARDWARE_TEST_SPEC.md §4)
     auto makeSynthParams = [&]() {
         m8::SynthParams sp{};
         sp.volume = static_cast<uint8_t>(volume);
@@ -152,9 +169,11 @@ static m8::Song buildProbeSong(
         sp.mixer_delay = 0;
         sp.mixer_reverb = 0;
 
-        // Mod slot 0: AHD -> VOLUME (dest=1), full amount, long hold+decay
-        // At 120 BPM, 1 tick = 1000 samples. hold=0x80=128 ticks, decay=0x80=128 ticks.
-        // Total sustain ~= (hold+decay) * samplesPerTick ~= 256 * 1000 = 256000 samples ~= 5.3s
+        // Mod slot 0: AHD -> VOLUME (dest=1), full amount, long hold+decay.
+        // At 120 BPM, 1 tick = 1000 samples. hold=0x80=128 ticks, decay=0x80=128 ticks,
+        // so the note is at full volume ~2.67 s then decays ~2.67 s (~5 s total) — ample
+        // for the >= 1.5 s analysis window, and longer than the phrase so retriggers are
+        // seamless.
         m8::AHDEnv ahd;
         ahd.dest = 1;           // VOLUME
         ahd.amount = 0xFF;      // full positive
@@ -185,6 +204,26 @@ static m8::Song buildProbeSong(
         ms.reductor = 0;
         ms.synth_params = makeSynthParams();
         song.instruments[0] = ms;
+    } else if (instType == "sampler") {
+        // Sampler probe (M8_HARDWARE_TEST_SPEC.md §9.1): our sampler is at hardware
+        // parity, so a hardware capture vs our render of the SAME sample is a real
+        // timbre gate — unlike MacroSynth (a saw placeholder). The sample WAV must
+        // exist on the SD card at `samplePath` (M8-absolute, e.g. /probes/x.wav) and
+        // locally under --sample-root for the render oracle.
+        m8::Sampler smp;
+        smp.number = 0;
+        smp.name = "PROBE";
+        smp.transpose = true;
+        smp.table_tick = 0xFF;
+        smp.sample_path = samplePath;
+        smp.play_mode = 0;      // FWD, play once (sample is long enough for the window)
+        smp.slice = 0;
+        smp.start = 0;
+        smp.loop_start = 0;
+        smp.length = 0xFF;      // whole sample
+        smp.degrade = 0;
+        smp.synth_params = makeSynthParams();
+        song.instruments[0] = smp;
     } else if (instType == "wavsynth") {
         m8::WavSynth ws;
         ws.number = 0;
@@ -315,7 +354,8 @@ static void writeSongFile(const std::string& path, const m8::Song& song) {
 // ---- round-trip verification ----------------------------------------------
 
 static bool verifyRoundTrip(const std::string& path, const std::string& instType,
-                            int shape, int timbre, int color) {
+                            int shape, int timbre, int color,
+                            const std::string& samplePath = "") {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -329,23 +369,36 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
     m8::BinaryReader reader(std::move(data));
     m8::Song song = m8::Song::from_reader(reader);
 
-    // Check instrument type and parameters
-    if (!std::holds_alternative<m8::MacroSynth>(song.instruments[0])) {
-        std::fprintf(stderr, "  FAIL: instrument 0 is not MacroSynth\n");
-        return false;
-    }
-    const auto& ms = std::get<m8::MacroSynth>(song.instruments[0]);
-    if (ms.shape != shape) {
-        std::fprintf(stderr, "  FAIL: shape %02X != %02X\n", ms.shape, shape);
-        return false;
-    }
-    if (ms.timbre != timbre) {
-        std::fprintf(stderr, "  FAIL: timbre %02X != %02X\n", ms.timbre, timbre);
-        return false;
-    }
-    if (ms.color != color) {
-        std::fprintf(stderr, "  FAIL: color %02X != %02X\n", ms.color, color);
-        return false;
+    // Check instrument type and parameters (type-aware — §9.2)
+    if (instType == "sampler") {
+        if (!std::holds_alternative<m8::Sampler>(song.instruments[0])) {
+            std::fprintf(stderr, "  FAIL: instrument 0 is not Sampler\n");
+            return false;
+        }
+        const auto& smp = std::get<m8::Sampler>(song.instruments[0]);
+        if (smp.sample_path != samplePath) {
+            std::fprintf(stderr, "  FAIL: sample_path \"%s\" != \"%s\"\n",
+                         smp.sample_path.c_str(), samplePath.c_str());
+            return false;
+        }
+    } else {
+        if (!std::holds_alternative<m8::MacroSynth>(song.instruments[0])) {
+            std::fprintf(stderr, "  FAIL: instrument 0 is not MacroSynth\n");
+            return false;
+        }
+        const auto& ms = std::get<m8::MacroSynth>(song.instruments[0]);
+        if (ms.shape != shape) {
+            std::fprintf(stderr, "  FAIL: shape %02X != %02X\n", ms.shape, shape);
+            return false;
+        }
+        if (ms.timbre != timbre) {
+            std::fprintf(stderr, "  FAIL: timbre %02X != %02X\n", ms.timbre, timbre);
+            return false;
+        }
+        if (ms.color != color) {
+            std::fprintf(stderr, "  FAIL: color %02X != %02X\n", ms.color, color);
+            return false;
+        }
     }
 
     // Check phrase has our note
@@ -383,6 +436,7 @@ int main(int argc, char** argv) {
     std::string outPath;
     std::string outDir;
     std::string sweepParam;
+    std::string samplePath;   // M8-absolute path for --type sampler, e.g. /probes/x.wav
     int shape = 0, timbre = 0x40, color = 0x80;
     int volume = 0xE0;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
@@ -398,6 +452,7 @@ int main(int argc, char** argv) {
         else if (a == "--out")         outPath = next();
         else if (a == "--out-dir")     outDir = next();
         else if (a == "--sweep")       sweepParam = next();
+        else if (a == "--sample-path") samplePath = next();
         else if (a == "--shape")       shape = num();
         else if (a == "--timbre")      timbre = num();
         else if (a == "--color")       color = num();
@@ -450,16 +505,24 @@ int main(int argc, char** argv) {
     if (outPath.empty()) {
         outPath = "probe.m8s";
     }
+    if (instType == "sampler" && samplePath.empty()) {
+        std::fprintf(stderr, "--type sampler requires --sample-path (M8-absolute, e.g. /probes/probe_sine.wav)\n");
+        return 1;
+    }
 
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
-                               volume, filterType, filterCutoff, filterRes, tempo);
+                               volume, filterType, filterCutoff, filterRes, tempo, samplePath);
     writeSongFile(outPath, song);
 
-    if (!verifyRoundTrip(outPath, instType, shape, timbre, color)) {
+    if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }
-    std::printf("wrote %s  (type=%s note=%s shape=%02X timbre=%02X color=%02X)\n",
-               outPath.c_str(), instType.c_str(), note.c_str(), shape, timbre, color);
+    if (instType == "sampler")
+        std::printf("wrote %s  (type=sampler note=%s sample=%s)\n",
+                   outPath.c_str(), note.c_str(), samplePath.c_str());
+    else
+        std::printf("wrote %s  (type=%s note=%s shape=%02X timbre=%02X color=%02X)\n",
+                   outPath.c_str(), instType.c_str(), note.c_str(), shape, timbre, color);
     return 0;
 }

@@ -16,6 +16,37 @@ rules, honesty rules, hardware-constant rules), `status.md` (current state).
 
 ---
 
+## Status (2026-07-17)
+
+- **Tier 1** — PASSING on real hardware (firmware 6.5.2, COM3): makeprobe → render oracle →
+  capture → analyze → spectrum → `verdict.json`, pitch-gated. T0 (makeprobe round-trip) runs in CI.
+- **Tier 2** — `m8_capture --batch` implemented (loops a `name<TAB>label` list in one
+  serial+audio session).
+- **Tier 3 (§8.2b)** — **BUILT.** `m8_nav` decodes the M8 SLIP display into a text grid and loads
+  probes on the headless **fully unattended**: closed-loop browser navigation with the
+  highlighted filename verified on screen, the "LOSE CHANGES?" confirm accepted, list scrolling,
+  ends on SONG. Direction masks pinned live via the framebuffer (SHIFT `0x10`, UP `0x40`,
+  DOWN `0x20`, LEFT `0x80`, RIGHT `0x04`, EDIT `0x01`, OPT `0x02` = back). Proven loading
+  `probe_sampler` / `probe_shape_*` with no human touch.
+- **§9.1 sampler probe** — **BUILT + validated offline.** `m8_makeprobe --type sampler
+  --sample-path` + type-aware `verifyRoundTrip` (§9.2); our engine's render matches the bundled
+  sine (Δ −0.4 dB). This is the honest timbre gate MacroSynth cannot be (saw placeholder).
+- **Two product bugs fixed while building the above:** uninitialised `song.midi_settings` in
+  `m8_makeprobe` (silent probes — MIDI-routing garbage), and the sampler `sample_path` never
+  copied into the engine instrument in `convertSongToEngine` (`m8_render` could not load any
+  sampler's sample). See `status.md`.
+
+**OPEN (device-side, deferred).** Since a power-cycle, USB captures read ~100× too low even for a
+full-scale sample confirmed loaded on-device; the M8 `OUTPUT VOL` does not affect the USB tap, so
+the suspect is the host's **Windows recording level** for the M8 input (reset on USB
+re-enumeration). Also, parity probes need a **sustaining** amp — the current AHD→VOLUME mod decays
+to zero, giving a ~0.5 s blip, not a steady tone to analyse. Both are acceptance-gate concerns:
+**audio parity has been demoted from a development driver to a later acceptance gate** — synths
+are now implemented from their reference DSP and validated offline (see `status.md` Roadmap), so
+these do not currently block feature work.
+
+---
+
 ## 0. Ground truth — what the tools actually do today
 
 Do not spec against the *intent* of `M8_CAPTURE_SPEC.md`; spec against the code. Verified by

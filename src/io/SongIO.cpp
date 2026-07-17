@@ -333,6 +333,7 @@ static void convertSongToEngine(const m8::Song& song,
                 engInst.type = engine::InstType::INST_SAMPLER;
                 engine::setName(engInst.name, inst.name.c_str());
                 auto& s = engInst.sampler;
+                std::strncpy(s.samplePath, inst.sample_path.c_str(), sizeof(s.samplePath) - 1);
                 s.detune = 0x80;
                 s.play = inst.play_mode;
                 s.slice = inst.slice;
@@ -346,6 +347,9 @@ static void convertSongToEngine(const m8::Song& song,
                 engInst.type = engine::InstType::INST_MACROSYN;
                 engine::setName(engInst.name, inst.name.c_str());
                 auto& ms = engInst.macrosyn;
+                ms.shape = inst.shape;
+                ms.timbre = inst.timbre;
+                ms.color = inst.color;
                 ms.amp = inst.synth_params.volume;
                 ms.filter_type = inst.synth_params.filter_type;
                 ms.cutoff = inst.synth_params.filter_cutoff;

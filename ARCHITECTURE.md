@@ -30,7 +30,8 @@ scripting harness.
 | `m8_render` | `src/tools/main_render.cpp` | `m8_engine` | Offline WAV renderer + event-CSV logger. Headless ground truth. |
 | `m8_analyze` | `src/tools/main_analyze.cpp` | `m8_engine` | WAV metrics checker (peak/DC/crest/clip/silence), `--diff` mode. |
 | `m8_makeprobe` | `src/tools/main_makeprobe.cpp` | `m8_files_cpp` only | Generates minimal `.m8s` probe songs (one instrument, one note). |
-| `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. |
+| `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. `--batch`, `--keyjazz`. |
+| `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop; `--load-file` loads a probe fully unattended (Tier 3). |
 | `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | ~80 test cases across 13 files. |
 
 Third-party: `third_party/m8-files-cxx` (git submodule — `.m8s` read/write),
@@ -193,6 +194,23 @@ An unusually strong closed loop for an audio project:
    count, non-finite count, longest silence, mid/side, correlation, FFT pitch,
    spectral centroid) provide objective pass/fail, and `--diff` compares WAVs.
 
+`m8_nav` closes the last manual gap (`M8_HARDWARE_TEST_SPEC.md` Tier 3): it decodes the
+M8's SLIP **display** protocol (the same one m8c speaks — `0xFD` draw-char, `0xFE` rect,
+`0xFF` system-info) into a text grid, so the harness can *read the screen* and drive the
+file browser closed-loop (`--load-file`), loading any probe on the headless with no human
+touch. This is a diagnostic/harness tool only — **not** part of the shipped product, and it
+links nothing but Win32 serial.
+
+**Two product bugs were found and fixed via this loop (2026-07-17):** `m8_makeprobe` wrote
+`song.midi_settings` without initialising it (uninitialised-memory MIDI routing ⇒ silent
+probes on hardware), and `convertSongToEngine` never copied a `Sampler`'s `sample_path` into
+the engine instrument (so `m8_render` could not load any sampler's sample for a loaded song).
+
+**Note on audio parity (2026-07-17):** hardware capture-vs-render parity is now treated as a
+later *acceptance gate*, not a per-feature development driver. Synths are implemented from
+their reference DSP (MacroSynth = open-source Braids) and validated by **offline** spectral
+unit tests. See `status.md` Roadmap.
+
 ### Test suite (tests/)
 
 `OfflineHost` drives a real `Engine` with no audio device, collecting every
@@ -312,8 +330,9 @@ specifically built to catch.
   playhead highlighting, M8-style key model.
 - UI scripting harness with 16 command types and screen-content assertions;
   crash regressions pinned by scripts (`groovetest`, `pre40_refuses`, ...).
-- Hardware ground-truth pipeline (probe generator → serial+USB capture →
-  analiyzer with hard numeric gates).
+- Hardware ground-truth pipeline (probe generator → **unattended framebuffer-verified
+  load on the headless** (`m8_nav`) → serial+USB capture → analyzer with hard numeric
+  gates → spectral A/B). Sampler parity validated offline; MacroSynth parity awaits Braids.
 - RT-safety enforcement in tests: allocation counting, TSan smoke test,
   NaN/Inf/clip gates on every rendered chunk, ring-overflow resync tests.
 
@@ -507,10 +526,13 @@ specifically built to catch.
       instrument's own record of intent, independent of the pool slot's
       lifecycle, read by `m8_render`'s `printTrackInfo`), not accidental
       duplication — it never round-trips through `.m8s` at all. Added a
-      comment on the field explaining why. Found in passing, out of scope
-      here: `samplePath` isn't populated for samples that fail to load, so
-      missing-sample instruments show "(none)" instead of the configured
-      path — flagged as a separate follow-on, not fixed]**
+      comment on the field explaining why. **[FIXED 2026-07-17]** The deeper
+      problem the earlier note only half-saw: `convertSongToEngine` never
+      populated `samplePath` for **loaded** songs at all (only the in-code demo
+      kit set it), so every loaded sampler showed "(none)" and `m8_render` —
+      which keys sample loading off `samplePath` — could load **no** sampler
+      sample. Now copied from `m8::Sampler::sample_path` in the sampler branch
+      of `convertSongToEngine`; the sampler oracle renders correctly.
 
 ### 5.3 Risk register for future work
 

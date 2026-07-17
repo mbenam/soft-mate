@@ -5,3 +5,8 @@ build_asan/
 *.zip
 artifacts/
 test_out_ui/
+
+# Hardware-test artifacts (generated probes, oracles, captures, verdicts)
+hwtest_out/
+# Third-party reference manual (Dirtywave M8, copyrighted — kept local only)
+manual/

@@ -149,6 +149,12 @@ if(WIN32)
     target_link_libraries(m8_capture PRIVATE winmm ole32)
 endif()
 
+# -------------------------------------------------------------------
+# Serial display decoder / browser navigator (M8_HARDWARE_TEST_SPEC.md
+# §8.2b). Serial only -- no engine, no SDL, no audio.
+# -------------------------------------------------------------------
+add_executable(m8_nav src/tools/main_nav.cpp)
+
 # -----------------------------------------------------------------------------
 # Tests Target (m8_tests)
 # -----------------------------------------------------------------------------

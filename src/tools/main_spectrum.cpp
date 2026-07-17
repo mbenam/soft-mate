@@ -115,21 +115,66 @@ static float refineBinFreq(const std::vector<float>& mag, size_t bin, float binH
     return f;
 }
 
-// Coarse global-max search over a plausible fundamental band, refined with
-// refineBinFreq. Good enough for the single sustained note this tool expects
-// (see M8_CAPTURE_SPEC.md / m8_makeprobe) — a harmonic-rich tone's loudest
-// low partial is normally the fundamental.
-static float findFundamentalHz(const std::vector<float>& mag, float binHz, int sr) {
-    const float loHz = 20.0f, hiHz = std::min(5000.0f, sr * 0.5f);
-    size_t loBin = std::max<size_t>(1, static_cast<size_t>(loHz / binHz));
-    size_t hiBin = std::min(mag.size() - 1, static_cast<size_t>(hiHz / binHz));
-    if (loBin >= hiBin) return 0.0f;
+// Time-domain autocorrelation pitch detector. A spectral global-max (or even HPS)
+// fails on bright M8 MacroSynth (Braids) tones: the note's full integer harmonic
+// series is present but no single bin dominates as f0 (a captured C-4 had a
+// complete 1..6x series on 261.6 Hz, yet the loudest bin was an *inharmonic*
+// partial at 988 Hz, and secondary inharmonic partials at 331/657/988 even form a
+// decoy series). Autocorrelation keys on the signal's *period* instead of the
+// loudest partial, so the fundamental wins regardless of spectral tilt. Picking
+// the smallest lag at near-peak correlation avoids latching onto a period multiple
+// (a subharmonic / octave-too-low error).
+static float findFundamentalAcf(const std::vector<float>& x, int sr) {
+    const float loHz = 50.0f, hiHz = 2000.0f;
+    const size_t minLag = std::max<size_t>(1, static_cast<size_t>(sr / hiHz));
+    const size_t maxLag = static_cast<size_t>(sr / loHz);
+    if (x.size() < maxLag + 64) return 0.0f;
+    const size_t N = std::min(x.size() - maxLag, static_cast<size_t>(16384));
 
-    size_t peakBin = loBin;
-    for (size_t i = loBin + 1; i <= hiBin; ++i)
-        if (mag[i] > mag[peakBin]) peakBin = i;
+    // Sliding windowed energy E[off] = sum_{n<N} x[off+n]^2, for normalization.
+    std::vector<double> E(maxLag + 1, 0.0);
+    double e = 0.0;
+    for (size_t n = 0; n < N; ++n) e += static_cast<double>(x[n]) * x[n];
+    E[0] = e;
+    for (size_t off = 1; off <= maxLag; ++off) {
+        e += static_cast<double>(x[off + N - 1]) * x[off + N - 1]
+           - static_cast<double>(x[off - 1]) * x[off - 1];
+        E[off] = e;
+    }
+    if (E[0] <= 0.0) return 0.0f;
 
-    return refineBinFreq(mag, peakBin, binHz);
+    std::vector<float> r(maxLag + 1, 0.0f);
+    for (size_t lag = minLag; lag <= maxLag; ++lag) {
+        double dot = 0.0;
+        for (size_t n = 0; n < N; ++n) dot += static_cast<double>(x[n]) * x[n + lag];
+        const double denom = std::sqrt(E[0] * E[lag]);
+        r[lag] = denom > 0.0 ? static_cast<float>(dot / denom) : 0.0f;
+    }
+
+    size_t bestLag = minLag;
+    for (size_t lag = minLag; lag <= maxLag; ++lag)
+        if (r[lag] > r[bestLag]) bestLag = lag;
+    const float maxR = r[bestLag];
+    if (maxR < 0.2f) return 0.0f; // not periodic enough to call a pitch
+
+    // Prefer the smallest lag that is a local max at >= 85% of peak correlation:
+    // the true period, not one of its multiples.
+    const float thresh = 0.85f * maxR;
+    for (size_t lag = minLag + 1; lag + 1 <= maxLag; ++lag) {
+        if (r[lag] >= thresh && r[lag] >= r[lag - 1] && r[lag] >= r[lag + 1]) {
+            bestLag = lag;
+            break;
+        }
+    }
+
+    // Parabolic interpolation on the correlation peak for sub-sample lag.
+    float lagF = static_cast<float>(bestLag);
+    if (bestLag > minLag && bestLag < maxLag) {
+        const float a = r[bestLag - 1], b = r[bestLag], c = r[bestLag + 1];
+        const float d = 2.0f * (2.0f * b - a - c);
+        if (std::fabs(d) > 1e-12f) lagF += (a - c) / d;
+    }
+    return lagF > 0.0f ? static_cast<float>(sr) / lagF : 0.0f;
 }
 
 struct Peak { size_t bin; float freqHz; float refDb; };
@@ -267,8 +312,8 @@ int main(int argc, char** argv) {
     auto dbTest = toDbfs(magTest, windowSum);
     const float binHz = static_cast<float>(sr) / static_cast<float>(windowLen);
 
-    const float fundRef  = findFundamentalHz(magRef,  binHz, sr);
-    const float fundTest = findFundamentalHz(magTest, binHz, sr);
+    const float fundRef  = findFundamentalAcf(refWin,  sr);
+    const float fundTest = findFundamentalAcf(testWin, sr);
     const bool fundOk = fundRef > 0.0f && fundTest > 0.0f
                       && std::fabs(fundTest - fundRef) < fundRef * 0.02f; // within ~2% (~34 cents)
 
