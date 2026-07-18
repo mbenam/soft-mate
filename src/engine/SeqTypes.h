@@ -12,7 +12,13 @@ inline constexpr uint8_t INST_EMPTY  = 0xFF;
 inline constexpr uint8_t CHAIN_EMPTY = 0xFF;
 inline constexpr uint8_t PHRASE_EMPTY= 0xFF;
 
-enum class FxCmd : uint8_t { NONE = 0, VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC };
+// Modeled commands are NONE..TIC (values 0..9), aligned so that the file-format
+// byte == engineValue - 1 for VOL..TIC. UNKNOWN is a sentinel for any FX command
+// the engine does not model (file byte >= 0x09): it is carried through load/save
+// byte-for-byte (see SongIO) and is inert at tick time. Keep UNKNOWN last / distinct
+// so it never collides with a modeled value.
+enum class FxCmd : uint8_t { NONE = 0, VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC,
+                             UNKNOWN = 0xFE };
 
 struct FxSlot {
     FxCmd   cmd = FxCmd::NONE;

@@ -40,19 +40,29 @@ static bool writeFile(const std::string& path, const std::vector<uint8_t>& data)
 }
 
 // ---- FxCmd mapping ----
-// Library: 0xFF=none, 0x00=vol, 0x01=pit, 0x02=del, 0x03=rev, 0x04=hop, 0x05=kil
-// Engine:  NONE=0, VOL=1, PIT=2, DEL=3, REV=4, HOP=5, KIL=6
+// Library file bytes:  0xFF = none; 0x00..0x08 = VOL,PIT,DEL,REV,HOP,KIL,TBL,GRV,TIC;
+//                      0x09.. = ARP and the rest of the M8 FX set (NOT modeled here).
+// Engine enum:         NONE=0, then VOL..TIC = 1..9  (file byte + 1).
+//
+// Commands the engine does not model (>= 0x09) decode to FxCmd::UNKNOWN and are
+// preserved byte-for-byte on save: convertEngineToSong leaves UNKNOWN slots as the
+// re-parsed original bytes rather than overwriting them (invariant #8 — saving must
+// preserve what the engine doesn't model). We deliberately do NOT assign identity or
+// meaning to bytes past TIC — their file-format indices are not verified in this tree
+// (see FX_COMMANDS_SPEC.md), only carried through.
 
 static engine::FxCmd libFxToEngine(uint8_t cmd) {
     if (cmd == 0xFF) return engine::FxCmd::NONE;
-    if (cmd <= 0x05) return static_cast<engine::FxCmd>(cmd + 1);
-    return engine::FxCmd::NONE;
+    if (cmd <= 0x08) return static_cast<engine::FxCmd>(cmd + 1);  // VOL..TIC (modeled)
+    return engine::FxCmd::UNKNOWN;                                // preserved, inert
 }
 
 static uint8_t engineFxToLib(engine::FxCmd cmd) {
-    auto v = static_cast<uint8_t>(cmd);
-    if (v == 0) return 0xFF;
-    return v - 1;
+    if (cmd == engine::FxCmd::NONE) return 0xFF;
+    // UNKNOWN is never routed through here — the phrase save loop preserves the
+    // original byte for UNKNOWN slots instead of calling this. Guard defensively.
+    if (cmd == engine::FxCmd::UNKNOWN) return 0xFF;
+    return static_cast<uint8_t>(cmd) - 1;  // VOL..TIC -> 0x00..0x08
 }
 
 // ---- Mod conversion ----
@@ -482,9 +492,14 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             dst.note.value = src.note;
             dst.velocity = src.vol;
             dst.instrument = src.instr;
-            dst.fx1 = {engineFxToLib(src.fx[0].cmd), src.fx[0].val};
-            dst.fx2 = {engineFxToLib(src.fx[1].cmd), src.fx[1].val};
-            dst.fx3 = {engineFxToLib(src.fx[2].cmd), src.fx[2].val};
+            // Overlay modeled FX; leave UNKNOWN (unmodeled) slots as the re-parsed
+            // original bytes so commands the engine doesn't model survive save.
+            if (src.fx[0].cmd != engine::FxCmd::UNKNOWN)
+                dst.fx1 = {engineFxToLib(src.fx[0].cmd), src.fx[0].val};
+            if (src.fx[1].cmd != engine::FxCmd::UNKNOWN)
+                dst.fx2 = {engineFxToLib(src.fx[1].cmd), src.fx[1].val};
+            if (src.fx[2].cmd != engine::FxCmd::UNKNOWN)
+                dst.fx3 = {engineFxToLib(src.fx[2].cmd), src.fx[2].val};
         }
     }
 
