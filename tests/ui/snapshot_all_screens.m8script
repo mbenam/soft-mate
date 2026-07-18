@@ -1,0 +1,44 @@
+# snapshot_all_screens.m8script — T5: golden snapshot testing
+# (M8_APP_AUTOMATION_SPEC.md). Walks every screen and compares its shadow
+# grid (glyph, fg/bg color, slider, bracket per cell) against a stored
+# baseline in tests/ui/golden/<screen>.txt. Any unintended layout/rendering
+# change turns this red with the exact cell and field that differs.
+#
+# Regenerate intentionally after a real UI change:
+#   build\Release\m8_clone.exe --script tests\ui\snapshot_all_screens.m8script --headless --update-goldens --out-dir test_out_ui\snapshot_all_screens
+
+goto SONG
+assert_matches_golden song
+
+goto CHAIN
+assert_matches_golden chain
+
+goto PHRASE
+assert_matches_golden phrase
+
+goto INSTRUMENT
+assert_matches_golden instrument
+
+goto TABLE
+assert_matches_golden table
+
+goto PROJECT
+assert_matches_golden project
+
+goto GROOVE
+assert_matches_golden groove
+
+goto INST_MOD
+assert_matches_golden inst_mod
+
+goto SCALE
+assert_matches_golden scale
+
+goto INST_POOL
+assert_matches_golden inst_pool
+
+goto MIXER
+assert_matches_golden mixer
+
+goto EFFECTS
+assert_matches_golden effects

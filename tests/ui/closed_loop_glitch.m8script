@@ -1,26 +1,74 @@
 # closed_loop_glitch.m8script — Task 7 Phase 1: build a glitchy patch
-# Load TEST-FILE, crank instrument 00 AMP to max, save, render.
+# Load TEST-FILE, crank instrument 02's (MAC, MacroSynth) AMP to max, save,
+# render.
+#
+# Fixed 2026-07-18 (M8_APP_AUTOMATION_SPEC.md Tier 4 notes). This script
+# previously (a) never dismissed TEST-FILE's missing-samples overlay, whose
+# dismiss handler swallows the very next keydown -- throwing off all 3
+# `key SHIFT+RIGHT` presses by one and landing on PHRASE 20, not the
+# Instrument screen; (b) used `key X; hold UP 255; key X`, which does not
+# edit Instrument-screen fields at all -- editHeld is only true between X's
+# own down/up events, and that sequence spans multiple frames, so it's
+# already false by the time UP fires; and (c) its own navigation comment
+# ("Down to NAME, Down to TRANSP, Right to AMP") was wrong for the intended
+# target and, combined with (a), landed on an unrelated field of instrument
+# 01 (a WavSynth, "WAV") -- itself mishandled by InstrumentScreen.cpp, which
+# only branches on isMac and always displays/reads inst.sampler.* regardless
+# of the instrument's real type, so edits to a Wav/Hyper/FM instrument's
+# shared fields are invisible on screen even though EngineStateUpdater
+# correctly writes them (confirmed by instrumentation: type=4/WAVSYNTH,
+# isWav=1, wav.amp went 0->1 while the displayed sampler.amp stayed 0).
+# All three confirmed by reproduction with intermediate dump_screen/
+# dump_json calls.
+#
+# The original "crank AMP -> glitch" narrative also turned out to be
+# misleading even once mechanically correct: TEST-FILE.m8s fails
+# m8_analyze's crest/DC checks *unedited* (confirmed directly: crest 3.61 dB,
+# DC-worst 0.063, both well past the hard-fail thresholds) -- a known,
+# documented gap (status.md Known Issues): instrument 02 ("MAC", MacroSynth)
+# has no volume envelope in the file and drones continuously for the whole
+# render. Instrument 00's AMP (what the old script's comment described) was
+# never the cause. This script now targets instrument 02 directly (song
+# track column 1, confirmed via the render event CSV: track=1 plays
+# instrument=2) and cranks *its* AMP from a confirmed 0x00 baseline to 0xFF,
+# which genuinely amplifies the existing drone rather than merely riding on
+# TEST-FILE's pre-existing failure coincidentally.
 
 load third_party/m8-files-cxx/examples/songs/TEST-FILE.m8s
 wait 5
 
-# Navigate to INSTRUMENT screen
+# Dismiss the missing-samples overlay (its first-keydown-after-load is
+# otherwise swallowed by main.cpp's overlay-dismiss handler).
+key DOWN
+wait 1
+
+# Move to song track column 1 (0-indexed), then drill down to its
+# instrument (02, MAC/MacroSynth).
+key RIGHT
 key SHIFT+RIGHT
 key SHIFT+RIGHT
 key SHIFT+RIGHT
 wait 2
+assert_screen contains "INST. 02"
+assert_field TYPE MACROSYN
 
-# Navigate to AMP: Down to NAME, Down to TRANSP, Right to AMP
+# Navigate to AMP: TYPE->NAME->TRANSP->SHAPE (3 downs), then SHAPE->AMP
+# (1 right) -- see GetMacrosynNavMap in InstrumentMacrosynLayout.h.
+key DOWN
 key DOWN
 key DOWN
 key RIGHT
 wait 1
+assert_field AMP 00
 
-# Max out AMP
-key X
-hold UP 255
-key X
+# Max out AMP (compound key+direction: X-down, UP-down, UP-up, X-up all in
+# one frame, so editHeld is still true when UP fires -- see
+# synth_macrosynth.m8script for the same idiom)
+repeat 255 {
+    key X+UP
+}
 wait 2
+assert_field AMP FF
 
 # Save and render
 save artifacts/glitch.m8s

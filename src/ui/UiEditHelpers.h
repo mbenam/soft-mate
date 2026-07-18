@@ -58,10 +58,15 @@ inline void ModifyValue(m8::engine::Step& step, int col, int delta, bool largeSt
         }
     } else if (col == 3 || col == 5 || col == 7) {
         int idx = (col == 3) ? 0 : (col == 5) ? 1 : 2;
+        // Cycle through the modeled FX commands NONE(0)..TIC(9). UNKNOWN(0xFE) is a
+        // load/save passthrough and is not authorable — editing such a slot snaps it
+        // into the modeled range.
+        constexpr int kMaxFx = static_cast<int>(FxCmd::TIC); // 9
         int cmd = static_cast<int>(step.fx[idx].cmd);
+        if (cmd > kMaxFx) cmd = 0;
         cmd += delta;
-        if (cmd < 0) cmd = 6;
-        if (cmd > 6) cmd = 0;
+        if (cmd < 0) cmd = kMaxFx;
+        if (cmd > kMaxFx) cmd = 0;
         step.fx[idx].cmd = static_cast<FxCmd>(cmd);
     }
 }

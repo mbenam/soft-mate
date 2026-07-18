@@ -1,0 +1,47 @@
+# fx_roundtrip.m8script — T4: author a TBL phrase FX through the real UI
+# edit path, save, reload, and confirm it survives on screen. UI counterpart
+# to the engine-level L12/L13 round-trip tests (SongIO.cpp), and exercises
+# the FX command cycle range extended to include TBL/GRV/TIC
+# (UiEditHelpers.h ModifyValue, fixed alongside L12/L13 -- see
+# FX_COMMANDS_SPEC.md). Previously TBL/GRV/TIC weren't even selectable in
+# the UI (the cycle was clamped to KIL) and libFxToEngine dropped anything
+# past HOP/KIL on load.
+#
+# Uses the compound key+direction idiom (see synth_macrosynth.m8script) --
+# editHeld is only true between X's own down/up events, so a sequential
+# `key X; key RIGHT; key X` does not register an edit.
+
+load songs/sunrise.m8s
+wait 1
+assert_no_error
+
+goto PHRASE
+assert_screen contains "PHRASE"
+
+# Move to phrase 00 row 0's FX1 command column (columns: 0=note, 1=vol,
+# 2=instr, 3=fx1cmd, 4=fx1val, 5=fx2cmd, 6=fx2val, 7=fx3cmd, 8=fx3val --
+# PhraseScreen.cpp's cursor_x wraps mod 9).
+key RIGHT
+key RIGHT
+key RIGHT
+
+# Cycle FX1's command NONE(0) -> TBL(7)
+repeat 7 {
+    key X+RIGHT
+}
+
+# Move to FX1's value column, set it to 0x05
+key RIGHT
+repeat 5 {
+    key X+RIGHT
+}
+assert_screen row 3 contains "TBL05"
+
+save artifacts/fx_roundtrip.m8s
+assert_no_error
+load artifacts/fx_roundtrip.m8s
+wait 1
+assert_no_error
+
+goto PHRASE
+assert_screen row 3 contains "TBL05"

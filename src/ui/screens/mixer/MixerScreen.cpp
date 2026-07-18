@@ -49,15 +49,21 @@ static void DrawVerticalBar(Renderer& renderer, int col, int rowBottom, int rowH
     int pyBottom = (rowBottom + 1) * 8;
     int maxHeight = rowHeight * 8;
     int w = doubleWidth ? 16 : 8;
-    
-    // Background Dark Slate
-    SDL_Color bgCol = {40, 50, 50, 255}; 
-    renderer.fillRectPixel(px, pyBottom - maxHeight, w - 1, maxHeight, bgCol);
-    
-    // Foreground Fill
     int fillHeight = (val * maxHeight) / 255;
+
+    // Background covers only the UNFILLED (top) portion, foreground the
+    // filled (bottom) portion -- adjacent, not overlapping. Previously the
+    // background was drawn full-height and the foreground on top of it,
+    // which double-writes every cell the fill reaches; since every mixer
+    // volume defaults to non-zero (out_vol=0xE0, tracks similarly), this bar
+    // always tripped assert_no_overlap on a fresh boot.
+    int bgHeight = maxHeight - fillHeight;
+    if (bgHeight > 0) {
+        SDL_Color bgCol = {40, 50, 50, 255};
+        renderer.fillRectPixel(px, pyBottom - maxHeight, w - 1, bgHeight, bgCol);
+    }
     if (fillHeight > 0) {
-        SDL_Color fillCol = {180, 200, 200, 255}; 
+        SDL_Color fillCol = {180, 200, 200, 255};
         renderer.fillRectPixel(px, pyBottom - fillHeight, w - 1, fillHeight, fillCol);
     }
 }
@@ -78,8 +84,13 @@ void RenderMixerScreen(Renderer& renderer,
     // Dynamic Tempo
     
 
-    // Draw Output Vol Bars (Double width, 12 rows high, row 5 to 16)
-    DrawVerticalBar(renderer, 12, 16, 12, mx.out_vol, true);
+    // Draw Output Vol Bars (Double width, 12 rows high, row 5 to 16).
+    // Column 24, not 12: the 8 per-track bars below occupy columns i*3 for
+    // i=0..7 (0,3,...,21), so column 12 is track 4's slot -- drawing the
+    // output bar there overlapped it (both bottom-align at row 16, output
+    // spans rows 5-16, track spans rows 9-16, so rows 9-16 collided).
+    // Column 24 is one slot past track 7's column (21) and otherwise unused.
+    DrawVerticalBar(renderer, 24, 16, 12, mx.out_vol, true);
 
     // Draw Track Vol Bars (1 char width, 8 rows high, row 9 to 16)
     for (int i = 0; i < 8; i++) {

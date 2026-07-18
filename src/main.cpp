@@ -218,6 +218,7 @@ int main(int argc, char* argv[]) {
     std::string scriptPath;
     std::string outDir;
     bool headless = false;
+    bool updateGoldens = false;  // Tier 5: assert_matches_golden writes instead of compares
     {
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -228,6 +229,8 @@ int main(int argc, char* argv[]) {
             } else             if (arg == "--out-dir" && i + 1 < argc) {
                 outDir = argv[++i];
                 std::filesystem::create_directories(outDir);
+            } else if (arg == "--update-goldens") {
+                updateGoldens = true;
             }
         }
     }
@@ -390,6 +393,7 @@ int main(int argc, char* argv[]) {
             return scriptRunner->getExitCode();
         }
         scriptRunner->setOutDir(outDir);
+        scriptRunner->setUpdateGoldens(updateGoldens);
     }
 
     while (running) {
@@ -819,6 +823,17 @@ int main(int argc, char* argv[]) {
             };
             sctx.getSongName = [](void* u) -> const std::string& {
                 return *static_cast<ScriptCtxHelper*>(u)->songName;
+            };
+            // Track-0 playhead observability (Tier 2): reads the engine's
+            // wait-free packed atomic directly, same source the UI itself
+            // reads for playhead highlighting (see the `playheads[i] =
+            // engine.getPlayhead(i)` calls above) -- not the shadow grid,
+            // which can't see the playhead line.
+            sctx.getPlayheadState = [](void* u) -> uint32_t {
+                return static_cast<ScriptCtxHelper*>(u)->engine->getPlayheadState(0);
+            };
+            sctx.getPlayheadRow = [](void* u) -> int {
+                return static_cast<ScriptCtxHelper*>(u)->engine->getPlayhead(0).phraseRow;
             };
             sctx.loadSong = [](const std::string& path, void* u) -> bool {
                 auto* h = static_cast<ScriptCtxHelper*>(u);

@@ -1,0 +1,35 @@
+# tests/ui/manifest.txt — verification policy for the discovered UI-script
+# runner (tests/test_ui_scripts.cpp, M8_APP_AUTOMATION_SPEC.md Tier 1).
+#
+# Every tests/ui/*.m8script is discovered and run automatically. A script not
+# listed here defaults to policy "pass": the script must exit 0, nothing more.
+# List a script here only when it needs extra verification or has a
+# cross-script dependency that requires a specific run order.
+#
+# Columns: <name-without-extension>  <policy>
+#
+#   pass                          script exits 0 (the default — usually omit the line)
+#   skip:<reason>                 do not run; script stays in the tree but out of CI
+#   analyze_pass:<wav>            after exit 0, run m8_analyze on <out-dir>/<wav>; expect PASS (exit 0)
+#   analyze_fail:<wav>            same, but expect a deliberate hard-check FAIL (exit 1)
+#   diff:<wav>:<song.m8s>:<sec>   after exit 0, render <song.m8s> for <sec>s via m8_render into the
+#                                 same out-dir, then `m8_analyze --diff` it against <out-dir>/<wav>;
+#                                 expect byte-for-byte identity (exit 0)
+#
+# ORDER MATTERS: scripts listed here run top-to-bottom in this file's order, before any
+# unlisted scripts (which run afterward, alphabetically).
+#
+# closed_loop_fix's policy was analyze_pass until 2026-07-18: fixed then to
+# analyze_fail (see the script's own header for the full writeup). Short
+# version: TEST-FILE.m8s is pre-4.0, so saveSong always refused it -- Phase 2
+# never actually continued from Phase 1's output, it loaded stale, unrelated
+# content from artifacts/glitch.m8s. Made self-contained (loads TEST-FILE
+# fresh, replicates the crank itself), which also surfaced that reducing the
+# droning MacroSynth's AMP can't reach PASS at any value (unity-gain floor,
+# already-failing baseline) -- so the honest expected verdict is FAIL, same
+# as Phase 1. No cross-script file dependency remains, but the two are kept
+# adjacent here since they're the Task 7 pair.
+
+closed_loop_glitch   analyze_fail:glitch.wav
+closed_loop_fix      analyze_fail:fixed.wav
+live_vs_offline      diff:live_vs_offline_app.wav:third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s:1

@@ -62,7 +62,9 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
 inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetMixerInteractiveFields() {
     using C = CursorId;
     std::unordered_map<CursorId, std::vector<UI_GridCell>> fields = {
-        {C::OUT_VOL, { {"00", 12, 3, "VALUE", "LABEL_LITE", "value", true, 0} }},
+        // Column 24 to match the relocated bar (MixerScreen.cpp) -- avoids
+        // colliding with track 4's bar, which sits at column 12 (= 4*3).
+        {C::OUT_VOL, { {"00", 24, 3, "VALUE", "LABEL_LITE", "value", true, 0} }},
 
         {C::MST_CHO, { {"E0", 0, 19, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::MST_DEL, { {"E0", 4, 19, "VALUE", "LABEL_LITE", "value", true, 0} }},

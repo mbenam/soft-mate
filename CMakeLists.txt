@@ -172,10 +172,30 @@ if(WIN32)
 endif()
 
 # -------------------------------------------------------------------
+# M8 device control library (serial + SLIP + ScreenGrid + primitives).
+# No engine, no SDL, no audio — shared by m8_nav and the test suite.
+# -------------------------------------------------------------------
+add_library(m8_device STATIC
+    src/tools/m8/M8Device.cpp
+    src/tools/m8/Primitives.cpp
+    src/tools/m8/Gestures.cpp
+    src/tools/m8/DeviceScriptRunner.cpp
+)
+target_include_directories(m8_device PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
+
+# -------------------------------------------------------------------
 # Serial display decoder / browser navigator (M8_HARDWARE_TEST_SPEC.md
 # §8.2b). Serial only -- no engine, no SDL, no audio.
 # -------------------------------------------------------------------
 add_executable(m8_nav src/tools/main_nav.cpp)
+target_link_libraries(m8_nav PRIVATE m8_device)
+
+# ---------------------------------------------------------------------------
+# Device-vs-golden diff checker. Runs a script on the device, dumps the
+# final screen as JSON, and compares against a golden reference.
+# ---------------------------------------------------------------------------
+add_executable(m8_diffcheck src/tools/main_diffcheck.cpp)
+target_link_libraries(m8_diffcheck PRIVATE m8_device)
 
 # -----------------------------------------------------------------------------
 # Tests Target (m8_tests)
@@ -204,11 +224,13 @@ add_executable(m8_tests
     tests/test_fmsynth.cpp
     tests/test_wavsynth.cpp
     tests/test_tables.cpp
+    tests/test_device_decode.cpp
+    tests/test_ui_fuzz.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )
 
-target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine)
+target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine m8_device)
 target_include_directories(m8_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(m8_tests PRIVATE THIRD_PARTY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 

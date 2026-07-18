@@ -12,7 +12,6 @@ namespace instrument {
 inline std::vector<UI_GridCell> GetSamplerStaticText() {
     return {
         {"INST.", 0, 0, "TITLE", "", "static", false, 0},
-        {"SCP", 34, 26, "LABEL_DIM", "", "static", false, 0},
     };
 }
 

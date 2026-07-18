@@ -12,8 +12,6 @@ namespace instrument {
 inline std::vector<UI_GridCell> GetMacrosynStaticText() {
     return {
         {"INST.", 0, 0, "TITLE", "", "static", false, 0},
-        // Navigator
-        {"SCP", 34, 26, "LABEL_DIM", "", "static", false, 0},
     };
 }
 

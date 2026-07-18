@@ -56,8 +56,7 @@ inline std::vector<UI_GridCell> GetScaleStaticText() {
 
 inline std::vector<UI_GridCell> GetScaleDynamicTextDefaults() {
     return {
-        {"00", 7, 0, "TITLE", "", "dynamic_text", false, 0},
-        {"T>128", 34, 2, "LABEL_DIM", "", "dynamic_text", false, 0}
+        {"00", 7, 0, "TITLE", "", "dynamic_text", false, 0}
     };
 }
 

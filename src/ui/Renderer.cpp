@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <cstring>
 
@@ -49,7 +50,16 @@ bool Renderer::init(int logicalWidth, int logicalHeight, int scale, bool hidden)
         return false;
     }
 
-    m_renderer = SDL_CreateRenderer(m_window, nullptr);
+    // Headless (script/automation) mode never presents to a display, so force
+    // the software renderer instead of the default GPU-accelerated backend.
+    // Discovered via M8_APP_AUTOMATION_SPEC.md Tier 1: running m8_clone --headless
+    // back-to-back in a tight loop (13 scripts, one process each) intermittently
+    // crashed with STATUS_ACCESS_VIOLATION on a *different* script each run --
+    // a GPU-driver race from creating/tearing down a real D3D/Vulkan renderer
+    // once per process in rapid succession. The software renderer sidesteps the
+    // GPU driver entirely, which is also strictly correct for a hidden window
+    // that's never actually presented to screen.
+    m_renderer = SDL_CreateRenderer(m_window, hidden ? SDL_SOFTWARE_RENDERER : nullptr);
     if (!m_renderer) {
         std::cerr << "SDL_CreateRenderer Error: " << SDL_GetError() << "\n";
         return false;
@@ -206,6 +216,91 @@ bool Renderer::hasOverlap() const {
         for (int x = 0; x < kGridW; ++x)
             if (m_vram[y][x].writeCount > 1) return true;
     return false;
+}
+
+// ─── Tier 5: golden snapshot testing ────────────────────────────────────────
+// Format: header line, then one line per cell (row-major, all kGridH*kGridW
+// cells unconditionally -- simpler and more robust than only emitting
+// non-blank cells, at the cost of a larger file):
+//   row col ch(as 2-digit hex of the byte) fgColorHex bgColorHex slider bracket
+// ch is hex-encoded (not the raw char) so control/space bytes round-trip
+// through whitespace-delimited parsing without ambiguity.
+
+void Renderer::writeGolden(const std::string& path) const {
+    std::ofstream f(path);
+    if (!f.is_open()) return;
+    f << "# m8-sdl3 golden snapshot v1\n";
+    f << "# row col ch_hex fg bg slider bracket\n";
+    for (int y = 0; y < kGridH; ++y) {
+        for (int x = 0; x < kGridW; ++x) {
+            const VirtualCell& c = m_vram[y][x];
+            f << y << ' ' << x << ' '
+              << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+              << static_cast<unsigned>(static_cast<unsigned char>(c.ch)) << ' '
+              << std::setw(8) << c.color << ' '
+              << std::setw(8) << c.bg << std::dec << std::nouppercase << ' '
+              << static_cast<int>(c.slider) << ' '
+              << (c.bracket ? 1 : 0) << '\n';
+        }
+    }
+}
+
+bool Renderer::compareGolden(const std::string& path, std::string& mismatchDetail) const {
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        mismatchDetail = "golden file not found: " + path;
+        return false;
+    }
+
+    std::string line;
+    int lineNum = 0;
+    while (std::getline(f, line)) {
+        ++lineNum;
+        if (line.empty() || line[0] == '#') continue;
+
+        std::istringstream iss(line);
+        int row = -1, col = -1;
+        std::string chHex, fgHex, bgHex;
+        int slider = -1, bracket = -1;
+        if (!(iss >> row >> col >> chHex >> fgHex >> bgHex >> slider >> bracket)) {
+            mismatchDetail = "malformed golden line " + std::to_string(lineNum) + " in " + path;
+            return false;
+        }
+        if (row < 0 || row >= kGridH || col < 0 || col >= kGridW) {
+            mismatchDetail = "golden line " + std::to_string(lineNum) + " has out-of-range row/col";
+            return false;
+        }
+
+        unsigned char expectedCh = static_cast<unsigned char>(std::stoul(chHex, nullptr, 16));
+        uint32_t expectedFg = static_cast<uint32_t>(std::stoul(fgHex, nullptr, 16));
+        uint32_t expectedBg = static_cast<uint32_t>(std::stoul(bgHex, nullptr, 16));
+
+        const VirtualCell& actual = m_vram[row][col];
+        bool chMismatch = static_cast<unsigned char>(actual.ch) != expectedCh;
+        bool fgMismatch = actual.color != expectedFg;
+        bool bgMismatch = actual.bg != expectedBg;
+        bool sliderMismatch = static_cast<int>(actual.slider) != slider;
+        bool bracketMismatch = (actual.bracket ? 1 : 0) != bracket;
+
+        if (chMismatch || fgMismatch || bgMismatch || sliderMismatch || bracketMismatch) {
+            std::ostringstream detail;
+            detail << "cell [row=" << row << " col=" << col << "] mismatch:";
+            if (chMismatch) detail << " ch expected=0x" << std::hex << (unsigned)expectedCh
+                                    << " actual=0x" << (unsigned)(unsigned char)actual.ch << std::dec
+                                    << " ('" << (char)expectedCh << "' vs '" << actual.ch << "')";
+            if (fgMismatch) detail << " fg expected=" << std::hex << std::setw(8) << std::setfill('0')
+                                    << expectedFg << " actual=" << actual.color << std::dec;
+            if (bgMismatch) detail << " bg expected=" << std::hex << std::setw(8) << std::setfill('0')
+                                    << expectedBg << " actual=" << actual.bg << std::dec;
+            if (sliderMismatch) detail << " slider expected=" << slider
+                                        << " actual=" << (int)actual.slider;
+            if (bracketMismatch) detail << " bracket expected=" << bracket
+                                         << " actual=" << (actual.bracket ? 1 : 0);
+            mismatchDetail = detail.str();
+            return false;
+        }
+    }
+    return true;
 }
 
 void Renderer::setPlayheads(const StoredPlayhead* ph, int count) {

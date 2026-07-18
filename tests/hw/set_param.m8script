@@ -1,0 +1,31 @@
+# set_param.m8script — Tier 5 recipe: set any instrument parameter on a real M8.
+#
+# Navigates to the Instrument screen, moves the cursor to AMP, sets it to
+# 0x40 (hex), and asserts the readback.  Works for both Sampler and MacroSynth
+# instrument types (AMP is present in both field maps, at the same column).
+#
+# NOT CUTOFF/RES: hardware-confirmed 2026-07-18 -- when FILTER is OFF, the
+# real M8 UI skips CUTOFF/RES entirely during UP/DOWN cursor navigation (they
+# have no effect while the filter is disabled, so the device doesn't make
+# them focusable). moveCursorTo has no way to know a field is conditionally
+# unreachable and fails with "could not reach 'CUTOFF' in N steps" -- not a
+# bug in the primitive, a real UI behavior the field map doesn't yet model.
+# AMP has no such condition, so it's a safer target for this recipe.
+#
+# Prerequisites:
+#   - A real M8 headless connected over serial.
+#   - hw_buttons.json populated (Tier 2 gesture pinning complete).
+#   - The M8 has a song loaded with at least one instrument.
+#
+# Invocation (Windows, from repo root):
+#   build\Release\m8_nav.exe --script tests\hw\set_param.m8script --port COM3
+#
+# Exit codes:
+#   0 = pass (AMP set and verified)
+#   1 = assertion failure (field not readable, value mismatch)
+#   2 = parse error in script
+
+goto INSTRUMENT
+cursor AMP
+set AMP 0x40
+assert_field AMP 40

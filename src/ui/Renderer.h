@@ -59,6 +59,19 @@ public:
     // Overlap detection: returns true if any cell was written more than once this frame
     bool hasOverlap() const;
 
+    // Tier 5 golden snapshot testing (M8_APP_AUTOMATION_SPEC.md). Compact,
+    // JSON-free text format: one line per cell (glyph, fg color, bg color,
+    // slider fill, bracket flag) -- deliberately excludes bpm/cursor-derived-
+    // from-bg-alone/playhead noise by comparing raw per-cell fields directly,
+    // so a snapshot is reproducible from any deterministic navigation
+    // sequence (e.g. `goto <SCREEN>` from a fresh boot).
+    void writeGolden(const std::string& path) const;
+    // Returns true if `path`'s stored snapshot matches the current VRAM
+    // exactly. On mismatch, fills `mismatchDetail` with the first differing
+    // cell's row/col and expected-vs-actual. Returns false (with a reason in
+    // `mismatchDetail`) if the golden file doesn't exist or is malformed.
+    bool compareGolden(const std::string& path, std::string& mismatchDetail) const;
+
     SDL_Window* getWindow() const { return m_window; }
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }
 

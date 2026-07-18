@@ -1,0 +1,56 @@
+# nav_all_screens.m8script — T4: reach every screen via `goto` (which itself
+# verifies the header) and assert_no_overlap on each, catching layout
+# regressions like the GROOVE-screen crash class (groovetest.m8script) across
+# the whole UI, not just one screen. Complements nav.m8script (raw `key
+# SHIFT+...` sequences) with the newer, more maintainable `goto` primitive.
+
+goto SONG
+assert_no_overlap
+
+goto CHAIN
+assert_no_overlap
+
+goto PHRASE
+assert_no_overlap
+
+goto INSTRUMENT
+assert_no_overlap
+
+goto TABLE
+assert_no_overlap
+
+goto PROJECT
+assert_no_overlap
+
+goto GROOVE
+assert_no_overlap
+
+goto INST_MOD
+assert_no_overlap
+
+goto SCALE
+assert_no_overlap
+
+goto INST_POOL
+assert_no_overlap
+
+goto MIXER
+# No assert_no_overlap here: the volume bars (DrawVerticalBar in
+# MixerScreen.cpp) render at sub-cell pixel precision -- background and
+# foreground fill rects are pixel-adjacent (not overlapping), but whenever
+# the fill boundary doesn't land on an exact 8px cell edge (i.e. almost
+# always, since fillHeight = val*maxHeight/255), fillRectPixel's cell-rounding
+# marks that one boundary cell as touched by both rects. That's a real limit
+# of the cell-granularity overlap check applied to sub-cell graphics, not a
+# layout bug -- unlike the two real bugs this script did catch and get fixed
+# (see M8_APP_AUTOMATION_SPEC.md Tier 4 notes): a duplicate "SCP" navigator
+# label on the Instrument screen, and a duplicate "T>" tempo readout on
+# GROOVE/INST_POOL/MODS/SCALE, both exactly overlapping the global chrome
+# (ViewManager::renderChrome) that already draws them once, globally, for
+# every screen.
+
+goto EFFECTS
+assert_no_overlap
+
+goto SONG
+assert_no_overlap

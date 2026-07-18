@@ -1,15 +1,63 @@
 #include "ScriptRunner.h"
 #include "Renderer.h"
+#include "../analysis/AudioMetrics.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <regex>
 #include <cstdio>
 #include <filesystem>
 
+// dr_wav's implementation is compiled once, in FileBrowser.cpp (part of the
+// same m8_clone binary) -- do NOT define DR_WAV_IMPLEMENTATION here too, or
+// the linker sees duplicate symbols. This include only pulls in declarations.
+#include "../engine/dr_wav.h"
+
 namespace fs = std::filesystem;
+
+// ─── Tier 3: assert_wav metric lookup ───────────────────────────────────────
+// Maps a metric name to its value in an already-computed Metrics struct. Free
+// function (no ScriptRunner state needed) so it doesn't need a header entry.
+static bool metricValue(const m8::analysis::Metrics& m, const std::string& name, double& out) {
+    if (name == "peak")        { out = m.peak;              return true; }
+    if (name == "rms")         { out = m.rms;                return true; }
+    if (name == "crest")       { out = m.crestDb;            return true; }
+    if (name == "dc_l")        { out = m.dcL;                return true; }
+    if (name == "dc_r")        { out = m.dcR;                return true; }
+    if (name == "dc_worst")    { out = m.dcWorstWindow;      return true; }
+    if (name == "clipped")     { out = m.clipped;            return true; }
+    if (name == "nonfinite")   { out = m.nonFinite;          return true; }
+    if (name == "silence")     { out = m.longestSilenceSec;  return true; }
+    if (name == "mid_rms")     { out = m.midRms;             return true; }
+    if (name == "side_rms")    { out = m.sideRms;            return true; }
+    if (name == "correlation") { out = m.correlation;        return true; }
+    return false;
+}
+
+// ─── Tier 3: `goto <screen>` targets ────────────────────────────────────────
+// (tx, ty) grid coordinates and the header substring to verify against, taken
+// directly from ViewManager.cpp's getViewAt() ladder (SONG at (0,0); x runs
+// right through CHAIN/PHRASE/INSTRUMENT/TABLE; y runs up through the two
+// upper rows; MIXER/EFFECTS sit at y=-1/-2, valid at any x) and confirmed
+// against nav.m8script's already-passing header assertions.
+struct GotoTarget { const char* name; int tx; int ty; const char* verify; };
+static const GotoTarget kGotoTargets[] = {
+    {"SONG",       0,  0, "SONG"},
+    {"CHAIN",      1,  0, "CHAIN"},
+    {"PHRASE",     2,  0, "PHRASE"},
+    {"INSTRUMENT", 3,  0, "INST."},
+    {"TABLE",      4,  0, "TABLE"},
+    {"PROJECT",    0,  1, "PROJECT"},
+    {"GROOVE",     2,  1, "GROOVE"},
+    {"INST_MOD",   3,  1, "INST. MODS"},
+    {"SCALE",      2,  2, "SCALE"},
+    {"INST_POOL",  3,  2, "INSTRUMENT POOL"},
+    {"MIXER",      0, -1, "MIXER"},
+    {"EFFECTS",    0, -2, "EFFECT SETTINGS"},
+};
 
 // ─── Button name → SDL keycode mapping ──────────────────────────────────────
 
@@ -141,6 +189,225 @@ bool ScriptRunner::parseLine(const std::string& raw, int lineNum, Command& out) 
         }
         out.type = CmdType::WAIT;
         out.intArg = frames;
+        return true;
+    }
+
+    // ── wait_until <predicate> [timeout_frames] ────────────────────────────
+    // Forms:
+    //   wait_until playing [timeout]
+    //   wait_until stopped [timeout]
+    //   wait_until playhead_row >=|== <n> [timeout]
+    //   wait_until screen contains "<text>" [timeout]
+    // Default timeout is 300 frames (5s @ 60fps); exceeding it fails the
+    // assertion (auto-dumped) rather than hanging. Re-checked every frame in
+    // onFrameEnd, so — unlike a bare `wait N` — it never over- or under-shoots
+    // the moment the condition actually becomes true.
+    if (verb == "wait_until") {
+        std::istringstream iss(rest);
+        std::string kind;
+        iss >> kind;
+        out.type = CmdType::WAIT_UNTIL;
+        out.intArg2 = 300;
+
+        if (kind == "playing" || kind == "stopped") {
+            out.arg = kind;
+            std::string tail;
+            if (iss >> tail) { try { out.intArg2 = std::stoi(tail); } catch (...) {} }
+            return true;
+        }
+        if (kind == "playhead_row") {
+            std::string op;
+            int target = 0;
+            if (!(iss >> op >> target) || (op != ">=" && op != "==")) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": wait_until playhead_row needs '>=|== <n> [timeout]'\n";
+                return false;
+            }
+            out.arg = "playhead_row";
+            out.arg2 = op;
+            out.intArg = target;
+            std::string tail;
+            if (iss >> tail) { try { out.intArg2 = std::stoi(tail); } catch (...) {} }
+            return true;
+        }
+        if (kind == "screen") {
+            std::string sub;
+            iss >> sub;
+            if (sub != "contains") {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": wait_until screen needs 'contains \"<text>\"'\n";
+                return false;
+            }
+            std::string remainder;
+            std::getline(iss, remainder);
+            auto s = remainder.find_first_not_of(' ');
+            remainder = (s == std::string::npos) ? "" : remainder.substr(s);
+            if (remainder.empty() || remainder.front() != '"') {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": wait_until screen contains needs a quoted \"<text>\"\n";
+                return false;
+            }
+            auto endq = remainder.find('"', 1);
+            if (endq == std::string::npos) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": unterminated quote in wait_until screen contains\n";
+                return false;
+            }
+            out.arg  = "screen_contains";
+            out.arg2 = remainder.substr(1, endq - 1);
+            std::string trailing = remainder.substr(endq + 1);
+            auto ts = trailing.find_first_not_of(' ');
+            if (ts != std::string::npos) {
+                try { out.intArg2 = std::stoi(trailing.substr(ts)); } catch (...) {}
+            }
+            return true;
+        }
+        std::cerr << "Script parse error line " << lineNum
+                  << ": unknown wait_until predicate '" << kind << "'\n";
+        return false;
+    }
+
+    // ── checkpoint_playhead / assert_playhead_row / assert_playhead_advanced ─
+    if (verb == "checkpoint_playhead") {
+        out.type = CmdType::CHECKPOINT_PLAYHEAD;
+        return true;
+    }
+    if (verb == "assert_playhead_row") {
+        int row = -1;
+        try { row = std::stoi(rest); }
+        catch (...) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": bad row '" << rest << "'\n";
+            return false;
+        }
+        out.type = CmdType::ASSERT_PLAYHEAD_ROW;
+        out.intArg = row;
+        return true;
+    }
+    if (verb == "assert_playhead_advanced") {
+        out.type = CmdType::ASSERT_PLAYHEAD_ADVANCED;
+        return true;
+    }
+
+    // ── assert_field <label> <value> ────────────────────────────────────────
+    // <label> is a bare token, or a "quoted string" if it contains spaces
+    // (e.g. "LOOP ST"). <value> is the rest of the line verbatim (may itself
+    // contain spaces, e.g. `assert_field LIM 01 SIN` -- no quoting needed
+    // since it's always the tail of the line). Compared for exact match
+    // against the value text found immediately after the label on the shadow
+    // grid (see readField).
+    if (verb == "assert_field") {
+        std::string label, expected;
+        if (!rest.empty() && rest.front() == '"') {
+            auto endq = rest.find('"', 1);
+            if (endq == std::string::npos) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": unterminated quote in assert_field label\n";
+                return false;
+            }
+            label = rest.substr(1, endq - 1);
+            std::string remainder = rest.substr(endq + 1);
+            auto s = remainder.find_first_not_of(' ');
+            expected = (s == std::string::npos) ? "" : remainder.substr(s);
+        } else {
+            auto sp = rest.find(' ');
+            if (sp == std::string::npos) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": assert_field needs <label> <value>\n";
+                return false;
+            }
+            label = rest.substr(0, sp);
+            expected = rest.substr(sp + 1);
+        }
+        while (!expected.empty() && expected.back() == ' ') expected.pop_back();
+        if (label.empty()) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": assert_field label is empty\n";
+            return false;
+        }
+        out.type = CmdType::ASSERT_FIELD;
+        out.arg  = label;
+        out.arg2 = expected;
+        return true;
+    }
+
+    // ── goto <SCREEN> ────────────────────────────────────────────────────────
+    // Sugar over `key SHIFT+...` + a header assertion (see kGotoTargets above):
+    // normalizes to SONG via an unconditionally-valid press sequence, then
+    // walks right to the target column and up/down to the target row, then
+    // verifies the header. Multi-frame (driven by onFrameStart); does not
+    // require knowing the current cursor position.
+    if (verb == "goto") {
+        const GotoTarget* found = nullptr;
+        for (auto& t : kGotoTargets) if (rest == t.name) { found = &t; break; }
+        if (!found) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": unknown goto screen '" << rest << "'\n";
+            return false;
+        }
+        out.type    = CmdType::GOTO_SCREEN;
+        out.intArg  = found->tx;
+        out.intArg2 = found->ty;
+        out.arg     = found->verify;
+        return true;
+    }
+
+    // ── assert_wav <file> <metric> <op> <value> ─────────────────────────────
+    // Inline numeric gate over a rendered WAV via AudioMetrics (the same
+    // library m8_analyze uses), so a render->assert loop lives in one script
+    // instead of a shell pipeline. <file> is resolved relative to the
+    // script's --out-dir, same as `render`/`dump_screen`. <op> is one of
+    // < <= > >= == !=. Metrics: peak, rms, crest, dc_l, dc_r, dc_worst,
+    // clipped, nonfinite, silence, mid_rms, side_rms, correlation.
+    if (verb == "assert_wav") {
+        std::istringstream iss(rest);
+        std::string file, metric, op, valueStr;
+        if (!(iss >> file >> metric >> op >> valueStr)) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": assert_wav needs <file> <metric> <op> <value>\n";
+            return false;
+        }
+        int opCode = -1;
+        if      (op == "<")  opCode = 0;
+        else if (op == "<=") opCode = 1;
+        else if (op == ">")  opCode = 2;
+        else if (op == ">=") opCode = 3;
+        else if (op == "==") opCode = 4;
+        else if (op == "!=") opCode = 5;
+        else {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": assert_wav operator must be one of < <= > >= == !=\n";
+            return false;
+        }
+        double val = 0.0;
+        try { val = std::stod(valueStr); }
+        catch (...) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": bad assert_wav value '" << valueStr << "'\n";
+            return false;
+        }
+        out.type   = CmdType::ASSERT_WAV;
+        out.arg    = file;
+        out.arg2   = metric;
+        out.intArg = opCode;
+        out.dblArg = val;
+        return true;
+    }
+
+    // ── assert_matches_golden <name> ────────────────────────────────────────
+    // Compares the current shadow-grid VRAM against tests/ui/golden/<name>.txt
+    // (glyph, fg/bg color, slider, bracket per cell -- no bpm/playhead, since
+    // those aren't part of Renderer::writeGolden's per-cell format at all).
+    // In --update-goldens mode, writes the golden file instead of comparing
+    // and always passes.
+    if (verb == "assert_matches_golden") {
+        if (rest.empty()) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": assert_matches_golden needs a <name>\n";
+            return false;
+        }
+        out.type = CmdType::ASSERT_MATCHES_GOLDEN;
+        out.arg  = rest;
         return true;
     }
 
@@ -364,6 +631,22 @@ bool ScriptRunner::parseLine(const std::string& raw, int lineNum, Command& out) 
 
 // ─── Load script file ───────────────────────────────────────────────────────
 
+// Tier 3 `repeat` block detection: comment-strip + trim, used only to spot
+// "repeat N {" / "}" markers. parseLine has its own equivalent inline logic
+// for ordinary command lines -- left untouched here to avoid changing its
+// (already-tested) existing parse-error detection.
+static std::string stripCommentAndTrim(const std::string& raw) {
+    std::string line = raw;
+    auto hash = line.find('#');
+    if (hash != std::string::npos) line = line.substr(0, hash);
+    auto start = line.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    line = line.substr(start);
+    auto end = line.find_last_not_of(" \t\r\n");
+    if (end != std::string::npos) line = line.substr(0, end + 1);
+    return line;
+}
+
 bool ScriptRunner::loadScript(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -373,21 +656,90 @@ bool ScriptRunner::loadScript(const std::string& path) {
         return false;
     }
 
+    std::vector<std::string> rawLines;
+    {
+        std::string line;
+        while (std::getline(file, line)) rawLines.push_back(line);
+    }
+
     m_commands.clear();
-    std::string line;
     int lineNum = 0;
-    while (std::getline(file, line)) {
+    for (size_t i = 0; i < rawLines.size(); ) {
         ++lineNum;
+        const std::string& raw = rawLines[i];
+        std::string trimmed = stripCommentAndTrim(raw);
+
+        // ── repeat <n> { ... } ───────────────────────────────────────────────
+        // Load-time unrolling: the body is parsed ONCE via the normal parseLine
+        // path (so every existing verb, including goto/wait_until, works
+        // inside it unmodified), then the resulting Commands are appended N
+        // times. No new runtime state -- the script is just longer.
+        if (trimmed.rfind("repeat ", 0) == 0 && !trimmed.empty() && trimmed.back() == '{') {
+            std::string countStr = trimmed.substr(7, trimmed.size() - 7 - 1);
+            auto cs = countStr.find_first_not_of(" \t");
+            auto ce = countStr.find_last_not_of(" \t");
+            countStr = (cs == std::string::npos) ? "" : countStr.substr(cs, ce - cs + 1);
+            int n = 0;
+            try { n = std::stoi(countStr); }
+            catch (...) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": bad repeat count '" << countStr << "'\n";
+                m_exitCode = 2;
+                m_done = true;
+                return false;
+            }
+
+            std::vector<Command> body;
+            size_t j = i + 1;
+            int bodyLineNum = lineNum;
+            bool closed = false;
+            for (; j < rawLines.size(); ++j) {
+                ++bodyLineNum;
+                std::string btrim = stripCommentAndTrim(rawLines[j]);
+                if (btrim.empty()) continue;
+                if (btrim == "}") { closed = true; break; }
+                if (btrim.rfind("repeat ", 0) == 0) {
+                    std::cerr << "Script parse error line " << bodyLineNum
+                              << ": nested repeat is not supported\n";
+                    m_exitCode = 2;
+                    m_done = true;
+                    return false;
+                }
+                Command cmd;
+                if (!parseLine(rawLines[j], bodyLineNum, cmd)) {
+                    m_exitCode = 2;
+                    m_done = true;
+                    return false;
+                }
+                body.push_back(cmd);
+            }
+            if (!closed) {
+                std::cerr << "Script parse error line " << lineNum
+                          << ": repeat block missing closing '}'\n";
+                m_exitCode = 2;
+                m_done = true;
+                return false;
+            }
+            for (int r = 0; r < n; ++r)
+                for (const auto& c : body) m_commands.push_back(c);
+
+            i = j + 1;
+            lineNum = bodyLineNum;
+            continue;
+        }
+
         Command cmd;
-        if (parseLine(line, lineNum, cmd)) {
+        if (parseLine(raw, lineNum, cmd)) {
             m_commands.push_back(cmd);
-        } else if (!line.empty() && line.find('#') == std::string::npos) {
+        } else if (!raw.empty() && raw.find('#') == std::string::npos) {
             // Non-blank, non-comment line that failed to parse
             m_exitCode = 2;
             m_done = true;
             return false;
         }
+        ++i;
     }
+
     m_cmdIndex = 0;
     m_waitFrames = 0;
     m_holdActive = false;
@@ -395,6 +747,10 @@ bool ScriptRunner::loadScript(const std::string& path) {
     m_quit = false;
     m_exitCode = 0;
     m_assertFailed = false;
+    m_playheadCheckpoint = 0;
+    m_playheadCheckpointSet = false;
+    m_waitUntilFramesLeft = -1;
+    m_gotoPhase = -1;
     return true;
 }
 
@@ -501,6 +857,61 @@ bool ScriptRunner::onFrameStart() {
         ++m_cmdIndex;
         break;
 
+    // ── GOTO SCREEN ─────────────────────────────────────────────────────────
+    // Multi-frame state machine: normalize to SONG (phases 0-2, unconditionally
+    // valid from any grid position -- see ViewManager.cpp's getViewAt), then
+    // walk to the target column (phase 3) and row (phase 4), one compound
+    // SHIFT+direction press per frame, matching how a plain `key SHIFT+RIGHT`
+    // line is pressed. Does NOT advance m_cmdIndex -- onFrameEnd does that
+    // once phase 5 (navigation done) and the header has been verified.
+    case CmdType::GOTO_SCREEN: {
+        if (m_gotoPhase < 0) {
+            m_gotoPhase = 0;
+            m_gotoCount = 4;  // normalize: DOWN x4 (worst case y=2 -> y=-2)
+            m_gotoTargetX = cmd.intArg;
+            m_gotoTargetY = cmd.intArg2;
+        }
+        auto pressShift = [&](SDL_Keycode dir) {
+            pushKeyEvent(SDLK_LSHIFT, true);
+            pushKeyEvent(dir, true);
+            pushKeyEvent(dir, false);
+            pushKeyEvent(SDLK_LSHIFT, false);
+        };
+        switch (m_gotoPhase) {
+        case 0:  // normalize: DOWN x4, guaranteed to reach y=-2 (MIXER/EFFECTS'
+                 // row, valid at any column) from any starting y in [-2,2];
+                 // extra presses once already at -2 are safe no-ops.
+            pressShift(SDLK_DOWN);
+            if (--m_gotoCount <= 0) { m_gotoPhase = 1; m_gotoCount = 2; }
+            break;
+        case 1:  // normalize: UP x2 (back to y=0, same column)
+            pressShift(SDLK_UP);
+            if (--m_gotoCount <= 0) { m_gotoPhase = 2; m_gotoCount = 4; }
+            break;
+        case 2:  // normalize: LEFT x4 (walk to column 0 = SONG)
+            pressShift(SDLK_LEFT);
+            if (--m_gotoCount <= 0) { m_gotoPhase = 3; m_gotoCount = m_gotoTargetX; }
+            break;
+        case 3:  // move right to the target column
+            if (m_gotoCount > 0) { pressShift(SDLK_RIGHT); --m_gotoCount; }
+            if (m_gotoCount <= 0) {
+                m_gotoPhase = 4;
+                m_gotoCount = (m_gotoTargetY >= 0) ? m_gotoTargetY : -m_gotoTargetY;
+            }
+            break;
+        case 4:  // move to the target row
+            if (m_gotoCount > 0) {
+                pressShift(m_gotoTargetY >= 0 ? SDLK_UP : SDLK_DOWN);
+                --m_gotoCount;
+            }
+            if (m_gotoCount <= 0) m_gotoPhase = 5;  // ready for onFrameEnd to verify
+            break;
+        default:
+            break;  // phase 5: waiting for onFrameEnd to verify + advance
+        }
+        break;
+    }
+
     case CmdType::PLAY:
     case CmdType::STOP:
     case CmdType::LOAD:
@@ -518,6 +929,17 @@ bool ScriptRunner::onFrameStart() {
     case CmdType::ASSERT_NO_ERROR:
     case CmdType::ASSERT_ERROR_CONTAINS:
     case CmdType::ASSERT_SONG_NAME:
+    case CmdType::ASSERT_NO_OVERLAP:
+    case CmdType::ASSERT_CELL_COLOR:
+    case CmdType::ASSERT_ROW_MATCHES:
+    case CmdType::ASSERT_SLIDER:
+    case CmdType::WAIT_UNTIL:
+    case CmdType::CHECKPOINT_PLAYHEAD:
+    case CmdType::ASSERT_PLAYHEAD_ROW:
+    case CmdType::ASSERT_PLAYHEAD_ADVANCED:
+    case CmdType::ASSERT_FIELD:
+    case CmdType::ASSERT_WAV:
+    case CmdType::ASSERT_MATCHES_GOLDEN:
         // These are handled in onFrameEnd or directly here
         break;
     }
@@ -903,6 +1325,230 @@ bool ScriptRunner::onFrameEnd(const ScriptAppContext& ctx) {
             break;
         }
 
+        // ── CHECKPOINT PLAYHEAD ────────────────────────────────────────────
+        case CmdType::CHECKPOINT_PLAYHEAD: {
+            m_playheadCheckpoint = ctx.getPlayheadState ? ctx.getPlayheadState(ctx.userData) : 0;
+            m_playheadCheckpointSet = true;
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── ASSERT PLAYHEAD ROW ────────────────────────────────────────────
+        case CmdType::ASSERT_PLAYHEAD_ROW: {
+            int actual = ctx.getPlayheadRow ? ctx.getPlayheadRow(ctx.userData) : -1;
+            if (actual != c.intArg) {
+                std::cerr << "ASSERT FAILED (playhead row " << actual
+                          << " != expected " << c.intArg << ")\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── ASSERT PLAYHEAD ADVANCED ───────────────────────────────────────
+        // Compares against the state captured by the most recent
+        // checkpoint_playhead -- proves the playhead actually moved, unlike
+        // assert_playing, which only proves the transport flag is set.
+        case CmdType::ASSERT_PLAYHEAD_ADVANCED: {
+            if (!m_playheadCheckpointSet) {
+                std::cerr << "ASSERT FAILED (assert_playhead_advanced needs a "
+                             "prior checkpoint_playhead)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            uint32_t now = ctx.getPlayheadState ? ctx.getPlayheadState(ctx.userData) : 0;
+            if (now == m_playheadCheckpoint) {
+                std::cerr << "ASSERT FAILED (playhead did not advance since checkpoint)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── WAIT UNTIL ──────────────────────────────────────────────────────
+        // Re-checked every frame (unlike a bare `wait N`, which just counts
+        // frames and hopes the state has settled by then -- the root cause of
+        // the playhead.m8script ASan/Release timing race this replaces).
+        case CmdType::WAIT_UNTIL: {
+            bool satisfied = false;
+            if (c.arg == "playing") {
+                satisfied = ctx.isPlaying && ctx.isPlaying(ctx.userData);
+            } else if (c.arg == "stopped") {
+                satisfied = !ctx.isPlaying || !ctx.isPlaying(ctx.userData);
+            } else if (c.arg == "playhead_row") {
+                int actual = ctx.getPlayheadRow ? ctx.getPlayheadRow(ctx.userData) : -1;
+                satisfied = (c.arg2 == ">=") ? (actual >= c.intArg) : (actual == c.intArg);
+            } else if (c.arg == "screen_contains") {
+                satisfied = ctx.renderer && assertScreenContains(*ctx.renderer, c.arg2);
+            }
+
+            if (satisfied) {
+                m_waitUntilFramesLeft = -1;
+                ++m_cmdIndex; progress = true;
+                break;
+            }
+
+            if (m_waitUntilFramesLeft < 0) m_waitUntilFramesLeft = c.intArg2;  // arm on first check
+            if (m_waitUntilFramesLeft <= 0) {
+                std::cerr << "ASSERT FAILED (wait_until '" << c.arg
+                          << "' timed out after " << c.intArg2 << " frames)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                m_waitUntilFramesLeft = -1;
+                return false;
+            }
+            --m_waitUntilFramesLeft;
+            // Not satisfied and not timed out: leave m_cmdIndex and progress
+            // alone so onFrameEnd re-enters this same command next frame.
+            break;
+        }
+
+        // ── ASSERT FIELD ───────────────────────────────────────────────────
+        case CmdType::ASSERT_FIELD: {
+            std::string actual;
+            bool found = ctx.renderer && readField(*ctx.renderer, c.arg, actual);
+            if (!found) {
+                std::cerr << "ASSERT FAILED (field '" << c.arg << "' not found on screen)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            if (actual != c.arg2) {
+                std::cerr << "ASSERT FAILED (field '" << c.arg << "' = \"" << actual
+                          << "\" != expected \"" << c.arg2 << "\")\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── GOTO SCREEN (verify + advance; presses happen in onFrameStart) ──
+        case CmdType::GOTO_SCREEN: {
+            if (m_gotoPhase < 5) break;  // still navigating this frame
+            bool ok = ctx.renderer && assertScreenContains(*ctx.renderer, c.arg);
+            m_gotoPhase = -1;  // reset for the next goto, whether this one passed or not
+            if (!ok) {
+                std::cerr << "ASSERT FAILED (goto: expected screen containing \""
+                          << c.arg << "\")\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── ASSERT WAV ──────────────────────────────────────────────────────
+        case CmdType::ASSERT_WAV: {
+            std::string path = outPath(c.arg);
+            unsigned int channels = 0, sr = 0;
+            drwav_uint64 totalFrames = 0;
+            float* pcm = drwav_open_file_and_read_pcm_frames_f32(
+                path.c_str(), &channels, &sr, &totalFrames, nullptr);
+            if (!pcm) {
+                std::cerr << "ASSERT FAILED (assert_wav: cannot read '" << path << "')\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            if (channels != 2) {
+                drwav_free(pcm, nullptr);
+                std::cerr << "ASSERT FAILED (assert_wav: '" << path << "' is not stereo)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+
+            m8::analysis::Metrics metrics =
+                m8::analysis::analyze(pcm, static_cast<size_t>(totalFrames), static_cast<int>(sr));
+            drwav_free(pcm, nullptr);
+
+            double actual = 0.0;
+            if (!metricValue(metrics, c.arg2, actual)) {
+                std::cerr << "ASSERT FAILED (assert_wav: unknown metric '" << c.arg2 << "')\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+
+            bool pass = false;
+            switch (c.intArg) {
+            case 0: pass = actual <  c.dblArg; break;
+            case 1: pass = actual <= c.dblArg; break;
+            case 2: pass = actual >  c.dblArg; break;
+            case 3: pass = actual >= c.dblArg; break;
+            case 4: pass = std::fabs(actual - c.dblArg) < 1e-6; break;
+            case 5: pass = std::fabs(actual - c.dblArg) >= 1e-6; break;
+            }
+            if (!pass) {
+                static const char* kOpNames[] = {"<", "<=", ">", ">=", "==", "!="};
+                std::cerr << "ASSERT FAILED (assert_wav '" << c.arg << "': " << c.arg2
+                          << " = " << actual << " " << kOpNames[c.intArg]
+                          << " " << c.dblArg << " is false)\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── ASSERT MATCHES GOLDEN ──────────────────────────────────────────
+        case CmdType::ASSERT_MATCHES_GOLDEN: {
+            if (!ctx.renderer) { ++m_cmdIndex; progress = true; break; }
+            std::string goldenPath = "tests/ui/golden/" + c.arg + ".txt";
+
+            if (m_updateGoldens) {
+                fs::create_directories("tests/ui/golden");
+                ctx.renderer->writeGolden(goldenPath);
+                std::cerr << "golden updated: " << goldenPath << "\n";
+                ++m_cmdIndex; progress = true;
+                break;
+            }
+
+            std::string mismatch;
+            if (!ctx.renderer->compareGolden(goldenPath, mismatch)) {
+                std::cerr << "ASSERT FAILED (assert_matches_golden '" << c.arg
+                          << "': " << mismatch << ")\n";
+                autoDump(ctx);
+                m_exitCode = 1;
+                m_assertFailed = true;
+                m_done = true;
+                return false;
+            }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
         default:
             break;
         }
@@ -945,6 +1591,46 @@ bool ScriptRunner::assertScreenRowContains(const Renderer& r, int row,
 bool ScriptRunner::assertScreenNotContains(const Renderer& r,
                                            const std::string& text) {
     return !assertScreenContains(r, text);
+}
+
+// Tier 3: find `label` as a whole token (bounded by spaces or row edges, so
+// e.g. searching "OFF" can't accidentally match inside "00OFF") and read the
+// value text immediately after it, stopping at the first run of >=2 spaces
+// (the M8 screens' column gap between adjacent fields) or end of row.
+bool ScriptRunner::readField(const Renderer& r, const std::string& label, std::string& outValue) {
+    const auto& vram = r.getVram();
+    for (int y = 0; y < Renderer::kGridH; ++y) {
+        std::string row;
+        row.reserve(Renderer::kGridW);
+        for (int x = 0; x < Renderer::kGridW; ++x) row += vram[y][x].ch;
+
+        size_t pos = row.find(label);
+        while (pos != std::string::npos) {
+            bool leftOk  = (pos == 0) || (row[pos - 1] == ' ');
+            size_t after = pos + label.size();
+            bool rightOk = (after >= row.size()) || (row[after] == ' ');
+            if (leftOk && rightOk) {
+                size_t vstart = after;
+                while (vstart < row.size() && row[vstart] == ' ') ++vstart;
+                size_t vend = vstart;
+                int spaceRun = 0;
+                while (vend < row.size()) {
+                    if (row[vend] == ' ') {
+                        if (++spaceRun >= 2) break;
+                    } else {
+                        spaceRun = 0;
+                    }
+                    ++vend;
+                }
+                std::string val = row.substr(vstart, vend - vstart);
+                while (!val.empty() && val.back() == ' ') val.pop_back();
+                outValue = val;
+                return true;
+            }
+            pos = row.find(label, pos + 1);
+        }
+    }
+    return false;
 }
 
 // ─── Auto-dump on assertion failure ─────────────────────────────────────────

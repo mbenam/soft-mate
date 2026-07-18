@@ -14,9 +14,12 @@ assert_no_overlap
 #    Confirmed from dump_json: colors[0][0] = "FF3C3CFF"
 assert_cell_color row 0 col 0 is FF3C3CFF
 
-# 3. assert_row_matches: row 3 should start with hex chain refs
-#    Confirmed from dump_json vram[3] = "00 09 0A 0B 0C -- -- -- --"
-assert_row_matches 3 "^00 09 0A 0B 0C"
+# 3. assert_row_matches: row 3 (raw vram index, i.e. SONG row "00"'s chain-ref
+#    line) should start with hex chain refs.
+#    NOTE: this is the boot-loaded startup song's data (songs/sunrise.m8s as of
+#    2026-07-17, previously the in-code "Night Drive" demo) -- it WILL drift again
+#    if the startup song changes. Confirmed from dump_json vram[3] = "00 00 -- 02 03 04 -- -- --"
+assert_row_matches 3 "^00 00 -- 02 03 04"
 
 # === Navigate to Instrument screen for slider test ===
 key SHIFT+RIGHT

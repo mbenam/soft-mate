@@ -1,0 +1,5 @@
+# test_load2.m8script — test load from SONG screen
+goto SONG
+assert_screen contains "SONG"
+load DEMO2
+assert_screen contains "SONG"

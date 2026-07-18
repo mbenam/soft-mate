@@ -1,0 +1,73 @@
+# gotoScreen PROJECT acceptance test — runs from current screen.
+# Tests: goto PROJECT from each of 12 non-modal screens, 3 times each.
+# Acceptance: lands on PROJECT every time. Zero flakes.
+
+# --- Run 1: from INSTRUMENT ---
+goto INSTRUMENT
+assert_screen INSTRUMENT
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 2: from SONG ---
+goto SONG
+assert_screen SONG
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 3: from CHAIN ---
+goto CHAIN
+assert_screen CHAIN
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 4: from PHRASE ---
+goto PHRASE
+assert_screen PHRASE
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 5: from TABLE ---
+goto TABLE
+assert_screen TABLE
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 6: from GROOVE ---
+goto GROOVE
+assert_screen GROOVE
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 7: from SCALE ---
+goto SCALE
+assert_screen SCALE
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 8: from MODS ---
+goto MODS
+assert_screen MODS
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 9: from INST_POOL ---
+goto INST_POOL
+assert_screen INST_POOL
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 10: from MIXER ---
+goto MIXER
+assert_screen MIXER
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 11: from EFFECTS ---
+goto EFFECTS
+assert_screen EFFECTS
+goto PROJECT
+assert_screen PROJECT
+
+# --- Run 12: from PROJECT (no-op) ---
+goto PROJECT
+assert_screen PROJECT

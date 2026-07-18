@@ -1,7 +1,22 @@
 # edit.m8script — enter a note at phrase 00 row 0, confirm it lands
 # Key sequence from save_reload.m8script (proven to set note to C-4)
 # Starting state: SONG screen, phrase 00, row 0, column 0 (note column)
-# Note starts empty (0xFF). X enters edit mode, UP increments to C-4 (MIDI 60).
+# Note starts empty (0xFF). X on an empty note cell inserts a default C-4
+# (UiEditHelpers.h InsertDefault, fired on X's own down event -- NOT via
+# editHeld+UP, which is a separate mechanism for Instrument-screen fields;
+# see M8_APP_AUTOMATION_SPEC.md Tier 4 notes).
+#
+# Explicit `load` added 2026-07-17: this script previously had none, relying
+# on the ambient boot song (songs/sunrise.m8s). Since sunrise.m8s already has
+# C-4 at phrase 00 row 0, the assertion below passed regardless of whether
+# the edit sequence did anything at all -- confirmed by tracing dump_screen
+# after each keypress, which showed "C-4" present *before* any key was
+# pressed. V4EMPTY.m8s (used here, and by save_reload.m8script) genuinely has
+# no note there, so this now actually exercises the insert path.
+
+load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+wait 1
+assert_no_error
 
 # Navigate to PHRASE screen: SONG -> CHAIN -> PHRASE
 key SHIFT+RIGHT

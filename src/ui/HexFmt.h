@@ -41,6 +41,10 @@ inline std::string FxName(m8::engine::FxCmd cmd) {
         case m8::engine::FxCmd::REV: return "REV";
         case m8::engine::FxCmd::HOP: return "HOP";
         case m8::engine::FxCmd::KIL: return "KIL";
+        case m8::engine::FxCmd::TBL: return "TBL";
+        case m8::engine::FxCmd::GRV: return "GRV";
+        case m8::engine::FxCmd::TIC: return "TIC";
+        case m8::engine::FxCmd::UNKNOWN: return "???"; // unmodeled command, preserved on save
         default: return "---";
     }
 }

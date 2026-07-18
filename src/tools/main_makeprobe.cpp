@@ -76,7 +76,9 @@ static m8::Song buildProbeSong(
     int shape, int timbre, int color,
     int volume, int filterType, int filterCutoff, int filterRes,
     float tempo,
-    const std::string& samplePath = "")
+    const std::string& samplePath = "",
+    int tableTick = 0xFF,
+    int slice = 0)
 {
     m8::Song song;
 
@@ -128,6 +130,16 @@ static m8::Song buildProbeSong(
     song.phrases[0].steps[0].note.value = noteVal;
     song.phrases[0].steps[0].velocity = 0x80;
     song.phrases[0].steps[0].instrument = 0x00;
+
+    // TBL 00 (library command byte 0x06 -> engine FxCmd::TBL, see
+    // SongIO.cpp's libFxToEngine): assigns table 0 to this track's
+    // instrument. table_tick alone (set on the instrument, below) only
+    // controls the tick RATE once a table is assigned -- Engine::tickTable()
+    // is a no-op until assignedTable is set, which only happens by
+    // processing this FX command (Engine.cpp tickTrack()).
+    if (tableTick != 0xFF) {
+        song.phrases[0].steps[0].fx1 = m8::FX(0x06, 0x00);
+    }
 
     // Chain 0x00: slot 0 = phrase 0x00
     song.chains.resize(m8::Song::N_CHAINS);
@@ -196,7 +208,7 @@ static m8::Song buildProbeSong(
         ms.number = 0;
         ms.name = "PROBE";
         ms.transpose = true;
-        ms.table_tick = 0xFF;
+        ms.table_tick = static_cast<uint8_t>(tableTick);
         ms.shape = static_cast<uint8_t>(shape);
         ms.timbre = static_cast<uint8_t>(timbre);
         ms.color = static_cast<uint8_t>(color);
@@ -214,10 +226,10 @@ static m8::Song buildProbeSong(
         smp.number = 0;
         smp.name = "PROBE";
         smp.transpose = true;
-        smp.table_tick = 0xFF;
+        smp.table_tick = static_cast<uint8_t>(tableTick);
         smp.sample_path = samplePath;
         smp.play_mode = 0;      // FWD, play once (sample is long enough for the window)
-        smp.slice = 0;
+        smp.slice = static_cast<uint8_t>(slice);
         smp.start = 0;
         smp.loop_start = 0;
         smp.length = 0xFF;      // whole sample
@@ -229,7 +241,7 @@ static m8::Song buildProbeSong(
         ws.number = 0;
         ws.name = "PROBE";
         ws.transpose = true;
-        ws.table_tick = 0xFF;
+        ws.table_tick = static_cast<uint8_t>(tableTick);
         ws.shape = static_cast<m8::WavShape>(shape);
         ws.size = 0x80;
         ws.mult = 0x80;
@@ -242,14 +254,19 @@ static m8::Song buildProbeSong(
         fm.number = 0;
         fm.name = "PROBE";
         fm.transpose = true;
-        fm.table_tick = 0xFF;
+        fm.table_tick = static_cast<uint8_t>(tableTick);
         fm.algo = m8::FmAlgo::Algo0;
         fm.mod1 = fm.mod2 = fm.mod3 = fm.mod4 = 0;
+        // level=0x80/ratio=1 on every operator, not 0: output amplitude is
+        // entirely level-driven, and different algorithms use different
+        // operators as carriers (e.g. Algo0's carrier is op D, index 3), so
+        // an all-zero-level probe is silent under every algorithm -- not a
+        // useful "does this engine make sound" fixture.
         for (auto& op : fm.operators) {
             op.shape = m8::FMWave::Sin;
-            op.ratio = 0;
+            op.ratio = 1;
             op.ratio_fine = 0;
-            op.level = 0;
+            op.level = 0x80;
             op.feedback = 0;
             op.retrigger = 0;
             op.mod_a = op.mod_b = 0;
@@ -261,13 +278,18 @@ static m8::Song buildProbeSong(
         hs.number = 0;
         hs.name = "PROBE";
         hs.transpose = true;
-        hs.table_tick = 0xFF;
+        hs.table_tick = static_cast<uint8_t>(tableTick);
         hs.scale = 0;
         hs.shift = 0;
-        hs.swarm = 0;
+        hs.swarm = 0x40;
         hs.width = 0x80;
         hs.subosc = 0;
+        // An empty default_chord means zero active notes regardless of the
+        // note actually played (SynthVoice.cpp skips any chord slot <= 0),
+        // so the probe was silent by construction. C-4 (MIDI 60) as the
+        // sole chord note gives the swarm something to render.
         hs.default_chord = {};
+        hs.default_chord[0] = 60;
         for (auto& ch : hs.chords) ch = {};
         hs.synth_params = makeSynthParams();
         song.instruments[0] = hs;
@@ -297,6 +319,13 @@ static m8::Song buildProbeSong(
     song.tables.resize(m8::Song::N_TABLES);
     song.eqs.resize(m8::Song::N_GROOVES); // V4.1 uses 32 EQs
     song.midi_mappings.resize(m8::Song::N_MIDI_MAPPINGS);
+
+    // Table 0, row 0: a distinctive +12 semitone transpose. Harmless unless
+    // the probe's instrument also has table_tick set fast enough to execute
+    // it (see --table-tick) -- inert by default, same as every other unused
+    // field this generator preserves.
+    song.tables[0].steps[0].transpose = 12;
+    song.tables[0].steps[0].velocity = 0xFF; // empty (no volume override)
 
     return song;
 }
@@ -441,6 +470,8 @@ int main(int argc, char** argv) {
     int volume = 0xE0;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
     float tempo = 120.0f;
+    int tableTick = 0xFF;  // 0xFF = table disabled (default, matches prior behavior)
+    int slice = 0;         // sampler-only: 0=off, 1=FILE, 2..0x80 = N equal divisions
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -461,6 +492,11 @@ int main(int argc, char** argv) {
         else if (a == "--filter-cutoff") filterCutoff = num();
         else if (a == "--filter-res")  filterRes = num();
         else if (a == "--tempo")       tempo = static_cast<float>(std::atof(next().c_str()));
+        // Assigns table 0 (pre-populated with a +12 semitone row-0 transpose,
+        // see buildProbeSong) at the given tick rate, e.g. --table-tick 1 for
+        // "every tick" -- fast enough to execute within a short render.
+        else if (a == "--table-tick")  tableTick = num();
+        else if (a == "--slice")       slice = num();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
     }
 
@@ -511,7 +547,8 @@ int main(int argc, char** argv) {
     }
 
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
-                               volume, filterType, filterCutoff, filterRes, tempo, samplePath);
+                               volume, filterType, filterCutoff, filterRes, tempo, samplePath,
+                               tableTick, slice);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath)) {

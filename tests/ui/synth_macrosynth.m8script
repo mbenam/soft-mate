@@ -1,0 +1,74 @@
+# synth_macrosynth.m8script — T4 coverage for the Braids MacroSynth port,
+# authored through the real UI edit path (M8_APP_AUTOMATION_SPEC.md Tier 4).
+# MacroSynth is the one new synth type the UI actually supports: TYPE is
+# hard-clamped to [SAMPLER, MACROSYN] (InstrumentScreen.cpp:209), and only
+# InstrumentSamplerLayout.h/InstrumentMacrosynLayout.h exist. HyperSynth/
+# FMSynth/WavSynth have no UI type selector or layout at all, and the Table
+# screen has no edit mode wired up -- those get fixture-based coverage
+# instead (load a pre-built .m8s, render, assert audio only) in the other
+# synth_*.m8script / tables.m8script files.
+#
+# EDITING IDIOM (discovered 2026-07-17, differs from edit.m8script/
+# save_reload.m8script's note-column pattern): a field on this screen is
+# edited by `PushParam` inside `if (editHeld && arrow)` in
+# InstrumentScreen.cpp -- editHeld is only true between X's own down/up
+# events. A *sequential* `key X` / `key <DIR>` / `key X` spans three
+# separate frames, so X's up event (and editHeld=false) has already been
+# processed before the direction key is even pushed -- the value never
+# changes. The correct idiom is the *compound* key syntax `key X+<DIR>`,
+# which pushes X-down, DIR-down, DIR-up, X-up all within ONE frame, so
+# editHeld is still true when the direction key fires. For a multi-step
+# change, `repeat N { key X+<DIR> }` (each iteration is one full, independent
+# edit cycle). (`closed_loop_glitch.m8script`/`closed_loop_fix.m8script` use
+# the old sequential idiom and currently pass for an unrelated reason -- see
+# the Tier 4 notes in M8_APP_AUTOMATION_SPEC.md; not fixed here to keep this
+# change scoped to new coverage.)
+
+load songs/sunrise.m8s
+wait 1
+assert_no_error
+
+# Precondition, not enforced: songs/sunrise.m8s already plays instrument 00
+# at C-4 on phrase 00 row 0 (verified via dump_screen, not assumed). If this
+# ever fails, the fixture changed and the render below may go silent.
+goto PHRASE
+assert_screen row 3 contains "C-4"
+
+# Instrument 00: SAMPLER -> MACROSYN
+goto INSTRUMENT
+assert_field TYPE SAMPLER
+key X+UP
+assert_field TYPE MACROSYN
+
+# SHAPE (UI-clamped to [0,3] in InstrumentScreen.cpp even though the Braids
+# engine models 0x00-0x2B; still enough to prove the edit path works and
+# audibly changes the output)
+key DOWN
+key DOWN
+key DOWN
+assert_field SHAPE 00CSAW
+repeat 3 {
+    key X+UP
+}
+assert_field SHAPE 03SQU
+
+# TIMBRE (default 0x80, range 0-255)
+key DOWN
+assert_field TIMBRE 80
+repeat 32 {
+    key X+UP
+}
+assert_field TIMBRE A0
+
+# COLOR (default 0x80, range 0-255)
+key DOWN
+assert_field COLOR 80
+repeat 32 {
+    key X+UP
+}
+assert_field COLOR A0
+
+render 1 macro.wav
+assert_wav macro.wav nonfinite == 0
+assert_wav macro.wav clipped == 0
+assert_wav macro.wav peak > 0.0

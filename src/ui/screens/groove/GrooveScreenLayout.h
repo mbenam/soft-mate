@@ -24,8 +24,7 @@ inline std::vector<UI_GridCell> GetStaticText() {
 inline std::vector<UI_GridCell> GetDynamicTextDefaults() {
     return {
         {"00", 7, 0, "TITLE", "", "dynamic_text", false, 0},
-        {"T>128", 34, 2, "LABEL_DIM", "", "dynamic_text", false, 0},
-        
+
         // Row Headers (0-F)
         {"0", 0, 3, "LABEL_LITE", "", "dynamic_text", false, 0},
         {"1", 0, 4, "LABEL_DIM", "", "dynamic_text", false, 0},

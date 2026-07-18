@@ -1,0 +1,17 @@
+# test_nav.m8script — basic navigation test for device script runner
+# Verifies: goto SONG, assert screen, goto PHRASE, goto INSTRUMENT, back to SONG.
+
+goto SONG
+assert_screen contains "SONG"
+dump_screen
+
+goto PHRASE
+assert_screen contains "PHRASE"
+dump_screen
+
+goto INSTRUMENT
+assert_screen contains "INST"
+dump_screen
+
+goto SONG
+assert_screen contains "SONG"

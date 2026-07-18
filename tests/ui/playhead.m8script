@@ -1,15 +1,38 @@
-# playhead.m8script — load a song, start transport, confirm it's running
-# LIMITATION: when an audio device exists, PLAY_START commands may not be processed
-# by the audio callback before assert_playing runs. This is a known harness gap —
-# the SPSC CommandRing cannot safely have two consumers (manual render + audio
-# callback), so we only call engine.render() manually when stream is null. The
-# assert below proves the play command doesn't crash and transport starts when the
-# manual render path is available.
+# playhead.m8script — proves the playhead ROW actually advances during
+# playback, not just that the transport flag is set (Tier 2,
+# M8_APP_AUTOMATION_SPEC.md).
+#
+# Uses songs/sunrise.m8s (the startup song, real 16-bar content, no missing
+# samples), loaded explicitly rather than relying on ambient boot state (see
+# task6_test.m8script, which had to be fixed after silently drifting when the
+# boot song changed). Two songs were tried and rejected first:
+#   - V4EMPTY.m8s: zero note-on events across all 8 tracks (confirmed via
+#     m8_render's note-on summary) -- nothing for the playhead to advance
+#     through.
+#   - TEST-FILE.m8s: triggers the missing-samples overlay on load, and
+#     main.cpp's overlay-dismiss handler (`!missingSamplesMsg.empty() &&
+#     event.type == SDL_EVENT_KEY_DOWN`) swallows the very next keydown --
+#     including this script's `play` SPACE press -- to dismiss the overlay
+#     instead of starting playback. Confirmed by reproducing directly: `play;
+#     wait 60; assert_playing` never passes with TEST-FILE loaded.
+#
+# Previously this script only did `play; wait 120; assert_playing`, which
+# (a) cannot prove the playhead row moved -- playhead indicators are drawn
+# via drawLinePixel, outside the VRAM shadow grid `assert_screen` reads --
+# and (b) raced the SPSC command-processing gap: across 12 runs, ASan builds
+# passed 6/6 while Release passed 2/6 (status.md Known issues). wait_until
+# re-checks the condition every single frame instead of guessing a frame
+# count, and checkpoint_playhead/assert_playhead_advanced read the engine's
+# own playhead atomic (Engine::getPlayheadState) directly.
 
-load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+load songs/sunrise.m8s
 wait 1
 assert_no_error
 
+checkpoint_playhead
 play
-wait 120
-assert_playing
+wait_until playhead_row >= 1
+assert_playhead_advanced
+
+stop
+wait_until stopped

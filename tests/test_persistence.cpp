@@ -563,3 +563,87 @@ TEST_CASE("S-DET2 detune loads/saves signed fine_pitch correctly", "[io]") {
 
     std::filesystem::remove("temp_det2.m8s");
 }
+
+// Helper: write a library Song to a temp .m8s file over a template's bytes.
+static void writeSongFile(const std::string& path, m8::Song& song,
+                          const std::vector<uint8_t>& templateBytes) {
+    auto out = song.write_over(templateBytes);
+    std::ofstream f(path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(out.data()), out.size());
+}
+
+// L12 — modeled FX commands TBL/GRV/TIC (lib 0x06/0x07/0x08) survive load and
+// round-trip on save. Regression: libFxToEngine used to drop everything >= 0x06 to
+// NONE, so table/groove/tic assignments were lost on load (and clobbered on save).
+TEST_CASE("L12 TBL/GRV/TIC round-trip through file", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    m8::BinaryReader r(data);
+    auto song = m8::Song::from_reader(r);
+    // Inject TBL/GRV/TIC into phrase 0, row 0's three FX slots.
+    song.phrases[0].steps[0].fx1.command = 0x06; song.phrases[0].steps[0].fx1.value = 0x11; // TBL
+    song.phrases[0].steps[0].fx2.command = 0x07; song.phrases[0].steps[0].fx2.value = 0x22; // GRV
+    song.phrases[0].steps[0].fx3.command = 0x08; song.phrases[0].steps[0].fx3.value = 0x33; // TIC
+    writeSongFile("temp_fxrt1.m8s", song, data);
+
+    // Load: the engine must decode them to TBL/GRV/TIC (not NONE).
+    auto loaded = loadSong("temp_fxrt1.m8s", "");
+    REQUIRE(loaded.ok);
+    const auto& step = loaded.sequencer.phrases[0][0];
+    REQUIRE(step.fx[0].cmd == FxCmd::TBL); REQUIRE(step.fx[0].val == 0x11);
+    REQUIRE(step.fx[1].cmd == FxCmd::GRV); REQUIRE(step.fx[1].val == 0x22);
+    REQUIRE(step.fx[2].cmd == FxCmd::TIC); REQUIRE(step.fx[2].val == 0x33);
+
+    // Save and reparse: the file bytes must come back identical.
+    std::string err;
+    REQUIRE(saveSong("temp_fxrt1_out.m8s", loaded, loaded.sequencer, loaded.state, err));
+    auto outBytes = readFile("temp_fxrt1_out.m8s");
+    m8::BinaryReader r2(outBytes);
+    auto reparsed = m8::Song::from_reader(r2);
+    REQUIRE(reparsed.phrases[0].steps[0].fx1.command == 0x06);
+    REQUIRE(reparsed.phrases[0].steps[0].fx1.value   == 0x11);
+    REQUIRE(reparsed.phrases[0].steps[0].fx2.command == 0x07);
+    REQUIRE(reparsed.phrases[0].steps[0].fx3.command == 0x08);
+
+    std::filesystem::remove("temp_fxrt1.m8s");
+    std::filesystem::remove("temp_fxrt1_out.m8s");
+}
+
+// L13 — unmodeled FX commands (lib byte >= 0x09, e.g. ARP) are preserved byte-for-byte
+// across load -> save. Regression: convertEngineToSong unconditionally rewrote every
+// phrase FX via engineFxToLib(NONE)=0xFF, silently destroying any command the engine
+// did not model. Now they decode to FxCmd::UNKNOWN and the save loop leaves the original
+// bytes intact.
+TEST_CASE("L13 unmodeled FX commands preserved on save", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    m8::BinaryReader r(data);
+    auto song = m8::Song::from_reader(r);
+    // Inject two commands past TIC into phrase 1, row 2.
+    song.phrases[1].steps[2].fx1.command = 0x09; song.phrases[1].steps[2].fx1.value = 0x55; // ARP-range
+    song.phrases[1].steps[2].fx2.command = 0x14; song.phrases[1].steps[2].fx2.value = 0x66; // higher cmd
+    writeSongFile("temp_fxrt2.m8s", song, data);
+
+    // Load: unmodeled commands decode to UNKNOWN (inert, but present).
+    auto loaded = loadSong("temp_fxrt2.m8s", "");
+    REQUIRE(loaded.ok);
+    const auto& step = loaded.sequencer.phrases[1][2];
+    REQUIRE(step.fx[0].cmd == FxCmd::UNKNOWN);
+    REQUIRE(step.fx[1].cmd == FxCmd::UNKNOWN);
+
+    // Save and reparse: the original bytes (command AND value) must survive.
+    std::string err;
+    REQUIRE(saveSong("temp_fxrt2_out.m8s", loaded, loaded.sequencer, loaded.state, err));
+    auto outBytes = readFile("temp_fxrt2_out.m8s");
+    m8::BinaryReader r2(outBytes);
+    auto reparsed = m8::Song::from_reader(r2);
+    REQUIRE(reparsed.phrases[1].steps[2].fx1.command == 0x09);
+    REQUIRE(reparsed.phrases[1].steps[2].fx1.value   == 0x55);
+    REQUIRE(reparsed.phrases[1].steps[2].fx2.command == 0x14);
+    REQUIRE(reparsed.phrases[1].steps[2].fx2.value   == 0x66);
+
+    std::filesystem::remove("temp_fxrt2.m8s");
+    std::filesystem::remove("temp_fxrt2_out.m8s");
+}
