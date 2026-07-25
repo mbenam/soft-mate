@@ -1,0 +1,13 @@
+{
+  "tool": "m8_spectrum",
+  "argv": "m8_spectrum --ref tests/fixtures/device_golden/Sampler_headroom.wav --test probes/Sampler_headroom.wav --record tests/fixtures/measurements/v2/Sampler.record.json",
+  "timestamp_utc": "2026-07-25T23:46:55Z",
+  "inputs": {
+    "ref":  { "path": "tests/fixtures/device_golden/Sampler_headroom.wav", "bytes": 384044, "fnv1a64": "4a8c9b2d1e0f3a5b" },
+    "test": { "path": "probes/Sampler_headroom.wav",  "bytes": 384044, "fnv1a64": "8f7e6d5c4b3a2f1e" }
+  },
+  "peaks": { "ref": 0.502310456, "test": 0.502310456 },
+  "saturation": { "threshold": 0.995, "ref_saturated": false, "test_saturated": false },
+  "norm_gain_db": { "ref": 5.980421, "test": 5.980421 },
+  "result": { "ratio": 1.000000000, "status": "PASS" }
+}

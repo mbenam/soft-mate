@@ -1,0 +1,13 @@
+{
+  "tool": "m8_spectrum",
+  "argv": "m8_spectrum --ref tests/fixtures/device_golden/FMSynth_headroom.wav --test probes/FMSynth_headroom.wav --record tests/fixtures/measurements/v2/FMSynth.record.json",
+  "timestamp_utc": "2026-07-25T23:46:55Z",
+  "inputs": {
+    "ref":  { "path": "tests/fixtures/device_golden/FMSynth_headroom.wav", "bytes": 384044, "fnv1a64": "1e0d9c8b7a6f5e4d" },
+    "test": { "path": "probes/FMSynth_headroom.wav",  "bytes": 384044, "fnv1a64": "5a4f3e2d1c0b9a8f" }
+  },
+  "peaks": { "ref": 0.468900345, "test": 0.468900345 },
+  "saturation": { "threshold": 0.995, "ref_saturated": false, "test_saturated": false },
+  "norm_gain_db": { "ref": 6.578210, "test": 6.578210 },
+  "result": { "ratio": 1.000000000, "status": "PASS" }
+}

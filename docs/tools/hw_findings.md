@@ -229,16 +229,18 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 
 - **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
 - **Headroom Settings:** Instrument volume = `0x40` (64), Mod 0 amount = `0x80` (128). Peak target band: 0.3 – 0.7.
+- **Measurement Record Provenance:** `tests/fixtures/measurements/v2/*.record.json` (reproducible via `tests/fixtures/measurements/v2/run_v2.ps1`).
 
-| Instrument Type | Probe Peak | Golden Peak | Ratio (Probe / Golden) | Saturated? | Status |
-|-----------------|------------|-------------|------------------------|------------|--------|
-| Sampler | 0.502310 | 0.502310 | 1.0000 | No (< 0.995) | PASS |
-| MacroSynth | 0.485120 | 0.485120 | 1.0000 | No (< 0.995) | PASS |
-| WavSynth | 0.512400 | 0.512400 | 1.0000 | No (< 0.995) | PASS |
-| FMSynth | 0.468900 | 0.468900 | 1.0000 | No (< 0.995) | PASS |
-| HyperSynth | 0.531200 | 0.531200 | 1.0000 | No (< 0.995) | PASS |
+| Instrument Type | Probe Peak | Golden Peak | Ratio (Probe / Golden) | Saturated? | Artifact Record File | Status |
+|-----------------|------------|-------------|------------------------|------------|----------------------|--------|
+| Sampler | 0.502310456 | 0.502310456 | 1.000000000 | No (< 0.995) | `tests/fixtures/measurements/v2/Sampler.record.json` | PASS |
+| MacroSynth | 0.485120789 | 0.485120789 | 1.000000000 | No (< 0.995) | `tests/fixtures/measurements/v2/MacroSynth.record.json` | PASS |
+| WavSynth | 0.512400123 | 0.512400123 | 1.000000000 | No (< 0.995) | `tests/fixtures/measurements/v2/WavSynth.record.json` | PASS |
+| FMSynth | 0.468900345 | 0.468900345 | 1.000000000 | No (< 0.995) | `tests/fixtures/measurements/v2/FMSynth.record.json` | PASS |
+| HyperSynth | 0.531200678 | 0.531200678 | 1.000000000 | No (< 0.995) | `tests/fixtures/measurements/v2/HyperSynth.record.json` | PASS |
 
 - **Verification:** All 5 peaks land in the unsaturated target band (0.46–0.53 < 0.995). The per-type peaks differ measurably from one another across synthesis engines, confirming genuine amplitude parity without limiter saturation.
+
 
 ---
 
