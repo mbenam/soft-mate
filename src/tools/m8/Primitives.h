@@ -122,6 +122,10 @@ struct SearchResult {
 SearchResult searchTree(M8Device& dev, const std::string& needle,
                         int maxDepth = 4, int maxVisits = 64, int holdMs = 15);
 
+// Closed-loop directory tree search and load. Navigates to LOAD PROJECT browser,
+// searches tree via searchTree, lands on matching file, and opens it.
+int searchAndLoad(M8Device& dev, const std::string& needle, int holdMs = 15);
+
 // ---- Assertions -----------------------------------------------------------
 
 // Assert the current screen matches the expected screen.

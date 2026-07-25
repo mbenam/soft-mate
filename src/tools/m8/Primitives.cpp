@@ -1397,5 +1397,80 @@ SearchResult searchTree(M8Device& dev, const std::string& needle,
     return result;
 }
 
+int searchAndLoad(M8Device& dev, const std::string& needle, int holdMs) {
+    auto gotoRes = gotoScreen(dev, Screen::LOAD_PROJECT_MODAL, holdMs);
+    if (!gotoRes.ok) {
+        std::fprintf(stderr, "searchAndLoad: failed to reach LOAD PROJECT modal: %s\n", gotoRes.error.c_str());
+        return 7;
+    }
+
+    auto sres = searchTree(dev, needle, 4, 64, holdMs);
+    if (!sres.error.empty()) {
+        std::fprintf(stderr, "searchAndLoad: tree search error: %s\n", sres.error.c_str());
+        return 4;
+    }
+    if (sres.matches.empty()) {
+        std::fprintf(stderr, "searchAndLoad: no matches found for '%s'\n", needle.c_str());
+        return 7;
+    }
+    if (sres.matches.size() > 1) {
+        std::fprintf(stderr, "searchAndLoad: ambiguous match (%zu candidates found for '%s'):\n", sres.matches.size(), needle.c_str());
+        for (const auto& m : sres.matches) {
+            std::fprintf(stderr, "  - %s\n", m.path.c_str());
+        }
+        return 6;
+    }
+
+    const auto& match = sres.matches[0];
+    std::printf("searchAndLoad: found single match \"%s\"\n", match.path.c_str());
+
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    while (pos < match.path.size()) {
+        size_t slash = match.path.find('/', pos);
+        std::string part = match.path.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        if (!part.empty()) parts.push_back(part);
+        if (slash == std::string::npos) break;
+        pos = slash + 1;
+    }
+
+    for (size_t i = 0; i + 1 < parts.size(); ++i) {
+        auto res = enterDir(dev, parts[i], holdMs);
+        if (!res.ok) {
+            std::fprintf(stderr, "searchAndLoad: failed to enter dir '%s': %s\n", parts[i].c_str(), res.error.c_str());
+            return 7;
+        }
+    }
+
+    std::string fileName = parts.back();
+    std::string want = alnumUpper(fileName);
+    bool found = false;
+    for (int step = 0; step < 64; ++step) {
+        dev.readSettled(120, 200, 1200);
+        auto visible = listRows(dev.grid());
+        for (const auto& r : visible) {
+            if (r.selected && alnumUpper(r.text).find(want) != std::string::npos) {
+                found = true;
+                break;
+            }
+        }
+        if (found) break;
+        dev.press(Key::DOWN, holdMs);
+    }
+
+    if (!found) {
+        std::fprintf(stderr, "searchAndLoad: file '%s' not visible post-navigation\n", fileName.c_str());
+        return 7;
+    }
+
+    dev.press(Key::EDIT, holdMs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    dev.readSettled(120, 200, 1200);
+    if (isModal(dev.grid())) {
+        dismissModal(dev, true, holdMs);
+    }
+    return 0;
+}
+
 } // namespace dev
 } // namespace m8

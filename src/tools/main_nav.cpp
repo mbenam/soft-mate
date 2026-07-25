@@ -334,7 +334,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
-    std::string recordFramesPath, pinGesturesField, scriptPath;
+    std::string recordFramesPath, pinGesturesField, scriptPath, findFileArg, loadSongArg;
     bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false, allowMutation = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
@@ -348,6 +348,8 @@ int main(int argc, char** argv) {
         else if (a == "--semantic-state")  semanticStateFlag = true;
         else if (a == "--serve")           serveMode = true;
         else if (a == "--allow-mutation")  allowMutation = true;
+        else if (a == "--find-file")       findFileArg = next();
+        else if (a == "--load-song")       loadSongArg = next();
         else if (a == "--json")            jsonPath = next();
         else if (a == "--keys")            keysArg = next();
         else if (a == "--load-file")       loadFilePath = next();
@@ -441,6 +443,34 @@ int main(int argc, char** argv) {
     if (serveMode) {
         int daemonRc = runDaemon(dev, holdMs, gapMs, settleMs);
         if (daemonRc != 0) env.code = ExitCode::COMMAND_FAILED;
+        return emitExit(dev, env);
+    }
+
+    // --find-file mode.
+    if (!findFileArg.empty()) {
+        auto gotoRes = gotoScreen(dev, Screen::LOAD_PROJECT_MODAL, holdMs);
+        if (!gotoRes.ok) {
+            env.code = ExitCode::TARGET_UNREACHABLE;
+            env.message = "could not reach LOAD PROJECT modal";
+            return emitExit(dev, env);
+        }
+        auto sres = searchTree(dev, findFileArg, 4, 64, holdMs);
+        std::printf("find-file \"%s\": %zu matches (dirs_visited=%d, truncated=%s)\n",
+                    findFileArg.c_str(), sres.matches.size(), sres.dirsVisited, sres.truncated ? "true" : "false");
+        for (const auto& m : sres.matches) {
+            std::printf("  - %s\n", m.path.c_str());
+        }
+        if (!sres.error.empty()) {
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = sres.error;
+        }
+        return emitExit(dev, env);
+    }
+
+    // --load-song mode.
+    if (!loadSongArg.empty()) {
+        int rc = searchAndLoad(dev, loadSongArg, holdMs);
+        if (rc != 0) env.code = static_cast<ExitCode>(rc);
         return emitExit(dev, env);
     }
 
