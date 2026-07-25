@@ -104,7 +104,7 @@ Same discipline as `M8_DRIVER_SPEC.md`:
 [ ] P1   [SD] Capture device-authored golden .m8s per instrument type
 [x] P2   Byte-diff harness: generated vs device golden
 [ ] P3   Fix what the diff reveals
-[ ] P4   Replace verifyRoundTrip with cross-oracle validation
+[x] P4   Replace verifyRoundTrip with cross-oracle validation
 [ ] P5   Resolve the AHD envelope contradiction
 [ ] P6   Normalize the capture-vs-render comparison
 [ ] P7   Re-measure the sampler amplitude bug

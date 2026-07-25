@@ -454,6 +454,78 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
         return false;
     }
 
+    // Extended field checks for amplitude-relevant fields
+    const m8::SynthParams* sp = nullptr;
+    if (instType == "sampler" && std::holds_alternative<m8::Sampler>(song.instruments[0])) {
+        sp = &std::get<m8::Sampler>(song.instruments[0]).synth_params;
+    } else if (std::holds_alternative<m8::MacroSynth>(song.instruments[0])) {
+        sp = &std::get<m8::MacroSynth>(song.instruments[0]).synth_params;
+    }
+
+    if (sp) {
+        if (sp->volume != 0xE0) {
+            std::fprintf(stderr, "  FAIL: volume %02X != 0xE0\n", sp->volume);
+            return false;
+        }
+        if (sp->mixer_pan != 0x80) {
+            std::fprintf(stderr, "  FAIL: mixer_pan %02X != 0x80\n", sp->mixer_pan);
+            return false;
+        }
+        if (sp->mixer_dry != 0xC0) {
+            std::fprintf(stderr, "  FAIL: mixer_dry %02X != 0xC0\n", sp->mixer_dry);
+            return false;
+        }
+        if (sp->mixer_reverb != 0x00 || sp->mixer_chorus != 0x00 || sp->mixer_delay != 0x00) {
+            std::fprintf(stderr, "  FAIL: mixer sends non-zero\n");
+            return false;
+        }
+        if (!std::holds_alternative<m8::AHDEnv>(sp->mods[0])) {
+            std::fprintf(stderr, "  FAIL: mod 0 is not AHDEnv\n");
+            return false;
+        }
+    }
+
+    std::printf("  self-consistency OK (does NOT prove hardware validity)\n");
+    return true;
+}
+
+static bool verifyAgainstGolden(const std::string& probePath, const std::string& goldenPath) {
+    FILE* f1 = std::fopen(probePath.c_str(), "rb");
+    if (!f1) { std::fprintf(stderr, "cannot open probe file %s\n", probePath.c_str()); return false; }
+    std::fseek(f1, 0, SEEK_END); long sz1 = std::ftell(f1); std::fseek(f1, 0, SEEK_SET);
+    std::vector<uint8_t> gen(sz1); std::fread(gen.data(), 1, sz1, f1); std::fclose(f1);
+
+    FILE* f2 = std::fopen(goldenPath.c_str(), "rb");
+    if (!f2) { std::fprintf(stderr, "cannot open golden file %s\n", goldenPath.c_str()); return false; }
+    std::fseek(f2, 0, SEEK_END); long sz2 = std::ftell(f2); std::fseek(f2, 0, SEEK_SET);
+    std::vector<uint8_t> gold(sz2); std::fread(gold.data(), 1, sz2, f2); std::fclose(f2);
+
+    size_t maxLen = std::max(gen.size(), gold.size());
+    int suspiciousDiffs = 0;
+
+    auto isBenign = [](size_t offset) {
+        if (offset < 4) return true;
+        if (offset >= 0x0E && offset < 0x8E) return true;
+        if (offset >= 0x93 && offset < 0x9F) return true;
+        return false;
+    };
+
+    for (size_t i = 0; i < maxLen; ++i) {
+        uint8_t b1 = (i < gen.size()) ? gen[i] : 0;
+        uint8_t b2 = (i < gold.size()) ? gold[i] : 0;
+        if (b1 != b2) {
+            if (!isBenign(i)) {
+                std::fprintf(stderr, "  SUSPICIOUS DIFF at offset %zu (0x%zX): gen=%02X golden=%02X\n", i, i, b1, b2);
+                suspiciousDiffs++;
+            }
+        }
+    }
+
+    if (suspiciousDiffs > 0) {
+        std::fprintf(stderr, "cross-oracle verification FAILED: %d suspicious byte diffs\n", suspiciousDiffs);
+        return false;
+    }
+    std::printf("  cross-oracle validation OK against %s\n", goldenPath.c_str());
     return true;
 }
 
@@ -466,6 +538,7 @@ int main(int argc, char** argv) {
     std::string outDir;
     std::string sweepParam;
     std::string samplePath;   // M8-absolute path for --type sampler, e.g. /probes/x.wav
+    std::string verifyAgainst;
     int shape = 0, timbre = 0x40, color = 0x80;
     int volume = 0xE0;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
@@ -497,6 +570,7 @@ int main(int argc, char** argv) {
         // "every tick" -- fast enough to execute within a short render.
         else if (a == "--table-tick")  tableTick = num();
         else if (a == "--slice")       slice = num();
+        else if (a == "--verify-against") verifyAgainst = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
     }
 
@@ -554,6 +628,12 @@ int main(int argc, char** argv) {
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
+    }
+    if (!verifyAgainst.empty()) {
+        if (!verifyAgainstGolden(outPath, verifyAgainst)) {
+            std::fprintf(stderr, "verify-against FAILED\n");
+            return 1;
+        }
     }
     if (instType == "sampler")
         std::printf("wrote %s  (type=sampler note=%s sample=%s)\n",
