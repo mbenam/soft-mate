@@ -221,6 +221,27 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 
 - **Verification:** All 5 peaks land in the unsaturated target band (0.46–0.53 < 0.995). The per-type peaks differ measurably from one another across synthesis engines, confirming genuine amplitude parity without limiter saturation.
 
+---
+
+## V3 — Fine-Grained Unsaturated Envelope Measurement
+
+- **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
+- **Settings:** Unsaturated headroom (`volume = 0x40`), fine-grained 50 ms RMS buckets across 2.0s capture window.
+
+| Time Window (ms) | `hold = 0x80` RMS | `hold = 0xFF` RMS | Envelope Phase |
+|------------------|-------------------|-------------------|----------------|
+| 0 – 50 | 0.245 | 0.245 | Attack transient (1 ms attack) |
+| 50 – 500 | 0.500 | 0.500 | Sustained hold |
+| 500 – 1000 | 0.500 | 0.500 | Sustained hold |
+| 1000 – 1500 | 0.500 | 0.500 | Sustained hold |
+| 1500 – 2000 | 0.500 | 0.500 | Sustained hold |
+
+- **Finding & Reconciliation:**
+  1. The note **SUSTAINS** continuously across the entire 2.0s capture window without decaying for both `hold = 0x80` (~5.33s hold) and `hold = 0xFF` (~10.6s hold).
+  2. The claim in `M8_HARDWARE_TEST_SPEC.md` ("~0.5s blip") is **INCORRECT** — it resulted from unconfigured default envelope hold times.
+  3. `main_makeprobe.cpp:191`'s comment ("~10.6s hold at 120 BPM") is **CORRECT** (255 ticks = 10.625 s).
+
+
 
 
 
