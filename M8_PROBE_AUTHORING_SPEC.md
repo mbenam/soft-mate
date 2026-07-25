@@ -102,7 +102,7 @@ Same discipline as `M8_DRIVER_SPEC.md`:
 ```
 [x] P0   Pin the capture measurement baseline
 [ ] P1   [SD] Capture device-authored golden .m8s per instrument type
-[ ] P2   Byte-diff harness: generated vs device golden
+[x] P2   Byte-diff harness: generated vs device golden
 [ ] P3   Fix what the diff reveals
 [ ] P4   Replace verifyRoundTrip with cross-oracle validation
 [ ] P5   Resolve the AHD envelope contradiction
