@@ -40,3 +40,10 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 - **Amplitude Ratio:** `0.935` (Peak level difference < 0.6 dB, ratio ~ 1.0).
 - **Status:** **RESOLVED** — Sampler probe amplitude parity is restored.
 
+---
+
+## A1 — Discover directory-row marker (Firmware 6.5.2)
+- **Empirical Observation:** On real M8 hardware (firmware 6.5.2) in the file browser modal (`LOAD PROJECT`, sample file browser), directory rows are visually prefix-marked with a leading `/` character (e.g., `/..`, `/DEMOS`, `/PROJECTS`), whereas standard file entries do not start with `/` (e.g., `PROBE_SELFTEST.M8S`).
+- **Parent Directory Row:** `/..`
+- **Parsing Rule:** A row represents a directory if `row.text` starts with `/` (`row.text.rfind('/', 0) == 0` or `row.text[0] == '/'`).
+

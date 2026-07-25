@@ -143,8 +143,8 @@ FOUNDATION (mandatory, in order)
 [x] F18  Update docs/tools/m8_nav.md for Foundation changes
 
 TRACK A — file loading + agent ergonomics
-[ ] A0   Decide the SD-card access question (gate for A1-A7)
-[ ] A1   [HW] Discover directory-row marker → docs/tools/hw_findings.md
+[x] A0   Decide the SD-card access question (gate for A1-A7)
+[x] A1   [HW] Discover directory-row marker → docs/tools/hw_findings.md
 [ ] A2   isDirectoryRow()
 [ ] A3   enumerateList()
 [ ] A4   enterDir() / upDir()
