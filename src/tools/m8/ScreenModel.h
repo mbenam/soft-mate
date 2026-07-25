@@ -120,6 +120,25 @@ inline Screen identifyScreen(const ScreenGrid& grid) {
     return s;
 }
 
+inline std::string toUpper(std::string s) {
+    for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+
+inline bool isModal(const ScreenGrid& g) {
+    std::string h = toUpper(g.topHeader());
+    return h.find("LOSECHANGES") != std::string::npos
+        || h.find("LOSE CHANGES") != std::string::npos
+        || h.find("SONG?") != std::string::npos
+        || h.find("OVERWRITE") != std::string::npos;
+}
+
+inline bool isLiveMode(const ScreenGrid& g) {
+    std::string h = toUpper(g.topHeader());
+    return h.find("LIVE") != std::string::npos
+        && h.find("EXIT") != std::string::npos;
+}
+
 // ---- Navigation graph -----------------------------------------------------
 //
 // The M8 UI is a 2D grid. SHIFT+arrows move between screens; arrows move

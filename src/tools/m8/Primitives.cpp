@@ -15,10 +15,7 @@ namespace dev {
 
 // ---- Helpers --------------------------------------------------------------
 
-static std::string toUpper(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return s;
-}
+
 
 static std::string alnumUpper(const std::string& s) {
     std::string o;
@@ -28,24 +25,7 @@ static std::string alnumUpper(const std::string& s) {
     return o;
 }
 
-static bool isModal(const ScreenGrid& g) {
-    std::string h = toUpper(g.topHeader());
-    // topHeader() strips space characters, so check both with-space and
-    // without-space variants. The real M8 header is "LOSE CHANGES TO CURRENT
-    // SONG?" but topHeader() returns "LOSECHANGESTOCURRENTSONG?".
-    return h.find("LOSECHANGES") != std::string::npos
-        || h.find("LOSE CHANGES") != std::string::npos
-        || h.find("SONG?") != std::string::npos
-        || h.find("OVERWRITE") != std::string::npos;
-}
 
-// LIVE mode is a performance overlay (header: "LIVE (SEL+LEFT TO EXIT)").
-// "SEL" = SHIFT on M8 hardware. SHIFT+LEFT exits it.
-static bool isLiveMode(const ScreenGrid& g) {
-    std::string h = toUpper(g.topHeader());
-    return h.find("LIVE") != std::string::npos
-        && h.find("EXIT") != std::string::npos;
-}
 
 // Helper to identify the cursor field based on screen coordinates (x, y) in pixels.
 static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur) {

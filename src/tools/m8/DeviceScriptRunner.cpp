@@ -27,10 +27,7 @@ static std::string trim(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
-static std::string toUpper(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return s;
-}
+
 
 static std::string stripQuotes(const std::string& s) {
     if (s.size() >= 2 && ((s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\'')))
