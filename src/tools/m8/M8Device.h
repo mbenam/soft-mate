@@ -102,6 +102,7 @@ public:
     std::string topHeader() const;
     std::string cursorMainText() const;
     std::vector<std::pair<int,std::string>> mainRows() const;
+    std::vector<std::pair<int,std::string>> listRows() const;
     int cursorRowY() const;
     void clear();
     void eraseRegion(int x, int y, int w, int h);
@@ -186,6 +187,7 @@ public:
 
     // All main-area text rows.
     std::vector<std::pair<int,std::string>> rows();
+    std::vector<std::pair<int,std::string>> listRows();
 
     // Read a field's current value text (cells to the right of the label).
     std::optional<std::string> valueOf(const FieldRef& field);

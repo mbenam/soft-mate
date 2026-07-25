@@ -131,7 +131,7 @@ FOUNDATION (mandatory, in order)
 [x] F6   Result.h — ExitCode enum + Envelope
 [x] F7   Single exit path in main_nav.cpp
 [x] F8   Normalize pinGestures return codes
-[ ] F9   ScreenGrid listRows()
+[x] F9   ScreenGrid listRows()
 [ ] F10  Promote isModal/isLiveMode to ScreenModel.h
 [ ] F11  printJson emits highlights
 [ ] F12  Semantic.h — semanticState()

@@ -151,6 +151,16 @@ std::vector<std::pair<int, std::string>> ScreenGrid::mainRows() const {
     return out;
 }
 
+std::vector<std::pair<int, std::string>> ScreenGrid::listRows() const {
+    std::vector<std::pair<int, std::string>> out;
+    for (auto& r : mainRows()) {
+        if (r.first >= 30 && r.first <= 210) {
+            out.push_back(r);
+        }
+    }
+    return out;
+}
+
 int ScreenGrid::cursorRowY() const {
     // Grid screens use '<' character in column 0 as the cursor marker.
     // Prefer this over accent-color matching when present.
@@ -568,6 +578,10 @@ std::optional<FieldRef> M8Device::cursorField() {
 
 std::vector<std::pair<int, std::string>> M8Device::rows() {
     return m_grid.mainRows();
+}
+
+std::vector<std::pair<int, std::string>> M8Device::listRows() {
+    return m_grid.listRows();
 }
 
 std::optional<std::string> M8Device::valueOf(const FieldRef& field) {
