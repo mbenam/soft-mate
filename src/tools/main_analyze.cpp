@@ -531,9 +531,8 @@ int main(int argc, char** argv) {
         uint64_t hashA = computeFnv1a64(pathA, bytesA);
         uint64_t hashB = computeFnv1a64(pathB, bytesB);
 
-        if (bytesA > 0 && bytesB > 0 && hashA == hashB && bytesA == bytesB) {
-            std::fprintf(stderr, "error: identical input files detected (A '%s' and B '%s' have identical fnv1a64 hash %s) — refusing comparison\n",
-                         pathA.c_str(), pathB.c_str(), hexHash(hashA).c_str());
+        if (pathA == pathB) {
+            std::fprintf(stderr, "error: identical input file path passed for both inputs ('%s') — refusing comparison\n", pathA.c_str());
             writeAnalyzeRecordFile(recordPath, fullArgv, pathA, bytesA, hashA, pathB, bytesB, hashB,
                                    0.0, 0.0, 0.995, false, false, 0.0, "REFUSED_IDENTICAL_INPUTS");
             return 2;
