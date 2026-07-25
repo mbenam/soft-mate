@@ -218,15 +218,20 @@ static int pinGestures(M8Device& dev, const std::string& field, int holdMs) {
                     cand.desc, cand.mask, icon, beforeLabel.c_str(), afterLabel.c_str());
     }
 
-    // Step 6: Undo any edits — navigate back to the original field.
-    std::printf("\n[5] Restoring state...\n");
-    // Navigate away and back to reset.
+    // Step 6: Re-navigate to field and inspect value post-test.
+    std::printf("\n[5] Re-navigating to target field...\n");
+    // Navigate away and back to reset cursor position.
     gotoScreen(dev, Screen::SONG, holdMs);
     gotoScreen(dev, targetScreen, holdMs);
     moveCursorTo(dev, field, holdMs);
     dev.readScreen(200, 300);
     std::string restoredFull = dev.grid().cursorMainText();
-    std::printf("  after reset: \"%s\"\n", firstLine(restoredFull).c_str());
+    std::string restoredLabel = firstLine(restoredFull);
+    std::printf("  after reset: \"%s\"\n", restoredLabel.c_str());
+    if (restoredFull != startFull) {
+        std::printf("\nWARNING: Field '%s' value mutated!\n  Initial: \"%s\"\n  Current: \"%s\"\n",
+                    field.c_str(), startFull.c_str(), restoredFull.c_str());
+    }
 
     // Step 7: Analyze and print results.
     std::printf("\n=== RESULTS ===\n");
@@ -330,7 +335,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
     std::string recordFramesPath, pinGesturesField, scriptPath;
-    bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false;
+    bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false, allowMutation = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
     int recordDurationMs = 5000;
@@ -342,6 +347,7 @@ int main(int argc, char** argv) {
         else if (a == "--dump-screen")     dumpScreen = true;
         else if (a == "--semantic-state")  semanticStateFlag = true;
         else if (a == "--serve")           serveMode = true;
+        else if (a == "--allow-mutation")  allowMutation = true;
         else if (a == "--json")            jsonPath = next();
         else if (a == "--keys")            keysArg = next();
         else if (a == "--load-file")       loadFilePath = next();
@@ -447,6 +453,11 @@ int main(int argc, char** argv) {
 
     // --pin-gestures mode (Tier 2: discover edit masks empirically).
     if (!pinGesturesField.empty()) {
+        if (!allowMutation) {
+            env.code = ExitCode::UNKNOWN_ARG;
+            env.message = "--pin-gestures requires --allow-mutation flag as it sends edit commands to the device";
+            return emitExit(dev, env);
+        }
         int rc = pinGestures(dev, pinGesturesField, holdMs);
         if (rc != 0) env.code = ExitCode::COMMAND_FAILED;
         return emitExit(dev, env);
