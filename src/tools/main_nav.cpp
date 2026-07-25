@@ -437,6 +437,12 @@ int main(int argc, char** argv) {
     }
 
     dev.readSettled(minMs, settleMs, maxMs);
+    if (dev.grid().cells.empty()) {
+        env.code = ExitCode::NO_DATA;
+        env.message = "port opened but no display data was decoded";
+        return emitExit(dev, env);
+    }
+
     Firmware fw = dev.firmware();
     std::printf("device: hw_type=%d  firmware=%d.%d.%d  font_mode=%d\n",
                 fw.hwType, fw.major, fw.minor, fw.patch, fw.fontMode);
@@ -454,7 +460,7 @@ int main(int argc, char** argv) {
 
     // --find-file mode.
     if (!findFileArg.empty()) {
-        auto gotoRes = gotoScreen(dev, Screen::LOAD_PROJECT_MODAL, holdMs);
+        auto gotoRes = openLoadModal(dev, holdMs);
         if (!gotoRes.ok) {
             env.code = ExitCode::TARGET_UNREACHABLE;
             env.message = "could not reach LOAD PROJECT modal";
@@ -466,7 +472,10 @@ int main(int argc, char** argv) {
         for (const auto& m : sres.matches) {
             std::printf("  - %s\n", m.path.c_str());
         }
-        if (!sres.error.empty()) {
+        if (sres.matches.empty() && sres.error.empty()) {
+            env.code = ExitCode::NOT_FOUND;
+            env.message = "no matches found for '" + findFileArg + "'";
+        } else if (!sres.error.empty()) {
             env.code = ExitCode::COMMAND_FAILED;
             env.message = sres.error;
         }
@@ -586,7 +595,7 @@ int main(int argc, char** argv) {
         if (val) {
             std::printf("%s = %s\n", readFieldArg.c_str(), val->c_str());
         } else {
-            env.code = ExitCode::TARGET_UNREACHABLE;
+            env.code = ExitCode::NOT_FOUND;
             env.message = "could not read field: " + readFieldArg;
         }
         return emitExit(dev, env);
@@ -616,7 +625,7 @@ int main(int argc, char** argv) {
     }
 
     if (dev.grid().cells.empty()) {
-        env.code = ExitCode::UNSETTLED_DISPLAY;
+        env.code = ExitCode::NO_DATA;
         env.message = "no characters decoded — is the device connected and streaming?";
     }
 

@@ -13,6 +13,7 @@
 
 #include "M8Device.h"
 #include "ScreenModel.h"
+#include "Result.h"
 #include <functional>
 #include <string>
 #include <optional>
@@ -121,6 +122,9 @@ struct SearchResult {
 // alnum-normalized — the same comparison loadFile uses).
 SearchResult searchTree(M8Device& dev, const std::string& needle,
                         int maxDepth = 4, int maxVisits = 64, int holdMs = 15);
+
+// Opens the LOAD PROJECT file browser modal.
+JsonResult openLoadModal(M8Device& dev, int holdMs = 15);
 
 // Closed-loop directory tree search and load. Navigates to LOAD PROJECT browser,
 // searches tree via searchTree, lands on matching file, and opens it.

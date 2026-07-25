@@ -104,7 +104,7 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
             std::string field = params["field"];
             auto val = readField(dev, field, holdMs);
             if (!val) {
-                code = ExitCode::TARGET_UNREACHABLE;
+                code = ExitCode::NOT_FOUND;
                 errMessage = "field not found: " + field;
             }
         } else if (verbU == "LOAD") {

@@ -169,7 +169,7 @@ JsonResult gotoScreen(M8Device& dev, Screen target, int holdMs, int maxHops) {
             dev.press(cs.keyMask, holdMs);
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
             confirmRead(dev);
-            if (isModal(dev.grid())) {
+            if (isModal(dev.grid()) && target != Screen::LOAD_PROJECT_MODAL && target != Screen::FILE_BROWSER) {
                 dismissModal(dev, false, holdMs);
             }
             cur = identifyScreen(dev.grid());
@@ -188,7 +188,7 @@ JsonResult gotoScreen(M8Device& dev, Screen target, int holdMs, int maxHops) {
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
             confirmRead(dev);
 
-            if (isModal(dev.grid())) {
+            if (isModal(dev.grid()) && target != Screen::LOAD_PROJECT_MODAL && target != Screen::FILE_BROWSER) {
                 dismissModal(dev, false, holdMs);
             }
 
@@ -1225,6 +1225,81 @@ int loadFile(M8Device& dev, const std::string& target, int holdMs) {
     return 14;
 }
 
+JsonResult openLoadModal(M8Device& dev, int holdMs) {
+    auto header = [&] { return toUpper(dev.grid().topHeader()); };
+    auto inBrowser = [&] { return header().find("LOADPROJECT") != std::string::npos; };
+    auto onProjSettings = [&] {
+        if (identifyScreen(dev.grid()) != Screen::PROJECT) return false;
+        for (auto& [y, text] : dev.grid().mainRows()) {
+            if (text.find("TEMPO") != std::string::npos) return true;
+        }
+        return false;
+    };
+    auto findLoadProjectRowY = [&]() -> int {
+        for (auto& [y, text] : dev.grid().mainRows()) {
+            if (text.find("LOAD") != std::string::npos && text.find("PROJECT") != std::string::npos) return y;
+        }
+        return -1;
+    };
+
+    if (inBrowser()) return JsonResult::success();
+
+    bool onProject = onProjSettings();
+    if (!onProject) {
+        auto navRes = gotoScreen(dev, Screen::PROJECT, holdMs);
+        onProject = navRes.ok;
+    }
+    if (!onProject) {
+        return JsonResult::fail("openLoadModal: could not reach PROJECT screen", dev.grid());
+    }
+
+    bool onLoad = false;
+    for (int i = 0; i < 30; ++i) {
+        int targetPixelY = findLoadProjectRowY();
+        if (targetPixelY < 0) {
+            dev.press(Key::DOWN, holdMs);
+            if (!confirmRead(dev)) dev.readScreen();
+            continue;
+        }
+
+        int curY = dev.grid().cursorRowY();
+        if (curY == targetPixelY) {
+            if (confirmRead(dev, Screen::PROJECT)) {
+                int recheckY = findLoadProjectRowY();
+                if (recheckY == targetPixelY) {
+                    onLoad = true;
+                    break;
+                }
+            }
+        }
+
+        if (curY < 0 || curY < targetPixelY) dev.press(Key::DOWN, holdMs);
+        else if (curY > targetPixelY) dev.press(Key::UP, holdMs);
+        else dev.press(Key::LEFT, holdMs);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (!confirmRead(dev)) dev.readScreen();
+    }
+    if (!onLoad) return JsonResult::fail("openLoadModal: could not select LOAD row", dev.grid());
+
+    dev.press(Key::EDIT, holdMs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    if (!confirmRead(dev)) dev.readScreen();
+    if (isModal(dev.grid())) {
+        auto mr = dismissModal(dev, true, holdMs);
+        if (!mr.ok) {
+            dismissModal(dev, false, holdMs);
+            return JsonResult::fail("openLoadModal: modal dismissal failed", dev.grid());
+        }
+    }
+
+    if (!inBrowser()) {
+        if (!confirmRead(dev)) dev.readScreen();
+        if (!inBrowser()) return JsonResult::fail("openLoadModal: failed to enter browser", dev.grid());
+    }
+
+    return JsonResult::success();
+}
+
 std::vector<ListRow> enumerateList(M8Device& dev, int holdMs, int maxRows) {
     std::string lastCursorText;
     for (int i = 0; i < 64; ++i) {
@@ -1398,7 +1473,7 @@ SearchResult searchTree(M8Device& dev, const std::string& needle,
 }
 
 int searchAndLoad(M8Device& dev, const std::string& needle, int holdMs) {
-    auto gotoRes = gotoScreen(dev, Screen::LOAD_PROJECT_MODAL, holdMs);
+    auto gotoRes = openLoadModal(dev, holdMs);
     if (!gotoRes.ok) {
         std::fprintf(stderr, "searchAndLoad: failed to reach LOAD PROJECT modal: %s\n", gotoRes.error.c_str());
         return 7;
@@ -1411,7 +1486,7 @@ int searchAndLoad(M8Device& dev, const std::string& needle, int holdMs) {
     }
     if (sres.matches.empty()) {
         std::fprintf(stderr, "searchAndLoad: no matches found for '%s'\n", needle.c_str());
-        return 7;
+        return static_cast<int>(ExitCode::NOT_FOUND);
     }
     if (sres.matches.size() > 1) {
         std::fprintf(stderr, "searchAndLoad: ambiguous match (%zu candidates found for '%s'):\n", sres.matches.size(), needle.c_str());

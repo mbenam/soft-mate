@@ -15,6 +15,8 @@ enum class ExitCode {
     TIMED_OUT          = 5,
     AMBIGUOUS_MATCH    = 6,
     TARGET_UNREACHABLE = 7,
+    NOT_FOUND          = 8,
+    NO_DATA            = 9,
 };
 
 struct Envelope {
