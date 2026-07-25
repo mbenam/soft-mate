@@ -21,8 +21,8 @@ narrower than the step described, plus one process fix.
 [x] D2  Add the `extra` payload field to Envelope
 [x] D3  Fix the settle/max naming at main_nav.cpp:614
 [x] D4  Route ui_sweep through the daemon
-[ ] D5  Expand the sweep to per-field cursor states
-[ ] D6  Add modal and transport states to the corpus
+[x] D5  Expand the sweep to per-field cursor states
+[x] D6  Add modal and transport states to the corpus
 [ ] D7  Re-verify the ticked steps whose output nobody saw
 [ ] D8  Update docs for D1-D6
 ```

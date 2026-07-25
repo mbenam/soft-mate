@@ -1,11 +1,583 @@
 ﻿PASS  SONG -> tests/ui/golden/device/SONG.json
+PASS  SONG__STEP0 -> tests/ui/golden/device/SONG__STEP0.json
+FAIL  SONG__STEP4 : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorToGrid: could not reach step 4 col 0",
+  "state": {
+  "screen": "SONG",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "1",
+  "cursor_value": "1",
+  "cursor_row": 50,
+  "rows": [
+    {"y": 30, "text": " SONG"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": "    1  2  3  4  5  6  7  8"},
+    {"y": 60, "text": " 00 00 -- -- -- -- -- -- --"},
+    {"y": 70, "text": " 01 -- -- -- -- -- -- -- --"},
+    {"y": 80, "text": " 02 -- -- -- -- -- -- -- --"},
+    {"y": 90, "text": " 03 -- -- -- -- -- -- -- --"},
+    {"y": 100, "text": " 04 -- -- -- -- -- -- -- --"},
+    {"y": 110, "text": " 05 -- -- -- -- -- -- -- --"},
+    {"y": 120, "text": " 06 -- -- -- -- -- -- -- --"},
+    {"y": 130, "text": " 07 -- -- -- -- -- -- -- --"},
+    {"y": 140, "text": " 08 -- -- -- -- -- -- -- --"},
+    {"y": 150, "text": " 09 -- -- -- -- -- -- -- --"},
+    {"y": 160, "text": " 0A -- -- -- -- -- -- -- --"},
+    {"y": 170, "text": " 0B -- -- -- -- -- -- -- --"},
+    {"y": 180, "text": " 0C -- -- -- -- -- -- -- --"},
+    {"y": 190, "text": " 0D -- -- -- -- -- -- -- --"},
+    {"y": 200, "text": " 0E -- -- -- -- -- -- -- --"},
+    {"y": 210, "text": " 0F -- -- -- -- -- -- -- --"}
+  ]
+}
+}
+
+FAIL  SONG__STEP8 : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorToGrid: could not reach step 8 col 0",
+  "state": {
+  "screen": "SONG",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "1",
+  "cursor_value": "1",
+  "cursor_row": 50,
+  "rows": [
+    {"y": 30, "text": " SONG"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": "    1  2  3  4  5  6  7  8"},
+    {"y": 60, "text": " 00 00 -- -- -- -- -- -- --"},
+    {"y": 70, "text": " 01 -- -- -- -- -- -- -- --"},
+    {"y": 80, "text": " 02 -- -- -- -- -- -- -- --"},
+    {"y": 90, "text": " 03 -- -- -- -- -- -- -- --"},
+    {"y": 100, "text": " 04 -- -- -- -- -- -- -- --"},
+    {"y": 110, "text": " 05 -- -- -- -- -- -- -- --"},
+    {"y": 120, "text": " 06 -- -- -- -- -- -- -- --"},
+    {"y": 130, "text": " 07 -- -- -- -- -- -- -- --"},
+    {"y": 140, "text": " 08 -- -- -- -- -- -- -- --"},
+    {"y": 150, "text": " 09 -- -- -- -- -- -- -- --"},
+    {"y": 160, "text": " 0A -- -- -- -- -- -- -- --"},
+    {"y": 170, "text": " 0B -- -- -- -- -- -- -- --"},
+    {"y": 180, "text": " 0C -- -- -- -- -- -- -- --"},
+    {"y": 190, "text": " 0D -- -- -- -- -- -- -- --"},
+    {"y": 200, "text": " 0E -- -- -- -- -- -- -- --"},
+    {"y": 210, "text": " 0F -- -- -- -- -- -- -- --"}
+  ]
+}
+}
+
+FAIL  SONG__STEPC : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorToGrid: could not reach step 12 col 0",
+  "state": {
+  "screen": "SONG",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "1",
+  "cursor_value": "1",
+  "cursor_row": 50,
+  "rows": [
+    {"y": 30, "text": " SONG"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": "    1  2  3  4  5  6  7  8"},
+    {"y": 60, "text": " 00 00 -- -- -- -- -- -- --"},
+    {"y": 70, "text": " 01 -- -- -- -- -- -- -- --"},
+    {"y": 80, "text": " 02 -- -- -- -- -- -- -- --"},
+    {"y": 90, "text": " 03 -- -- -- -- -- -- -- --"},
+    {"y": 100, "text": " 04 -- -- -- -- -- -- -- --"},
+    {"y": 110, "text": " 05 -- -- -- -- -- -- -- --"},
+    {"y": 120, "text": " 06 -- -- -- -- -- -- -- --"},
+    {"y": 130, "text": " 07 -- -- -- -- -- -- -- --"},
+    {"y": 140, "text": " 08 -- -- -- -- -- -- -- --"},
+    {"y": 150, "text": " 09 -- -- -- -- -- -- -- --"},
+    {"y": 160, "text": " 0A -- -- -- -- -- -- -- --"},
+    {"y": 170, "text": " 0B -- -- -- -- -- -- -- --"},
+    {"y": 180, "text": " 0C -- -- -- -- -- -- -- --"},
+    {"y": 190, "text": " 0D -- -- -- -- -- -- -- --"},
+    {"y": 200, "text": " 0E -- -- -- -- -- -- -- --"},
+    {"y": 210, "text": " 0F -- -- -- -- -- -- -- --"}
+  ]
+}
+}
+
+PASS  SONG__PLAYING -> tests/ui/golden/device/SONG__PLAYING.json
 PASS  CHAIN -> tests/ui/golden/device/CHAIN.json
+PASS  CHAIN__STEP0 -> tests/ui/golden/device/CHAIN__STEP0.json
+PASS  CHAIN__STEP4 -> tests/ui/golden/device/CHAIN__STEP4.json
+PASS  CHAIN__STEP8 -> tests/ui/golden/device/CHAIN__STEP8.json
+FAIL  CHAIN__STEPC : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorToGrid: could not reach step 12 col 0",
+  "state": {
+  "screen": "CHAIN00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "PH",
+  "cursor_value": "PH",
+  "cursor_row": 50,
+  "rows": [
+    {"y": 30, "text": " CHAIN 00*"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": "   PH TSP"},
+    {"y": 60, "text": " 0 00 00"},
+    {"y": 70, "text": " 1 -- 00"},
+    {"y": 80, "text": " 2 -- 00"},
+    {"y": 90, "text": " 3 -- 00"},
+    {"y": 100, "text": " 4 -- 00"},
+    {"y": 110, "text": " 5 -- 00"},
+    {"y": 120, "text": " 6 -- 00"},
+    {"y": 130, "text": " 7 -- 00"},
+    {"y": 140, "text": " 8 -- 00"},
+    {"y": 150, "text": " 9 -- 00"},
+    {"y": 160, "text": " A -- 00"},
+    {"y": 170, "text": " B -- 00"},
+    {"y": 180, "text": " C -- 00"},
+    {"y": 190, "text": " D -- 00"},
+    {"y": 200, "text": " E -- 00"},
+    {"y": 210, "text": " F -- 00"}
+  ]
+}
+}
+
+PASS  CHAIN__PLAYING -> tests/ui/golden/device/CHAIN__PLAYING.json
 PASS  PHRASE -> tests/ui/golden/device/PHRASE.json
+PASS  PHRASE__STEP0 -> tests/ui/golden/device/PHRASE__STEP0.json
+PASS  PHRASE__STEP4 -> tests/ui/golden/device/PHRASE__STEP4.json
+PASS  PHRASE__STEP8 -> tests/ui/golden/device/PHRASE__STEP8.json
+FAIL  PHRASE__STEPC : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorToGrid: could not reach step 12 col 0",
+  "state": {
+  "screen": "PHRASE00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": false,
+  "cursor_field": "<0 C-6 -- 00 ---00 ---00 ---00   ",
+  "cursor_value": "<0",
+  "cursor_row": 60,
+  "rows": [
+    {"y": 30, "text": " PHRASE 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": "   N   V  I  FX1   FX2   FX3"},
+    {"y": 60, "text": "<0 C-6 -- 00 ---00 ---00 ---00"},
+    {"y": 70, "text": " 1 --- -- -- ---00 ---00 ---00"},
+    {"y": 80, "text": " 2 --- -- -- ---00 ---00 ---00"},
+    {"y": 90, "text": " 3 --- -- -- ---00 ---00 ---00"},
+    {"y": 100, "text": " 4 --- -- -- ---00 ---00 ---00"},
+    {"y": 110, "text": " 5 --- -- -- ---00 ---00 ---00"},
+    {"y": 120, "text": " 6 --- -- -- ---00 ---00 ---00"},
+    {"y": 130, "text": " 7 --- -- -- ---00 ---00 ---00"},
+    {"y": 140, "text": " 8 --- -- -- ---00 ---00 ---00"},
+    {"y": 150, "text": " 9 --- -- -- ---00 ---00 ---00"},
+    {"y": 160, "text": " A --- -- -- ---00 ---00 ---00"},
+    {"y": 170, "text": " B --- -- -- ---00 ---00 ---00"},
+    {"y": 180, "text": " C --- -- -- ---00 ---00 ---00"},
+    {"y": 190, "text": " D --- -- -- ---00 ---00 ---00"},
+    {"y": 200, "text": " E --- -- -- ---00 ---00 ---00"},
+    {"y": 210, "text": " F --- -- -- ---00 ---00 ---00"}
+  ]
+}
+}
+
+PASS  PHRASE__PLAYING -> tests/ui/golden/device/PHRASE__PLAYING.json
 PASS  INSTRUMENT -> tests/ui/golden/device/INSTRUMENT.json
+PASS  INSTRUMENT__TYPE -> tests/ui/golden/device/INSTRUMENT__TYPE.json
+PASS  INSTRUMENT__NAME -> tests/ui/golden/device/INSTRUMENT__NAME.json
+PASS  INSTRUMENT__TRANSP -> tests/ui/golden/device/INSTRUMENT__TRANSP.json
+PASS  INSTRUMENT__TBL_TIC -> tests/ui/golden/device/INSTRUMENT__TBL_TIC.json
+PASS  INSTRUMENT__EQ -> tests/ui/golden/device/INSTRUMENT__EQ.json
+PASS  INSTRUMENT__SAMPLE -> tests/ui/golden/device/INSTRUMENT__SAMPLE.json
+FAIL  INSTRUMENT__SLICE : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: field 'SLICE' not found on screen",
+  "state": {
+  "screen": "INST00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "AMP00",
+  "cursor_value": "AMP",
+  "cursor_row": 110,
+  "rows": [
+    {"y": 30, "text": " INST. 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " TYPE    MACROSYN      LOAD SAVE"},
+    {"y": 60, "text": " NAME    PROBE-------"},
+    {"y": 70, "text": " TRANSP. ON   TBL.TIC FF   EQ 7F"},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": " SHAPE   00CSAW"},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": " TIMBRE  40        AMP 00"},
+    {"y": 120, "text": " COLOR   80        LIM 00CLIP"},
+    {"y": 130, "text": " DEGRADE 00        PAN 80"},
+    {"y": 140, "text": " REDUX   00        DRY C0"},
+    {"y": 150, "text": " FILTER  00OFF     MFX 00"},
+    {"y": 160, "text": " CUTOFF  FF        DEL 00"},
+    {"y": 170, "text": " RES     00        REV 00"},
+    {"y": 180, "text": ""},
+    {"y": 190, "text": ""},
+    {"y": 200, "text": ""},
+    {"y": 210, "text": ""}
+  ]
+}
+}
+
+PASS  INSTRUMENT__AMP -> tests/ui/golden/device/INSTRUMENT__AMP.json
+FAIL  INSTRUMENT__PLAY : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: field 'PLAY' not found on screen",
+  "state": {
+  "screen": "INST00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "AMP00",
+  "cursor_value": "AMP",
+  "cursor_row": 110,
+  "rows": [
+    {"y": 30, "text": " INST. 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " TYPE    MACROSYN      LOAD SAVE"},
+    {"y": 60, "text": " NAME    PROBE-------"},
+    {"y": 70, "text": " TRANSP. ON   TBL.TIC FF   EQ 7F"},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": " SHAPE   00CSAW"},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": " TIMBRE  40        AMP 00"},
+    {"y": 120, "text": " COLOR   80        LIM 00CLIP"},
+    {"y": 130, "text": " DEGRADE 00        PAN 80"},
+    {"y": 140, "text": " REDUX   00        DRY C0"},
+    {"y": 150, "text": " FILTER  00OFF     MFX 00"},
+    {"y": 160, "text": " CUTOFF  FF        DEL 00"},
+    {"y": 170, "text": " RES     00        REV 00"},
+    {"y": 180, "text": ""},
+    {"y": 190, "text": ""},
+    {"y": 200, "text": ""},
+    {"y": 210, "text": ""}
+  ]
+}
+}
+
+PASS  INSTRUMENT__LIM -> tests/ui/golden/device/INSTRUMENT__LIM.json
+FAIL  INSTRUMENT__START : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: field 'START' not found on screen",
+  "state": {
+  "screen": "INST00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": false,
+  "cursor_field": "LIM00CLIP",
+  "cursor_value": "LIM",
+  "cursor_row": 120,
+  "rows": [
+    {"y": 30, "text": " INST. 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " TYPE    MACROSYN      LOAD SAVE"},
+    {"y": 60, "text": " NAME    PROBE-------"},
+    {"y": 70, "text": " TRANSP. ON   TBL.TIC FF   EQ 7F"},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": " SHAPE   00CSAW"},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": " TIMBRE  40        AMP 00"},
+    {"y": 120, "text": " COLOR   80        LIM 00CLIP"},
+    {"y": 130, "text": " DEGRADE 00        PAN 80"},
+    {"y": 140, "text": " REDUX   00        DRY C0"},
+    {"y": 150, "text": " FILTER  00OFF     MFX 00"},
+    {"y": 160, "text": " CUTOFF  FF        DEL 00"},
+    {"y": 170, "text": " RES     00        REV 00"},
+    {"y": 180, "text": ""},
+    {"y": 190, "text": ""},
+    {"y": 200, "text": ""},
+    {"y": 210, "text": ""}
+  ]
+}
+}
+
+PASS  INSTRUMENT__PAN -> tests/ui/golden/device/INSTRUMENT__PAN.json
+FAIL  INSTRUMENT__LOOP_ST : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: field 'LOOP_ST' not found on screen",
+  "state": {
+  "screen": "INST00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "PAN80",
+  "cursor_value": "PAN",
+  "cursor_row": 130,
+  "rows": [
+    {"y": 30, "text": " INST. 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " TYPE    MACROSYN      LOAD SAVE"},
+    {"y": 60, "text": " NAME    PROBE-------"},
+    {"y": 70, "text": " TRANSP. ON   TBL.TIC FF   EQ 7F"},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": " SHAPE   00CSAW"},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": " TIMBRE  40        AMP 00"},
+    {"y": 120, "text": " COLOR   80        LIM 00CLIP"},
+    {"y": 130, "text": " DEGRADE 00        PAN 80"},
+    {"y": 140, "text": " REDUX   00        DRY C0"},
+    {"y": 150, "text": " FILTER  00OFF     MFX 00"},
+    {"y": 160, "text": " CUTOFF  FF        DEL 00"},
+    {"y": 170, "text": " RES     00        REV 00"},
+    {"y": 180, "text": ""},
+    {"y": 190, "text": ""},
+    {"y": 200, "text": ""},
+    {"y": 210, "text": ""}
+  ]
+}
+}
+
+PASS  INSTRUMENT__DRY -> tests/ui/golden/device/INSTRUMENT__DRY.json
+FAIL  INSTRUMENT__LENGTH : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: field 'LENGTH' not found on screen",
+  "state": {
+  "screen": "INST00",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": " DRYC0",
+  "cursor_value": "DRY",
+  "cursor_row": 140,
+  "rows": [
+    {"y": 30, "text": " INST. 00"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " TYPE    MACROSYN      LOAD SAVE"},
+    {"y": 60, "text": " NAME    PROBE-------"},
+    {"y": 70, "text": " TRANSP. ON   TBL.TIC FF   EQ 7F"},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": " SHAPE   00CSAW"},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": " TIMBRE  40        AMP 00"},
+    {"y": 120, "text": " COLOR   80        LIM 00CLIP"},
+    {"y": 130, "text": " DEGRADE 00        PAN 80"},
+    {"y": 140, "text": " REDUX   00        DRY C0"},
+    {"y": 150, "text": " FILTER  00OFF     MFX 00"},
+    {"y": 160, "text": " CUTOFF  FF        DEL 00"},
+    {"y": 170, "text": " RES     00        REV 00"},
+    {"y": 180, "text": ""},
+    {"y": 190, "text": ""},
+    {"y": 200, "text": ""},
+    {"y": 210, "text": ""}
+  ]
+}
+}
+
+PASS  INSTRUMENT__CHO -> tests/ui/golden/device/INSTRUMENT__CHO.json
 PASS  TABLE -> tests/ui/golden/device/TABLE.json
+PASS  TABLE__STEP0 -> tests/ui/golden/device/TABLE__STEP0.json
+PASS  TABLE__STEP4 -> tests/ui/golden/device/TABLE__STEP4.json
+PASS  TABLE__STEP8 -> tests/ui/golden/device/TABLE__STEP8.json
+PASS  TABLE__STEPC -> tests/ui/golden/device/TABLE__STEPC.json
 PASS  PROJECT -> tests/ui/golden/device/PROJECT.json
+PASS  PROJECT__TEMPO -> tests/ui/golden/device/PROJECT__TEMPO.json
+PASS  PROJECT__TRANSPOSE -> tests/ui/golden/device/PROJECT__TRANSPOSE.json
+PASS  PROJECT__GROOVE -> tests/ui/golden/device/PROJECT__GROOVE.json
+PASS  PROJECT__SCALE -> tests/ui/golden/device/PROJECT__SCALE.json
+PASS  PROJECT__QUANTIZE -> tests/ui/golden/device/PROJECT__QUANTIZE.json
+PASS  PROJECT__MIDI -> tests/ui/golden/device/PROJECT__MIDI.json
+PASS  PROJECT__NAME -> tests/ui/golden/device/PROJECT__NAME.json
+PASS  PROJECT__PROJECT -> tests/ui/golden/device/PROJECT__PROJECT.json
+PASS  PROJECT__EXPORT -> tests/ui/golden/device/PROJECT__EXPORT.json
+PASS  PROJECT__CLEAR -> tests/ui/golden/device/PROJECT__CLEAR.json
+PASS  PROJECT__INST.POOL -> tests/ui/golden/device/PROJECT__INST.POOL.json
+PASS  PROJECT__TIME -> tests/ui/golden/device/PROJECT__TIME.json
+PASS  PROJECT__SYSTEM -> tests/ui/golden/device/PROJECT__SYSTEM.json
 PASS  GROOVE -> tests/ui/golden/device/GROOVE.json
+PASS  GROOVE__STEP0 -> tests/ui/golden/device/GROOVE__STEP0.json
+PASS  GROOVE__STEP4 -> tests/ui/golden/device/GROOVE__STEP4.json
+PASS  GROOVE__STEP8 -> tests/ui/golden/device/GROOVE__STEP8.json
+PASS  GROOVE__STEPC -> tests/ui/golden/device/GROOVE__STEPC.json
 PASS  SCALE -> tests/ui/golden/device/SCALE.json
+PASS  SCALE__TUNE -> tests/ui/golden/device/SCALE__TUNE.json
+PASS  SCALE__NAME -> tests/ui/golden/device/SCALE__NAME.json
+PASS  SCALE__LOAD -> tests/ui/golden/device/SCALE__LOAD.json
+PASS  SCALE__SAVE -> tests/ui/golden/device/SCALE__SAVE.json
 PASS  MIXER -> tests/ui/golden/device/MIXER.json
+PASS  MIXER__OUT_VOL -> tests/ui/golden/device/MIXER__OUT_VOL.json
+FAIL  MIXER__MST_CHO : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: could not reach 'MST_CHO' in 40 steps",
+  "state": {
+  "screen": "MIXER",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "INPUT",
+  "cursor_value": "INPUT",
+  "cursor_row": 180,
+  "rows": [
+    {"y": 30, "text": " MIXER"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " OUTPUT VOL  F0"},
+    {"y": 60, "text": ""},
+    {"y": 70, "text": ""},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": ""},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": ""},
+    {"y": 120, "text": " E0 E0 E0 E0E0 E0 E0 E0"},
+    {"y": 130, "text": ""},
+    {"y": 140, "text": ""},
+    {"y": 150, "text": ""},
+    {"y": 160, "text": "                EQ"},
+    {"y": 170, "text": " 00 00 00   00 -- 00   MIX E0"},
+    {"y": 180, "text": " MX DE RE   INPUT USB  LIM 40"},
+    {"y": 190, "text": "          MX 00    00   DJF 00"},
+    {"y": 200, "text": "          DE FF    00   OTT 00"},
+    {"y": 210, "text": "          RE 00    00"}
+  ]
+}
+}
+
+FAIL  MIXER__MST_DEL : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: could not reach 'MST_DEL' in 40 steps",
+  "state": {
+  "screen": "MIXER",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "INPUT",
+  "cursor_value": "INPUT",
+  "cursor_row": 180,
+  "rows": [
+    {"y": 30, "text": " MIXER"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " OUTPUT VOL  F0"},
+    {"y": 60, "text": ""},
+    {"y": 70, "text": ""},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": ""},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": ""},
+    {"y": 120, "text": " E0 E0 E0 E0E0 E0 E0 E0"},
+    {"y": 130, "text": ""},
+    {"y": 140, "text": ""},
+    {"y": 150, "text": ""},
+    {"y": 160, "text": "                EQ"},
+    {"y": 170, "text": " 00 00 00   00 -- 00   MIX E0"},
+    {"y": 180, "text": " MX DE RE   INPUT USB  LIM 40"},
+    {"y": 190, "text": "          MX 00    00   DJF 00"},
+    {"y": 200, "text": "          DE FF    00   OTT 00"},
+    {"y": 210, "text": "          RE 00    00"}
+  ]
+}
+}
+
+FAIL  MIXER__MST_REV : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: could not reach 'MST_REV' in 40 steps",
+  "state": {
+  "screen": "MIXER",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "INPUT",
+  "cursor_value": "INPUT",
+  "cursor_row": 180,
+  "rows": [
+    {"y": 30, "text": " MIXER"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " OUTPUT VOL  F0"},
+    {"y": 60, "text": ""},
+    {"y": 70, "text": ""},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": ""},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": ""},
+    {"y": 120, "text": " E0 E0 E0 E0E0 E0 E0 E0"},
+    {"y": 130, "text": ""},
+    {"y": 140, "text": ""},
+    {"y": 150, "text": ""},
+    {"y": 160, "text": "                EQ"},
+    {"y": 170, "text": " 00 00 00   00 -- 00   MIX E0"},
+    {"y": 180, "text": " MX DE RE   INPUT USB  LIM 40"},
+    {"y": 190, "text": "          MX 00    00   DJF 00"},
+    {"y": 200, "text": "          DE FF    00   OTT 00"},
+    {"y": 210, "text": "          RE 00    00"}
+  ]
+}
+}
+
+PASS  MIXER__IN_VOL -> tests/ui/golden/device/MIXER__IN_VOL.json
+PASS  MIXER__USB_VOL -> tests/ui/golden/device/MIXER__USB_VOL.json
+PASS  MIXER__MIX_VOL -> tests/ui/golden/device/MIXER__MIX_VOL.json
+PASS  MIXER__LIM_VAL -> tests/ui/golden/device/MIXER__LIM_VAL.json
+PASS  MIXER__DJF_FREQ -> tests/ui/golden/device/MIXER__DJF_FREQ.json
+PASS  MIXER__DJF_RES -> tests/ui/golden/device/MIXER__DJF_RES.json
+FAIL  MIXER__DJF_TYP : CURSOR failed -> {
+  "ok": false,
+  "code": 7,
+  "error": "moveCursorTo: could not reach 'DJF_TYP' in 40 steps",
+  "state": {
+  "screen": "MIXER",
+  "is_modal": false,
+  "is_live_mode": false,
+  "settled": true,
+  "cursor_field": "EQ",
+  "cursor_value": "EQ",
+  "cursor_row": 160,
+  "rows": [
+    {"y": 30, "text": " MIXER"},
+    {"y": 40, "text": ""},
+    {"y": 50, "text": " OUTPUT VOL  F0"},
+    {"y": 60, "text": ""},
+    {"y": 70, "text": ""},
+    {"y": 80, "text": ""},
+    {"y": 90, "text": ""},
+    {"y": 100, "text": ""},
+    {"y": 110, "text": ""},
+    {"y": 120, "text": " E0 E0 E0 E0E0 E0 E0 E0"},
+    {"y": 130, "text": ""},
+    {"y": 140, "text": ""},
+    {"y": 150, "text": ""},
+    {"y": 160, "text": "                EQ"},
+    {"y": 170, "text": " 00 00 00   00 -- 00   MIX E0"},
+    {"y": 180, "text": " MX DE RE   INPUT USB  LIM 40"},
+    {"y": 190, "text": "          MX 00    00   DJF 00"},
+    {"y": 200, "text": "          DE FF    00   OTT 00"},
+    {"y": 210, "text": "          RE 00    00"}
+  ]
+}
+}
+
 PASS  EFFECTS -> tests/ui/golden/device/EFFECTS.json
+PASS  EFFECTS__CHO_EQ -> tests/ui/golden/device/EFFECTS__CHO_EQ.json
+PASS  EFFECTS__CHO_MOD_DEP -> tests/ui/golden/device/EFFECTS__CHO_MOD_DEP.json
+PASS  EFFECTS__CHO_WID -> tests/ui/golden/device/EFFECTS__CHO_WID.json
+PASS  EFFECTS__CHO_REV -> tests/ui/golden/device/EFFECTS__CHO_REV.json
+PASS  EFFECTS__DEL_EQ -> tests/ui/golden/device/EFFECTS__DEL_EQ.json
+PASS  EFFECTS__DEL_TIME_L -> tests/ui/golden/device/EFFECTS__DEL_TIME_L.json
+PASS  EFFECTS__DEL_FBK -> tests/ui/golden/device/EFFECTS__DEL_FBK.json
+PASS  EFFECTS__DEL_WID -> tests/ui/golden/device/EFFECTS__DEL_WID.json
+PASS  EFFECTS__DEL_REV -> tests/ui/golden/device/EFFECTS__DEL_REV.json
+PASS  EFFECTS__REV_EQ -> tests/ui/golden/device/EFFECTS__REV_EQ.json
+PASS  EFFECTS__REV_SIZE -> tests/ui/golden/device/EFFECTS__REV_SIZE.json
+PASS  EFFECTS__REV_DEC -> tests/ui/golden/device/EFFECTS__REV_DEC.json
+PASS  EFFECTS__REV_MOD_DEP -> tests/ui/golden/device/EFFECTS__REV_MOD_DEP.json
+PASS  EFFECTS__REV_WID -> tests/ui/golden/device/EFFECTS__REV_WID.json
 PASS  MODS -> tests/ui/golden/device/MODS.json
+PASS  LOAD_PROJECT_MODAL -> tests/ui/golden/device/LOAD_PROJECT_MODAL.json
