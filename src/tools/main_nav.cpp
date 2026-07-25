@@ -11,7 +11,7 @@
 //   m8_nav --port COM3 --load-file probe.m8s  # closed-loop load
 //   m8_nav --port COM3 --goto-screen INSTRUMENT  # navigate to a screen
 //   m8_nav --port COM3 --read-field CUTOFF   # read a field value
-//   m8_nav --port COM3 --record-frames out.bin  # record raw SLIP frames
+//   m8_nav --port COM3 --record-frames out.bin  # record decoded cell frames
 //
 // Serial only. No engine, no SDL, no audio.
 // ===========================================================================
@@ -269,7 +269,7 @@ static int pinGestures(M8Device& dev, const std::string& field, int holdMs) {
 }
 
 static int recordFrames(M8Device& dev, const std::string& outPath, int durationMs) {
-    std::printf("recording SLIP frames for %d ms to %s\n", durationMs, outPath.c_str());
+    std::printf("recording decoded cell frames for %d ms to %s\n", durationMs, outPath.c_str());
     std::ofstream out(outPath, std::ios::binary);
     if (!out) {
         std::fprintf(stderr, "cannot write %s\n", outPath.c_str());

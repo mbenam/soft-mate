@@ -52,24 +52,27 @@ so every routine must work from an *unknown* starting state.
 |---|---|---|
 | `--port <name>` | *(required)* | Serial port, e.g. `COM3`. |
 | `--dump-screen` | *(implicit default if no other mode flag is given)* | Decode and print the current screen as text. |
-| `--json <path>` | — | Also (or instead) write the decoded grid as JSON (cells with colors). |
+| `--semantic-state` | — | Output high-level semantic state JSON (screen name, modal state, cursor field/value, list rows). |
+| `--serve` | — | Interactive daemon mode reading line-delimited commands from `stdin` and emitting JSON responses to `stdout`. |
+| `--allow-mutation` | `false` | Required flag for `--pin-gestures` to permit sending edit commands to the device. |
+| `--json <path>` | — | Write the decoded grid as JSON (cells with colors and `highlights` rect array). |
 | `--keys <list>` | — | Comma-separated key masks (decimal or `0x` hex) to press one at a time, dumping the screen after each. Manual/diagnostic mode. |
-| `--load-file <name>` | — | Closed-loop load: navigate to PROJECT → LOAD PROJECT browser → find and select `<name>` → confirm. See Gotchas. |
+| `--load-file <name>` | — | Closed-loop load: navigate to PROJECT → LOAD PROJECT browser → find and select `<name>` → confirm. Returns exit code 0 on success, non-zero on failure. |
 | `--goto-screen <name>` | — | Navigate to a named screen (`SONG`, `CHAIN`, `PHRASE`, `INSTRUMENT`, `TABLE`, `PROJECT`, `GROOVE`, `MODS`, `SCALE`, `INST_POOL`, `MIXER`, `EFFECTS`, or a partial match). Prints the resulting screen. |
 | `--read-field <name>` | — | Move cursor to a named field and print its current value. |
-| `--record-frames <path>` | — | Record decoded cells to a simple binary format for `--record-duration` ms (see Gotchas — not a true SLIP recording). |
+| `--record-frames <path>` | — | Record decoded cell frames to a simple binary format for `--record-duration` ms (see Gotchas — not a raw SLIP recording). |
 | `--record-duration <ms>` | `5000` | Duration for `--record-frames`. |
-| `--pin-gestures <field>` | — | **Tier 2 gesture discovery.** Navigates to the field, tests 16 candidate key-mask combinations against it, reports which ones edited the value vs. moved the cursor vs. did nothing. This is how `hw_buttons.json` was originally populated — see below. |
+| `--pin-gestures <field>` | — | **Tier 2 gesture discovery.** Requires `--allow-mutation`. Navigates to the field, tests 17 candidate key-mask combinations against it, reports which ones edited the value vs. moved the cursor vs. did nothing. |
 | `--script <path>` | — | Run a `.m8script` file against the real device via `DeviceScriptRunner`. |
 | `--hold-ms <n>` | `40` | Button hold duration per press. Automatically clamped to `15` if `--load-file` is also set and this would be `> 20`. |
 | `--gap-ms <n>` | `120` | Delay between a `--keys` press and reading the resulting screen. |
 | `--no-reset` | `false` | Skip the `'R'` reset-request on open (`openNoReset` instead of `open`). **Without a prior full-framebuffer resend, a fresh process's decoded grid can start empty or badly incomplete** — see Gotchas. |
-| `--max-ms <n>` | `2000` | Max wait for a settled screen read. |
-| `--settle-ms <n>` | `250` | Settle time for a screen read. |
-| `--min-ms <n>` | `700` | Minimum wait before the first read after opening. |
+| `--max-ms <n>` | `2000` | Max wait ceiling for a settled screen read (`readSettled`). |
+| `--settle-ms <n>` | `250` | Quiet window settle time for a screen read (`readSettled`). |
+| `--min-ms <n>` | `700` | Minimum wait before the first read after opening (`readSettled`). |
 
 If no mode flag is given at all, `--dump-screen` is implied. Unknown flags print `unknown arg:
-<flag>` and exit 1. No `--port` prints full usage and exits 1.
+<flag>` and exit with `ExitCode::UNKNOWN_ARG` (2). No `--port` prints full usage and exits with `ExitCode::UNKNOWN_ARG` (2).
 
 ## Screen names (for `--goto-screen`, and `.m8script`'s `goto` verb)
 
@@ -79,12 +82,12 @@ is attempted if the exact name doesn't resolve.
 
 ## `--pin-gestures`: how the edit gesture masks were discovered
 
-Navigates to the named field's screen, moves the cursor to it, then tests 16 candidate key-mask
+Navigates to the named field's screen, moves the cursor to it, then tests 17 candidate key-mask
 combinations (`SHIFT+UP/DOWN`, `EDIT+UP/DOWN/LEFT/RIGHT`, `OPT+UP/DOWN`, various 3-key combos,
 plus the plain arrows for comparison) one at a time — before/after each, it reads the cursor's
 label text and classifies the result as **EDITED** (same field, different value), **MOVED**
-(cursor left the field entirely), or **same** (no visible effect). Restores state afterward by
-navigating away and back. The confirmed masks get written into
+(cursor left the field entirely), or **same** (no visible effect). Re-navigates to the field post-test
+and warns if the field value was mutated. Requires `--allow-mutation`. The confirmed masks get written into
 [`hw_buttons.json`](../../hw_buttons.json) by hand (this mode reports candidates, it doesn't
 write the file itself) — see [`Gestures.h`](../../src/tools/m8/Gestures.h) for how that file is
 then loaded and used by `editValue`/`enterNote`/`clearCell`.
@@ -100,20 +103,18 @@ unmodified against the other wherever their verb sets overlap. See
 [`m8_diffcheck`](m8_diffcheck.md) for the tool that exploits this to diff device output against a
 clone-generated golden reference.
 
-## Exit codes
+## Exit codes (`ExitCode` enum in `Result.h`)
 
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | Bad CLI usage; unknown screen name; `--goto-screen`/`--read-field`/`--pin-gestures` failure |
-| 2 | Serial port open failure; script parse error |
-| 3 | Nothing was decoded at all (`dev.grid().cells.empty()`) — device not connected/streaming |
-
-`--load-file`'s own success/failure (`rc`) is printed (`LOADED`/`FAILED (rc=N)`) but check the
-actual mode block — some modes return their `rc` from `main`, some don't (e.g. `--load-file`
-without any other flag falls through to the default dump-screen path and returns `rc` from
-`main`'s end, which may be `0` even on a load failure if nothing else set it — read the printed
-`LOADED`/`FAILED` line, don't trust the exit code alone for this specific flag).
+| Value | Enum Name | Meaning |
+|---|---|---|
+| 0 | `SUCCESS` | Command completed successfully |
+| 1 | `DEVICE_NOT_FOUND` | Serial port open failure |
+| 2 | `UNKNOWN_ARG` | Bad CLI flag or missing argument |
+| 3 | `UNSETTLED_DISPLAY` | No characters decoded / screen unsettled |
+| 4 | `COMMAND_FAILED` | Command/script failed during execution |
+| 5 | `TIMED_OUT` | Timed out waiting for device response |
+| 6 | `AMBIGUOUS_MATCH` | Screen/field match was ambiguous or unknown |
+| 7 | `TARGET_UNREACHABLE` | Target screen or field could not be reached |
 
 ## Examples
 

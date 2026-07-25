@@ -140,7 +140,7 @@ FOUNDATION (mandatory, in order)
 [x] F15  --serve daemon skeleton
 [x] F16  Daemon command dispatch
 [x] F17  --pin-gestures mutation guard
-[ ] F18  Update docs/tools/m8_nav.md for Foundation changes
+[x] F18  Update docs/tools/m8_nav.md for Foundation changes
 
 TRACK A — file loading + agent ergonomics
 [ ] A0   Decide the SD-card access question (gate for A1-A7)
