@@ -32,8 +32,8 @@ inline constexpr ParamRange kInstrumentVolume{
 };
 
 inline constexpr ParamRange kMixerDry{
-    "mixer.dry", 0x00, 0xE0, false,
-    "Observed nominal dry mix 0xC0"
+    "mixer.dry", 0x00, 0xE0, true,
+    "UI max confirmed on fw 6.5.2, see hw_findings.md §V4"
 };
 
 inline constexpr ParamRange kMixerPan{
@@ -62,13 +62,13 @@ inline constexpr ParamRange kMod0Decay{
 };
 
 inline constexpr ParamRange kMasterVolume{
-    "mixer.master_volume", 0x00, 0xE0, false,
-    "Observed nominal master volume 0xE0"
+    "mixer.master_volume", 0x00, 0xE0, true,
+    "UI max confirmed on fw 6.5.2, see hw_findings.md §V4"
 };
 
 inline constexpr ParamRange kTrackVolume{
-    "mixer.track_volume", 0x00, 0xE0, false,
-    "Observed nominal track volume 0xE0"
+    "mixer.track_volume", 0x00, 0xE0, true,
+    "UI max confirmed on fw 6.5.2, see hw_findings.md §V4"
 };
 
 // Returns false and sets `err` if `v` is outside the range.

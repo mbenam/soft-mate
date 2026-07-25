@@ -38,7 +38,7 @@ document is not. This spec reconciles them.
 [x] V2  [HW] Re-run amplitude parity with headroom
 [x] V3  [HW] Re-run the envelope measurement with headroom
 [x] V4  [HW] Measure the three unconfirmed mixer ceilings
-[ ] V5  Update ParamRange.h with measured values
+[x] V5  Update ParamRange.h with measured values
 [ ] V6  Write the missing provenance section
 [ ] V7  Correct §R5 and re-check the clone default from R8
 [ ] V8  Add the invariant and update docs
