@@ -91,7 +91,9 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
                 code = ExitCode::AMBIGUOUS_MATCH;
                 errMessage = "unknown target screen: " + scName;
             } else {
-                auto res = gotoScreen(dev, target, holdMs);
+                JsonResult res = (target == Screen::LOAD_PROJECT_MODAL)
+                    ? openLoadModal(dev, holdMs)
+                    : gotoScreen(dev, target, holdMs);
                 if (!res.ok) {
                     code = ExitCode::TARGET_UNREACHABLE;
                     errMessage = res.error;
@@ -162,6 +164,46 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
         } else if (verbU == "STATE" || verbU == "SEMANTIC_STATE") {
             // Refreshes read state and outputs semantic state
             dev.readSettled(120, 150, defaultSettleMs);
+        } else if (verbU == "FIELDS") {
+            std::string scName = params["screen"];
+            if (scName.empty()) scName = dev.grid().canon();
+            Screen target = identifyScreen(toUpperLocal(scName));
+            if (target == Screen::UNKNOWN) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "unknown screen: " + scName;
+            } else {
+                auto fm = getFieldMap(target);
+                std::vector<std::string> fnames;
+                if (fm.isGrid) {
+                    for (int step = 0; step < 16; ++step) {
+                        char buf[16];
+                        std::snprintf(buf, sizeof(buf), "STEP%X", step);
+                        fnames.push_back(buf);
+                    }
+                } else if (fm.fields != nullptr) {
+                    for (size_t i = 0; i < fm.count; ++i) {
+                        fnames.push_back(fm.fields[i].name);
+                    }
+                }
+                std::string fieldsJson = "\"fields\":[";
+                for (size_t i = 0; i < fnames.size(); ++i) {
+                    fieldsJson += "\"" + jsonEscape(fnames[i]) + "\"";
+                    if (i + 1 < fnames.size()) fieldsJson += ",";
+                }
+                fieldsJson += "]";
+
+                auto semState = semanticState(dev);
+                std::ostringstream ss;
+                ss << "{\n";
+                ss << "  \"ok\": true,\n";
+                ss << "  \"code\": 0,\n";
+                ss << "  " << fieldsJson << ",\n";
+                ss << "  \"state\": " << semState.toJson() << "\n";
+                ss << "}";
+                std::printf("%s\n", ss.str().c_str());
+                std::fflush(stdout);
+                continue;
+            }
         } else {
             code = ExitCode::UNKNOWN_ARG;
             errMessage = "unknown daemon verb: " + verb;

@@ -145,9 +145,8 @@ JsonResult gotoScreen(M8Device& dev, Screen target, int holdMs, int maxHops) {
     }
 
     // If in a modal, dismiss with the read-verify-retry primitive.
-    if (isModal(dev.grid())) {
-        auto mr = dismissModal(dev, false, holdMs);
-        if (!mr.ok) return mr;
+    if ((isModal(dev.grid()) || cur == Screen::LOAD_PROJECT_MODAL || cur == Screen::FILE_BROWSER) && target != cur) {
+        dismissModal(dev, false, holdMs);
         cur = identifyScreen(dev.grid());
         if (cur == target) return JsonResult::success();
     }
@@ -158,6 +157,11 @@ JsonResult gotoScreen(M8Device& dev, Screen target, int holdMs, int maxHops) {
 
         auto steps = computeRoute(cur, target);
         if (steps.empty()) {
+            if (cur == Screen::LOAD_PROJECT_MODAL || cur == Screen::FILE_BROWSER) {
+                dismissModal(dev, false, holdMs);
+                cur = identifyScreen(dev.grid());
+                continue;
+            }
             // Direct route failed — try climbing to PROJECT as a neutral starting point.
             // This handles cases where the current screen's grid position is unknown.
             Screen project = Screen::PROJECT;
