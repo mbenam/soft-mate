@@ -48,6 +48,7 @@ only so they aren't lost, not tracked further in this document.
 | Component | Summary |
 |---|---|
 | `m8_makeprobe` (Out-of-range parameter writes) | FIXED — Writing out-of-range values (`volume = 0xE0` > `0x7F` ceiling) caused the M8 hardware to silently treat instrument volume as `0x00` (silence). Fixed by establishing `ParamRange.h` as single source of truth for range checking. |
+| Audio Analysis (`m8_spectrum` / `m8_analyze`) | FIXED — Verifying amplitude parity with saturated signals (`peak = 0.999664`) produced `1.0000` ratios by construction that could not fail. Fixed by adding `kSaturationThresh = 0.995` guard that refuses saturated comparisons (`M8_MEASUREMENT_VALIDITY_SPEC.md` V1). |
 | Real M8 hardware (low notes) | EXPECTED BEHAVIOR — MIDI notes 24-27 (C-1 through D#-1) produce zero audio on real hardware due to ~3-octave down-repitching output limits. Use notes at or above C-2 / MIDI 36 for parity probes. |
 | SDL3 UI clone (`src/ui/screens/project/ProjectScreenLayout.h`) | Models `SAMPLE_ROOT` as a normal PROJECT-screen field, DOWN-reachable from `SYSTEM_SETTINGS` — doesn't match real hardware (see bug #17 above). Task spawned separately to reconcile. |
 

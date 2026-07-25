@@ -41,7 +41,7 @@ document is not. This spec reconciles them.
 [x] V5  Update ParamRange.h with measured values
 [x] V6  Write the missing provenance section
 [x] V7  Correct §R5 and re-check the clone default from R8
-[ ] V8  Add the invariant and update docs
+[x] V8  Add the invariant and update docs
 ```
 
 Same discipline as the other specs: one commit per step prefixed with the step id,

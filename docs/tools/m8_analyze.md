@@ -28,7 +28,7 @@ These are the checks that actually set the exit code — everything else printed
 
 | Check | Threshold | Rationale |
 |---|---|---|
-| `peak < 1.0` | fails if `peak >= 1.0` | true digital full-scale, distinct from `clipped` below |
+| `peak < 0.995` | fails if `peak >= 0.995` (`kSaturationThresh`) | true digital full-scale / saturation guard — refuses clipped signals where limiter compression masks amplitude defects |
 | `clipped == 0` | fails if any sample `>= 0.999` (per `AudioMetrics`'s own clip definition) | |
 | `non_finite == 0` | fails if any NaN/Inf sample | |
 | `\|DC_L\| < 0.005` and `\|DC_R\| < 0.005` | overall per-channel DC offset | |

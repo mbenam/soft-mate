@@ -17,10 +17,7 @@ reports exactly where their spectra diverge: fundamental frequency, a harmonic/p
 a single scalar **log-spectral distance** — the number to minimize while tuning a synth model to
 match real hardware.
 
-**This tool never fails.** It always exits 0 (assuming both files load and the analysis window is
-long enough) — it's a *reporting* tool, not a gate. `fundamental_ok`/the harmonic deltas are
-printed and included in the JSON for a human or a calling script to interpret; nothing here sets
-a nonzero exit code based on how close the match is.
+**This tool never fails on match quality** — it's a *reporting* tool, not a gate. However, **it will refuse to evaluate saturated/clipped signals** (`peak >= 0.995`, `kSaturationThresh`), exiting with code 2 and a saturation error message. Peak ratios between two clipped signals are `1.0` by construction and prove nothing (`M8_MEASUREMENT_VALIDITY_SPEC.md` V1).
 
 ## Pipeline (what happens internally, useful for interpreting the output)
 
