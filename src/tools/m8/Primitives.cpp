@@ -880,7 +880,7 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
     std::string fieldLabel = findFieldLabel(targetScreen, fieldName, instTypeForLabel);
 
     // Read current value.
-    dev.readScreen(200, 300);
+    dev.readSettled(120, 200, 1200);
     std::string currentRaw = readCursorValue(dev, fieldLabel);
 
     // If target matches current, nothing to do.
@@ -893,13 +893,13 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
         int target = static_cast<int>(std::strtol(targetValue.c_str(), nullptr, 0));
         int maxSteps = 256;  // safety limit
         for (int i = 0; i < maxSteps; ++i) {
-            dev.readScreen(200, 300);
+            dev.readSettled(120, 200, 1200);
 
             // Handle modals if triggered (e.g. destructive edits or confirms)
             if (isModal(dev.grid())) {
                 auto mr = dismissModal(dev, true, holdMs);
                 if (!mr.ok) return mr;
-                dev.readScreen(200, 300);
+                dev.readSettled(120, 200, 1200);
             }
 
             std::string val = readCursorValue(dev, fieldLabel);
@@ -935,7 +935,7 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
             }
             dev.step();
         }
-        dev.readScreen(200, 300);
+        dev.readSettled(120, 200, 1200);
         return JsonResult::fail("editValue: could not reach target '" + targetValue
                                 + "' after " + std::to_string(maxSteps) + " steps",
                                 dev.grid());
@@ -948,13 +948,13 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
 
     int maxSteps = 30;  // enums have at most ~15 values
     for (int i = 0; i < maxSteps; ++i) {
-        dev.readScreen(200, 300);
+        dev.readSettled(120, 200, 1200);
 
         // Handle modals if triggered (e.g. destructive edits or confirms)
         if (isModal(dev.grid())) {
             auto mr = dismissModal(dev, true, holdMs);
             if (!mr.ok) return mr;
-            dev.readScreen(200, 300);
+            dev.readSettled(120, 200, 1200);
         }
 
         std::string val = readCursorValue(dev, fieldLabel);
@@ -971,7 +971,7 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
         dev.step();
     }
 
-    dev.readScreen(200, 300);
+    dev.readSettled(120, 200, 1200);
     return JsonResult::fail("editValue: could not find enum '" + targetValue + "'",
                             dev.grid());
 }
@@ -1060,7 +1060,7 @@ JsonResult enterNote(M8Device& dev, const std::string& noteName,
     }
 
     // Verify the result.
-    dev.readScreen(200, 300);
+    dev.readSettled(120, 200, 1200);
     std::string txt = dev.grid().cursorMainText();
     while (!txt.empty() && txt.back() == '\n') txt.pop_back();
     if (txt.find(noteName) != std::string::npos) {
