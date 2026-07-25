@@ -387,7 +387,8 @@ static void writeSongFile(const std::string& path, const m8::Song& song) {
 
 static bool verifyRoundTrip(const std::string& path, const std::string& instType,
                             int shape, int timbre, int color,
-                            const std::string& samplePath = "") {
+                            const std::string& samplePath = "",
+                            int expectedVolume = -1) {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -466,10 +467,12 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
     }
 
     if (sp) {
-        uint8_t expectedVol = (instType == "sampler") ? 0x00 : 0xE0;
-        if (sp->volume != expectedVol) {
-            std::fprintf(stderr, "  FAIL: volume %02X != %02X\n", sp->volume, expectedVol);
-            return false;
+        if (expectedVolume >= 0) {
+            uint8_t targetVol = (instType == "sampler" && expectedVolume == 0xE0) ? 0x00 : static_cast<uint8_t>(expectedVolume);
+            if (sp->volume != targetVol) {
+                std::fprintf(stderr, "  FAIL: volume %02X != %02X\n", sp->volume, targetVol);
+                return false;
+            }
         }
         if (sp->mixer_pan != 0x80) {
             std::fprintf(stderr, "  FAIL: mixer_pan %02X != 0x80\n", sp->mixer_pan);
@@ -663,7 +666,7 @@ int main(int argc, char** argv) {
                                tableTick, slice);
     writeSongFile(outPath, song);
 
-    if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath)) {
+    if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }
