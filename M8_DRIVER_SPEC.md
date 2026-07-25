@@ -153,7 +153,7 @@ TRACK A — file loading + agent ergonomics
 [x] A7   [HW] Hardware validation of the crawler
 [x] A8   wait_for_text / wait_for_screen verbs
 [x] A9   find_in_list / enter_dir / up_dir / state verbs
-[ ] A10  Add docs/tools/agent_guide.md
+[x] A10  Add docs/tools/agent_guide.md
 
 TRACK B — audio-parity orchestration
 [ ] B1   --keyjazz flag on m8_nav
