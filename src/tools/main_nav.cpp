@@ -31,6 +31,7 @@
 #include "m8/Primitives.h"
 #include "m8/Gestures.h"
 #include "m8/DeviceScriptRunner.h"
+#include "m8/Result.h"
 
 using namespace m8::dev;
 
@@ -303,6 +304,27 @@ static int recordFrames(M8Device& dev, const std::string& outPath, int durationM
     return 0;
 }
 
+static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "") {
+    if (dev.isOpen()) {
+        env.readStats = dev.lastRead();
+        env.screenName = dev.grid().canon();
+        auto cf = dev.cursorField();
+        if (cf) {
+            env.cursorField = cf->name;
+            auto val = dev.valueOf(*cf);
+            if (val) env.cursorText = *val;
+        }
+        if (!jsonPath.empty()) {
+            dev.grid().printJson(jsonPath);
+        }
+        dev.close();
+    }
+    if (!env.ok() && !env.message.empty()) {
+        std::fprintf(stderr, "error (%d): %s\n", env.exitCode(), env.message.c_str());
+    }
+    return env.exitCode();
+}
+
 // ---- main -----------------------------------------------------------------
 
 int main(int argc, char** argv) {
@@ -368,12 +390,22 @@ int main(int argc, char** argv) {
         }
     }
 
+    Envelope env;
+
     // Open device.
     M8Device dev;
     if (noReset) {
-        if (!dev.openNoReset(port.c_str())) return 2;
+        if (!dev.openNoReset(port.c_str())) {
+            env.code = ExitCode::DEVICE_NOT_FOUND;
+            env.message = "could not open device port " + port;
+            return emitExit(dev, env);
+        }
     } else {
-        if (!dev.open(port.c_str())) return 2;
+        if (!dev.open(port.c_str())) {
+            env.code = ExitCode::DEVICE_NOT_FOUND;
+            env.message = "could not open device port " + port;
+            return emitExit(dev, env);
+        }
     }
     std::printf("serial: %s opened @115200\n", port.c_str());
 
@@ -393,20 +425,18 @@ int main(int argc, char** argv) {
     std::printf("device: hw_type=%d  firmware=%d.%d.%d  font_mode=%d\n",
                 fw.hwType, fw.major, fw.minor, fw.patch, fw.fontMode);
 
-    int rc = 0;
-
     // --record-frames mode.
     if (!recordFramesPath.empty()) {
-        rc = recordFrames(dev, recordFramesPath, recordDurationMs);
-        dev.close();
-        return rc;
+        int rc = recordFrames(dev, recordFramesPath, recordDurationMs);
+        if (rc != 0) env.code = ExitCode::COMMAND_FAILED;
+        return emitExit(dev, env);
     }
 
     // --pin-gestures mode (Tier 2: discover edit masks empirically).
     if (!pinGesturesField.empty()) {
-        rc = pinGestures(dev, pinGesturesField, holdMs);
-        dev.close();
-        return rc;
+        int rc = pinGestures(dev, pinGesturesField, holdMs);
+        if (rc != 0) env.code = ExitCode::COMMAND_FAILED;
+        return emitExit(dev, env);
     }
 
     // --goto-screen mode.
@@ -423,40 +453,37 @@ int main(int argc, char** argv) {
             }
         }
         if (target == Screen::UNKNOWN) {
-            std::fprintf(stderr, "unknown screen: %s\n", gotoScreenArg.c_str());
-            dev.close();
-            return 1;
+            env.code = ExitCode::AMBIGUOUS_MATCH;
+            env.message = "unknown screen: " + gotoScreenArg;
+            return emitExit(dev, env);
         }
         auto result = gotoScreen(dev, target, holdMs);
         if (!result.ok) {
-            std::fprintf(stderr, "goto-screen failed: %s\n", result.error.c_str());
-            rc = 1;
+            env.code = ExitCode::TARGET_UNREACHABLE;
+            env.message = "goto-screen failed: " + result.error;
         }
         dev.grid().printText(stdout);
-        dev.close();
-        return rc;
+        return emitExit(dev, env);
     }
 
     // --script mode.
     if (!scriptPath.empty()) {
         m8::dev::DeviceScriptRunner runner;
         if (!runner.loadScript(scriptPath)) {
-            std::fprintf(stderr, "script parse error (line %d): %s\n",
-                         runner.lastErrorLine(), runner.lastError().c_str());
-            dev.close();
-            return 2;
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = "script parse error (line " + std::to_string(runner.lastErrorLine()) + "): " + runner.lastError();
+            return emitExit(dev, env);
         }
         std::printf("script: loaded %s (%zu commands)\n", scriptPath.c_str(),
                      runner.loadScript_count());
-        rc = runner.run(dev, holdMs);
+        int rc = runner.run(dev, holdMs);
         if (rc != 0) {
-            std::fprintf(stderr, "script FAILED (line %d): %s\n",
-                         runner.lastErrorLine(), runner.lastError().c_str());
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = "script FAILED (line " + std::to_string(runner.lastErrorLine()) + "): " + runner.lastError();
         } else {
             std::printf("script: PASSED\n");
         }
-        dev.close();
-        return rc;
+        return emitExit(dev, env);
     }
 
     // --read-field mode.
@@ -465,18 +492,18 @@ int main(int argc, char** argv) {
         if (val) {
             std::printf("%s = %s\n", readFieldArg.c_str(), val->c_str());
         } else {
-            std::fprintf(stderr, "could not read field: %s\n", readFieldArg.c_str());
-            rc = 1;
+            env.code = ExitCode::TARGET_UNREACHABLE;
+            env.message = "could not read field: " + readFieldArg;
         }
-        dev.close();
-        return rc;
+        return emitExit(dev, env);
     }
 
     // --load-file mode.
     if (!loadFilePath.empty()) {
-        rc = loadFile(dev, loadFilePath, holdMs);
+        int rc = loadFile(dev, loadFilePath, holdMs);
         std::printf("nav: %s (rc=%d), final header=\"%s\"\n",
                     rc == 0 ? "LOADED" : "FAILED", rc, dev.grid().topHeader().c_str());
+        if (rc != 0) env.code = ExitCode::COMMAND_FAILED;
         if (dumpScreen) dev.grid().printText(stdout);
     }
 
@@ -494,15 +521,10 @@ int main(int argc, char** argv) {
         dev.grid().printText(stdout);
     }
 
-    if (!jsonPath.empty()) {
-        dev.grid().printJson(jsonPath);
-        std::printf("wrote %s\n", jsonPath.c_str());
-    }
     if (dev.grid().cells.empty()) {
-        std::fprintf(stderr, "WARNING: no characters decoded — is the device connected and streaming?\n");
-        return 3;
+        env.code = ExitCode::UNSETTLED_DISPLAY;
+        env.message = "no characters decoded — is the device connected and streaming?";
     }
 
-    dev.close();
-    return rc;
+    return emitExit(dev, env, jsonPath);
 }

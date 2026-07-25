@@ -129,7 +129,7 @@ FOUNDATION (mandatory, in order)
 [x] F4   Widen the read ceilings in Primitives.cpp
 [x] F5   Offline test for read telemetry
 [x] F6   Result.h — ExitCode enum + Envelope
-[ ] F7   Single exit path in main_nav.cpp
+[x] F7   Single exit path in main_nav.cpp
 [ ] F8   Normalize pinGestures return codes
 [ ] F9   ScreenGrid listRows()
 [ ] F10  Promote isModal/isLiveMode to ScreenModel.h
