@@ -144,3 +144,30 @@ Audit of delivered behaviours against specifications (`M8_DRIVER_SPEC.md` and `M
 | `HyperSynth.m8s` | HyperSynth | `0x7F` (127) | `0x7F` | Yes | Confirmed |
 
 - **Finding:** The hardware UI volume ceiling for **ALL FIVE** instrument types is `0x7F` (127, 0 dB). Writing `0xE0` (224) exceeds the hardware limit across all types and is read by the M8 device as `0x00` (silence). The previous P3 finding ("Sampler requires 0x00, MacroSynth default is 0xE0") is retired in favor of the global `0x7F` range limit.
+
+---
+
+## R5 — Audit of Hard-Coded Literals
+
+Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
+
+| Line | Field | Value | Classification | Status |
+|---|---|---|---|---|
+| 117 | `song.song.steps` | `0xFF` | Sentinel | Empty song track step marker |
+| 126 | `s.note.value` | `0xFF` | Sentinel | Empty phrase step note marker |
+| 127 | `s.velocity` | `0xFF` | Sentinel | Empty phrase step velocity marker |
+| 128 | `s.instrument` | `0xFF` | Sentinel | Empty phrase step instrument marker |
+| 141 | `tableTick` check | `0xFF` | Sentinel | Disabled table tick indicator |
+| 149 | `cs.phrase` | `0xFF` | Sentinel | Empty chain step phrase marker |
+| 179 | `sp.mixer_pan` | `0x80` | Valid value | Centered pan (range [0x00, 0xFF]) |
+| 180 | `sp.mixer_dry` | `0xC0` | Valid value | Nominal 0 dB dry mix (range [0x00, 0xE0]) |
+| 189 | `ahd.amount` | `0xFF` | Valid value | Full positive mod amount (matches golden) |
+| 191 | `ahd.hold` | `0xFF` | Unchecked | **Diverges from golden (`0x80`)** — see R6 |
+| 192 | `ahd.decay` | `0x80` | Valid value | Nominal decay (matches golden) |
+| 201 | `sp.associated_eq` | `0xFF` | Sentinel | No associated EQ marker |
+| 234 | `smp.length` | `0xFF` | Valid value | Whole sample playback length marker |
+| 309 | `master_volume` | `0xE0` | Valid value | Nominal master volume (range [0x00, 0xE0]) |
+| 310 | `master_limit` | `0x40` | Valid value | Default master limiter ceiling |
+| 311 | `track_volume` | `0xE0` | Valid value | Nominal track volume (range [0x00, 0xE0]) |
+| 327 | `table.velocity` | `0xFF` | Sentinel | No volume override marker |
+
