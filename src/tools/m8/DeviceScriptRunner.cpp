@@ -7,6 +7,7 @@
 #include "DeviceScriptRunner.h"
 #include "Gestures.h"
 #include "Primitives.h"
+#include "Semantic.h"
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -151,6 +152,18 @@ bool DeviceScriptRunner::loadScript(const std::string& path) {
             }
             cmd.arg2 = rest;
         } else if (toUpper(cmd.verb) == "ASSERT_PLAYING") {
+            // no args
+        } else if (toUpper(cmd.verb) == "WAIT_FOR_TEXT") {
+            iss >> cmd.arg1;
+        } else if (toUpper(cmd.verb) == "WAIT_FOR_SCREEN") {
+            iss >> cmd.arg1;
+        } else if (toUpper(cmd.verb) == "FIND_IN_LIST") {
+            iss >> cmd.arg1;
+        } else if (toUpper(cmd.verb) == "ENTER_DIR") {
+            iss >> cmd.arg1;
+        } else if (toUpper(cmd.verb) == "UP_DIR") {
+            // no args
+        } else if (toUpper(cmd.verb) == "STATE") {
             // no args
         } else if (toUpper(cmd.verb) == "PLAY") {
             // no args
@@ -371,6 +384,86 @@ bool DeviceScriptRunner::execCommand(M8Device& dev, const Command& cmd, int hold
             assertFail(dev, cmd.lineNum, result.error);
             return false;
         }
+        return true;
+    }
+
+    if (verb == "WAIT_FOR_TEXT") {
+        std::string want = toUpper(cmd.arg1);
+        bool found = false;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            dev.readSettled(120, 200, 1200);
+            if (toUpper(dev.grid().cursorMainText()).find(want) != std::string::npos) {
+                found = true;
+                break;
+            }
+            for (const auto& r : dev.grid().mainRows()) {
+                if (toUpper(r.second).find(want) != std::string::npos) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (!found) {
+            assertFail(dev, cmd.lineNum, "wait_for_text timed out waiting for substring '" + cmd.arg1 + "'");
+            return false;
+        }
+        return true;
+    }
+
+    if (verb == "WAIT_FOR_SCREEN") {
+        Screen expected = mapScreen(cmd.arg1);
+        std::string want = toUpper(cmd.arg1);
+        bool found = false;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            dev.readSettled(120, 200, 1200);
+            if (expected != Screen::UNKNOWN && identifyScreen(dev.grid()) == expected) {
+                found = true;
+                break;
+            }
+            if (toUpper(dev.grid().topHeader()).find(want) != std::string::npos) {
+                found = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (!found) {
+            assertFail(dev, cmd.lineNum, "wait_for_screen timed out waiting for screen '" + cmd.arg1 + "'");
+            return false;
+        }
+        return true;
+    }
+
+    if (verb == "FIND_IN_LIST") {
+        auto res = searchTree(dev, cmd.arg1, 4, 64, holdMs);
+        std::printf("[script] find_in_list \"%s\": %zu matches\n", cmd.arg1.c_str(), res.matches.size());
+        for (const auto& m : res.matches) {
+            std::printf("  - %s\n", m.path.c_str());
+        }
+        return true;
+    }
+
+    if (verb == "ENTER_DIR") {
+        auto res = enterDir(dev, cmd.arg1, holdMs);
+        if (!res.ok) {
+            assertFail(dev, cmd.lineNum, "enter_dir failed: " + res.error);
+            return false;
+        }
+        return true;
+    }
+
+    if (verb == "UP_DIR") {
+        auto res = upDir(dev, holdMs);
+        if (!res.ok) {
+            assertFail(dev, cmd.lineNum, "up_dir failed: " + res.error);
+            return false;
+        }
+        return true;
+    }
+
+    if (verb == "STATE") {
+        std::printf("%s\n", semanticState(dev).toJson().c_str());
         return true;
     }
 

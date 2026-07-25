@@ -151,8 +151,8 @@ TRACK A — file loading + agent ergonomics
 [x] A5   searchTree() — bounded DFS
 [x] A6   searchAndLoad() + --find-file / --load-song
 [x] A7   [HW] Hardware validation of the crawler
-[ ] A8   wait_for_text / wait_for_screen verbs
-[ ] A9   find_in_list / enter_dir / up_dir / state verbs
+[x] A8   wait_for_text / wait_for_screen verbs
+[x] A9   find_in_list / enter_dir / up_dir / state verbs
 [ ] A10  Add docs/tools/agent_guide.md
 
 TRACK B — audio-parity orchestration
