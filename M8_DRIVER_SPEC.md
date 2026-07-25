@@ -134,7 +134,7 @@ FOUNDATION (mandatory, in order)
 [x] F9   ScreenGrid listRows()
 [x] F10  Promote isModal/isLiveMode to ScreenModel.h
 [x] F11  printJson emits highlights
-[ ] F12  Semantic.h — semanticState()
+[x] F12  Semantic.h — semanticState()
 [ ] F13  --semantic-state flag
 [ ] F14  Offline tests for listRows + semanticState + highlights
 [ ] F15  --serve daemon skeleton

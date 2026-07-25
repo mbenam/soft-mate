@@ -180,6 +180,7 @@ add_library(m8_device STATIC
     src/tools/m8/Primitives.cpp
     src/tools/m8/Gestures.cpp
     src/tools/m8/DeviceScriptRunner.cpp
+    src/tools/m8/Semantic.cpp
 )
 target_include_directories(m8_device PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
 
