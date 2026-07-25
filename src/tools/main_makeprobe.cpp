@@ -607,24 +607,42 @@ int main(int argc, char** argv) {
         m8::Song s = m8::Song::from_reader(reader);
         std::printf("Inspecting %s (size %ld bytes):\n", inspectPath.c_str(), sz);
         std::printf("  Name: '%s', Tempo: %.1f, Transpose: %d\n", s.name.c_str(), s.tempo, s.transpose);
+        std::printf("  Mixer: master_vol=0x%02X, track0_vol=0x%02X\n",
+                    s.mixer_settings.master_volume, s.mixer_settings.track_volume[0]);
         for (size_t idx = 0; idx < s.instruments.size(); ++idx) {
             const auto& inst = s.instruments[idx];
+            std::string typeName = "UNKNOWN";
+            uint8_t vol = 0, pan = 0, dry = 0;
+            const m8::SynthParams* sp = nullptr;
+
             if (std::holds_alternative<m8::Sampler>(inst)) {
-                const auto& smp = std::get<m8::Sampler>(inst);
-                std::printf("  Inst %zu: SAMPLER name='%s' path='%s' vol=0x%02X pan=0x%02X dry=0x%02X\n",
-                            idx, smp.name.c_str(), smp.sample_path.c_str(), smp.synth_params.volume,
-                            smp.synth_params.mixer_pan, smp.synth_params.mixer_dry);
-                std::printf("         play=0x%02X slice=0x%02X start=0x%02X loop=0x%02X len=0x%02X deg=0x%02X\n",
-                            smp.play_mode, smp.slice, smp.start, smp.loop_start, smp.length, smp.degrade);
-                if (std::holds_alternative<m8::AHDEnv>(smp.synth_params.mods[0])) {
-                    const auto& ahd = std::get<m8::AHDEnv>(smp.synth_params.mods[0]);
+                typeName = "SAMPLER";
+                sp = &std::get<m8::Sampler>(inst).synth_params;
+            } else if (std::holds_alternative<m8::MacroSynth>(inst)) {
+                typeName = "MACROSYNTH";
+                sp = &std::get<m8::MacroSynth>(inst).synth_params;
+            } else if (std::holds_alternative<m8::WavSynth>(inst)) {
+                typeName = "WAVSYNTH";
+                sp = &std::get<m8::WavSynth>(inst).synth_params;
+            } else if (std::holds_alternative<m8::FMSynth>(inst)) {
+                typeName = "FMSYNTH";
+                sp = &std::get<m8::FMSynth>(inst).synth_params;
+            } else if (std::holds_alternative<m8::HyperSynth>(inst)) {
+                typeName = "HYPERSYNTH";
+                sp = &std::get<m8::HyperSynth>(inst).synth_params;
+            }
+
+            if (sp) {
+                vol = sp->volume;
+                pan = sp->mixer_pan;
+                dry = sp->mixer_dry;
+                std::printf("  Inst %zu: %s vol=0x%02X pan=0x%02X dry=0x%02X\n",
+                            idx, typeName.c_str(), vol, pan, dry);
+                if (std::holds_alternative<m8::AHDEnv>(sp->mods[0])) {
+                    const auto& ahd = std::get<m8::AHDEnv>(sp->mods[0]);
                     std::printf("         mod0 AHD: dest=%d amt=0x%02X att=0x%02X hold=0x%02X dec=0x%02X\n",
                                 ahd.dest, ahd.amount, ahd.attack, ahd.hold, ahd.decay);
                 }
-            } else if (std::holds_alternative<m8::MacroSynth>(inst)) {
-                const auto& ms = std::get<m8::MacroSynth>(inst);
-                std::printf("  Inst %zu: MACROSYNTH name='%s' shape=0x%02X timbre=0x%02X color=0x%02X vol=0x%02X\n",
-                            idx, ms.name.c_str(), ms.shape, ms.timbre, ms.color, ms.synth_params.volume);
             }
         }
         return 0;

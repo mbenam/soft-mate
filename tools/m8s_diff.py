@@ -99,7 +99,25 @@ def diff_m8s(gen_path, golden_path):
     print(f"Total differing regions: {len(diffs)} ({suspicious_count} suspicious, {len(diffs) - suspicious_count} benign)")
     return 0 if suspicious_count == 0 else 2
 
+def dump_fields(m8s_path):
+    if not os.path.exists(m8s_path):
+        print(f"Error: File not found: {m8s_path}")
+        return 1
+    import subprocess
+    cmd = ["build/Release/m8_makeprobe.exe", "--inspect", m8s_path]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"Error running inspect: {res.stderr}")
+        return res.returncode
+    print(res.stdout)
+    return 0
+
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--dump-fields":
+        if len(sys.argv) < 3:
+            print("Usage: python tools/m8s_diff.py --dump-fields <file.m8s>")
+            sys.exit(1)
+        sys.exit(dump_fields(sys.argv[2]))
     if len(sys.argv) < 3:
         print("Usage: python tools/m8s_diff.py <generated.m8s> <golden.m8s>")
         sys.exit(1)
