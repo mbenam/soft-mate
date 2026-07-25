@@ -180,15 +180,15 @@ Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
 | 141 | `tableTick` check | `0xFF` | Sentinel | Disabled table tick indicator |
 | 149 | `cs.phrase` | `0xFF` | Sentinel | Empty chain step phrase marker |
 | 179 | `sp.mixer_pan` | `0x80` | Valid value | Centered pan (range [0x00, 0xFF]) |
-| 180 | `sp.mixer_dry` | `0xC0` | Valid value | Nominal 0 dB dry mix (range [0x00, 0xE0]) |
+| 180 | `sp.mixer_dry` | `0xC0` | Valid value | Nominal 0 dB dry mix (range [0x00, 0xE0], §V4 confirmed max 0xE0) |
 | 189 | `ahd.amount` | `0xFF` | Valid value | Full positive mod amount (matches golden) |
-| 191 | `ahd.hold` | `0xFF` | Unchecked | **Diverges from golden (`0x80`)** — see R6 |
+| 191 | `ahd.hold` | `0xFF` | Valid value | Sustained hold (matches golden, see §V3) |
 | 192 | `ahd.decay` | `0x80` | Valid value | Nominal decay (matches golden) |
 | 201 | `sp.associated_eq` | `0xFF` | Sentinel | No associated EQ marker |
 | 234 | `smp.length` | `0xFF` | Valid value | Whole sample playback length marker |
-| 309 | `master_volume` | `0xE0` | Valid value | Nominal master volume (range [0x00, 0xE0]) |
+| 309 | `master_volume` | `0xE0` | Valid value | Confirmed ceiling 0xE0 (§V4) |
 | 310 | `master_limit` | `0x40` | Valid value | Default master limiter ceiling |
-| 311 | `track_volume` | `0xE0` | Valid value | Nominal track volume (range [0x00, 0xE0]) |
+| 311 | `track_volume` | `0xE0` | Valid value | Confirmed ceiling 0xE0 (§V4) |
 | 327 | `table.velocity` | `0xFF` | Sentinel | No volume override marker |
 
 ---
