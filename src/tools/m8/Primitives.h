@@ -98,6 +98,13 @@ int pressUntil(M8Device& dev, std::function<bool(const ScreenGrid&)> predicate,
 std::vector<ListRow> enumerateList(M8Device& dev, int holdMs = 15,
                                    int maxRows = 256);
 
+// Move the cursor to the named directory row and descend. Verifies the list
+// contents changed after EDIT; fails if not.
+JsonResult enterDir(M8Device& dev, const std::string& dirName, int holdMs = 15);
+
+// Ascend one level (select "/.." or ".." and press EDIT). Verifies the list changed.
+JsonResult upDir(M8Device& dev, int holdMs = 15);
+
 // ---- Assertions -----------------------------------------------------------
 
 // Assert the current screen matches the expected screen.

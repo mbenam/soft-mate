@@ -147,7 +147,7 @@ TRACK A — file loading + agent ergonomics
 [x] A1   [HW] Discover directory-row marker → docs/tools/hw_findings.md
 [x] A2   isDirectoryRow()
 [x] A3   enumerateList()
-[ ] A4   enterDir() / upDir()
+[x] A4   enterDir() / upDir()
 [ ] A5   searchTree() — bounded DFS
 [ ] A6   searchAndLoad() + --find-file / --load-song
 [ ] A7   [HW] Hardware validation of the crawler

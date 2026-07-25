@@ -1261,5 +1261,89 @@ std::vector<ListRow> enumerateList(M8Device& dev, int holdMs, int maxRows) {
     return result;
 }
 
+static std::string snapshotListText(const std::vector<ListRow>& rows) {
+    std::string s;
+    for (const auto& r : rows) s += r.text + "\n";
+    return s;
+}
+
+JsonResult enterDir(M8Device& dev, const std::string& dirName, int holdMs) {
+    dev.readSettled(120, 200, 1200);
+    std::string before = snapshotListText(listRows(dev.grid()));
+    std::string want = alnumUpper(dirName);
+
+    // Scroll to find and land cursor on dirName
+    bool found = false;
+    for (int step = 0; step < 64; ++step) {
+        dev.readSettled(120, 200, 1200);
+        auto visible = listRows(dev.grid());
+        for (const auto& r : visible) {
+            if (r.selected && alnumUpper(r.text).find(want) != std::string::npos) {
+                if (!isDirectoryRow(r)) {
+                    return JsonResult::fail("Target row is not a directory: " + r.text, dev.grid());
+                }
+                found = true;
+                break;
+            }
+        }
+        if (found) break;
+        // Press DOWN to search
+        dev.press(Key::DOWN, holdMs);
+    }
+
+    if (!found) {
+        return JsonResult::fail("Directory not found in list: " + dirName, dev.grid());
+    }
+
+    // Press EDIT to enter folder
+    dev.press(Key::EDIT, holdMs);
+    dev.readSettled(120, 200, 1200);
+    std::string after = snapshotListText(listRows(dev.grid()));
+
+    if (before == after) {
+        return JsonResult::fail("enterDir failed: list contents did not change", dev.grid());
+    }
+    return JsonResult::success();
+}
+
+JsonResult upDir(M8Device& dev, int holdMs) {
+    dev.readSettled(120, 200, 1200);
+    std::string before = snapshotListText(listRows(dev.grid()));
+
+    // Scroll to top to find parent row (/.. or ..)
+    for (int i = 0; i < 64; ++i) {
+        dev.readSettled(120, 200, 1200);
+        auto visible = listRows(dev.grid());
+        bool atParent = false;
+        for (const auto& r : visible) {
+            if (r.selected && isParentRow(r)) {
+                atParent = true;
+                break;
+            }
+        }
+        if (atParent) break;
+        dev.press(Key::UP, holdMs);
+    }
+
+    // Press EDIT on parent row
+    dev.press(Key::EDIT, holdMs);
+    dev.readSettled(120, 200, 1200);
+    std::string after = snapshotListText(listRows(dev.grid()));
+
+    if (before != after) {
+        return JsonResult::success();
+    }
+
+    // Fallback: press OPT or LEFT if parent row edit didn't change list
+    dev.press(Key::OPT, holdMs);
+    dev.readSettled(120, 200, 1200);
+    after = snapshotListText(listRows(dev.grid()));
+
+    if (before == after) {
+        return JsonResult::fail("upDir failed: list contents did not change", dev.grid());
+    }
+    return JsonResult::success();
+}
+
 } // namespace dev
 } // namespace m8
