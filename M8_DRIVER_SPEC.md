@@ -135,7 +135,7 @@ FOUNDATION (mandatory, in order)
 [x] F10  Promote isModal/isLiveMode to ScreenModel.h
 [x] F11  printJson emits highlights
 [x] F12  Semantic.h — semanticState()
-[ ] F13  --semantic-state flag
+[x] F13  --semantic-state flag
 [ ] F14  Offline tests for listRows + semanticState + highlights
 [ ] F15  --serve daemon skeleton
 [ ] F16  Daemon command dispatch

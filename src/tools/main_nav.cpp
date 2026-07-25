@@ -33,14 +33,13 @@
 #include "m8/DeviceScriptRunner.h"
 #include "m8/Result.h"
 
+#include "m8/Semantic.h"
+
 using namespace m8::dev;
 
 static const char* kDefaultGesturePath = "hw_buttons.json";
 
-static std::string toUpper(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return s;
-}
+
 static std::string alnumUpper(const std::string& s) {
     std::string o;
     for (char c : s)
@@ -330,7 +329,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
     std::string recordFramesPath, pinGesturesField, scriptPath;
-    bool dumpScreen = false, noReset = false;
+    bool dumpScreen = false, noReset = false, semanticStateFlag = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
     int recordDurationMs = 5000;
@@ -340,6 +339,7 @@ int main(int argc, char** argv) {
         auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
         if      (a == "--port")            port = next();
         else if (a == "--dump-screen")     dumpScreen = true;
+        else if (a == "--semantic-state")  semanticStateFlag = true;
         else if (a == "--json")            jsonPath = next();
         else if (a == "--keys")            keysArg = next();
         else if (a == "--load-file")       loadFilePath = next();
@@ -424,6 +424,11 @@ int main(int argc, char** argv) {
     Firmware fw = dev.firmware();
     std::printf("device: hw_type=%d  firmware=%d.%d.%d  font_mode=%d\n",
                 fw.hwType, fw.major, fw.minor, fw.patch, fw.fontMode);
+
+    if (semanticStateFlag) {
+        std::printf("%s\n", semanticState(dev).toJson().c_str());
+        return emitExit(dev, env, jsonPath);
+    }
 
     // --record-frames mode.
     if (!recordFramesPath.empty()) {
