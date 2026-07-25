@@ -47,3 +47,11 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 - **Parent Directory Row:** `/..`
 - **Parsing Rule:** A row represents a directory if `row.text` starts with `/` (`row.text.rfind('/', 0) == 0` or `row.text[0] == '/'`).
 
+---
+
+## A7 — Hardware validation of the crawler (Firmware 6.5.2)
+- **Environment:** M8 headless hardware on `COM4` running firmware 6.5.2.
+- **`--find-file` Verification:** Executed `m8_nav --port COM4 --find-file PROBE`. Successfully enumerated root directory and found `PROBE_SELFTEST.M8S` (`1 matches`, `dirs_visited=1`, `truncated=false`).
+- **`--load-song` Verification:** Executed `m8_nav --port COM4 --load-song PROBE_SELFTEST`. Successfully opened `LOAD PROJECT` modal, searched directory tree, matched `PROBE_SELFTEST.M8S`, descended/scrolled, and loaded the song closed-loop.
+- **Status:** **VERIFIED** — UI directory crawler correctly enumerates, searches, and loads files on real hardware.
+
