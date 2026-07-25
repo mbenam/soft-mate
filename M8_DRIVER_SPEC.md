@@ -164,10 +164,10 @@ TRACK C — UI-parity capture
 [x] C1   UiCapture.h — capture format definition
 [x] C2   Style clustering (RGB → style id)
 [x] C3   --ui-capture flag on m8_nav
-[ ] C4   Clone-side emitter (Renderer)
-[ ] C5   m8_diffcheck compares UiCapture files
-[ ] C6   [HW] Theme + font pinning
-[ ] C7   Sweep script over all screens/states
+[x] C4   Clone-side emitter (Renderer)
+[x] C5   m8_diffcheck compares UiCapture files
+[x] C6   [HW] Theme + font pinning
+[x] C7   Sweep script over all screens/states
 [ ] C8   [HW] Capture the parity corpus
 ```
 

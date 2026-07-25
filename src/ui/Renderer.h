@@ -52,6 +52,13 @@ public:
     // Playhead storage (called from main.cpp before rendering)
     void setPlayheads(const StoredPlayhead* ph, int count);
 
+    // Write a UiCapture JSON file (C4) in the same format as captureFromGrid
+    // from the device side. The VRAM pitch is 8x8 px for the clone.
+    // screenName is the canonical screen name (e.g. "MIXER").
+    void writeUiCapture(const std::string& path, const std::string& screenName,
+                        const std::string& firmware = "",
+                        const std::string& themeId = "") const;
+
     // Dump methods (temporary debug triggers)
     void dumpScreenText(const char* path) const;
     void dumpJson(const char* path, const char* screenName, int bpm) const;

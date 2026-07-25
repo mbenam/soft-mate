@@ -1,12 +1,16 @@
 // ===========================================================================
 // main_diffcheck.cpp — Device-vs-golden diff checker.
 //
-// Runs a script on the device, dumps the final screen, and compares against
-// a golden reference (text grid). Reports the first divergence.
+// Mode 1 (original): run a script on the device and compare the screen text
+// grid against a golden reference.
 //
 //   m8_diffcheck --port COM3 --script test.m8script
 //   m8_diffcheck --port COM3 --script test.m8script --golden ref.txt
 //   m8_diffcheck --port COM3 --script test.m8script --save out.json --golden ref.txt
+//
+// Mode 2 (C5): compare two UiCapture JSON files (device vs clone).
+//
+//   m8_diffcheck --diff-capture device.json clone.json [--max-diffs N]
 //
 // Serial only. No engine, no SDL, no audio.
 // ===========================================================================
@@ -17,14 +21,110 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <set>
+#include <map>
 
 #include "m8/M8Device.h"
 #include "m8/ScreenModel.h"
 #include "m8/Primitives.h"
 #include "m8/Gestures.h"
 #include "m8/DeviceScriptRunner.h"
+#include "m8/UiCapture.h"
 
 using namespace m8::dev;
+
+// ---------------------------------------------------------------------------
+// UiCapture diff (C5)
+// ---------------------------------------------------------------------------
+
+static std::string readFile(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return "";
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+// Returns 0 on match, 1 on diff, 2 on refusal.
+static int diffCaptures(const std::string& pathA, const std::string& pathB, int maxDiffs) {
+    // Load both captures.
+    UiCapture a, b;
+    std::string errA, errB;
+    std::string textA = readFile(pathA);
+    std::string textB = readFile(pathB);
+    if (textA.empty()) { std::fprintf(stderr, "cannot read: %s\n", pathA.c_str()); return 2; }
+    if (textB.empty()) { std::fprintf(stderr, "cannot read: %s\n", pathB.c_str()); return 2; }
+    if (!fromJson(textA, a, errA)) { std::fprintf(stderr, "parse error in %s: %s\n", pathA.c_str(), errA.c_str()); return 2; }
+    if (!fromJson(textB, b, errB)) { std::fprintf(stderr, "parse error in %s: %s\n", pathB.c_str(), errB.c_str()); return 2; }
+
+    // Refuse to compare when guard conditions are not met.
+    if (!a.settled) { std::fprintf(stderr, "REFUSE: %s has settled=false\n", pathA.c_str()); return 2; }
+    if (!b.settled) { std::fprintf(stderr, "REFUSE: %s has settled=false\n", pathB.c_str()); return 2; }
+    if (a.fontMode != b.fontMode) {
+        std::fprintf(stderr, "REFUSE: font_mode mismatch: %s=%d vs %s=%d\n",
+                     pathA.c_str(), a.fontMode, pathB.c_str(), b.fontMode);
+        return 2;
+    }
+    if (!a.themeId.empty() && !b.themeId.empty() && a.themeId != b.themeId) {
+        std::fprintf(stderr, "REFUSE: theme_id mismatch: %s=\"%s\" vs %s=\"%s\"\n",
+                     pathA.c_str(), a.themeId.c_str(), pathB.c_str(), b.themeId.c_str());
+        return 2;
+    }
+    if (a.screen != b.screen) {
+        std::fprintf(stderr, "WARNING: screen name mismatch: \"%s\" vs \"%s\" — comparing anyway\n",
+                     a.screen.c_str(), b.screen.c_str());
+    }
+
+    // Build (col,row) -> UiCell maps.
+    auto cellKey = [](const UiCell& c) { return (c.row << 16) | c.col; };
+    std::map<int, UiCell> mapA, mapB;
+    for (const auto& c : a.cells) mapA[cellKey(c)] = c;
+    for (const auto& c : b.cells) mapB[cellKey(c)] = c;
+
+    std::printf("comparing: %s  (%zu cells)  vs  %s  (%zu cells)\n",
+                pathA.c_str(), a.cells.size(), pathB.c_str(), b.cells.size());
+
+    int diffs = 0;
+    // Collect all keys.
+    std::set<int> allKeys;
+    for (auto& [k, _] : mapA) allKeys.insert(k);
+    for (auto& [k, _] : mapB) allKeys.insert(k);
+
+    for (int k : allKeys) {
+        if (diffs >= maxDiffs) { std::printf("  ... (stopped after %d diffs)\n", maxDiffs); break; }
+        bool inA = mapA.count(k) > 0;
+        bool inB = mapB.count(k) > 0;
+        if (!inA) {
+            const auto& c = mapB[k];
+            std::printf("  [%d,%d] only in B: ch='%c' fg=%d bg=%d\n", c.col, c.row, c.ch, c.fgStyle, c.bgStyle);
+            ++diffs;
+        } else if (!inB) {
+            const auto& c = mapA[k];
+            std::printf("  [%d,%d] only in A: ch='%c' fg=%d bg=%d\n", c.col, c.row, c.ch, c.fgStyle, c.bgStyle);
+            ++diffs;
+        } else {
+            const auto& ca = mapA[k];
+            const auto& cb = mapB[k];
+            if (ca.ch != cb.ch) {
+                std::printf("  [%d,%d] ch: A='%c' B='%c'\n", ca.col, ca.row, ca.ch, cb.ch);
+                ++diffs;
+            }
+            // Style ids are per-capture-palette indices — not directly comparable across
+            // two different captures. We only compare ch for now (spec: "cells differing
+            // in ch or style"). Style comparison across different palettes requires
+            // resolving to RGB, which needs full palette parsing (fromJson only reads
+            // header fields for now).
+        }
+    }
+
+    if (diffs == 0) {
+        std::printf("MATCH: no glyph differences in %zu cells\n", allKeys.size());
+        return 0;
+    }
+    std::fprintf(stderr, "DIFF: %d difference(s) found\n", diffs);
+    return 1;
+}
+
 
 // Read a text file into a vector of lines.
 static std::vector<std::string> readTextFile(const std::string& path) {
@@ -110,23 +210,35 @@ static std::string diffGrids(const std::vector<std::string>& a,
 
 int main(int argc, char** argv) {
     std::string port, scriptPath, goldenPath, savePath;
+    std::string diffCaptureA, diffCaptureB;
     int holdMs = 15;
+    int maxDiffs = 20;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
-        if      (a == "--port")    port = next();
-        else if (a == "--script")  scriptPath = next();
-        else if (a == "--golden")  goldenPath = next();
-        else if (a == "--save")    savePath = next();
-        else if (a == "--hold-ms") holdMs = std::atoi(next().c_str());
+        if      (a == "--port")          port = next();
+        else if (a == "--script")        scriptPath = next();
+        else if (a == "--golden")        goldenPath = next();
+        else if (a == "--save")          savePath = next();
+        else if (a == "--hold-ms")       holdMs = std::atoi(next().c_str());
+        else if (a == "--diff-capture") { diffCaptureA = next(); diffCaptureB = next(); }
+        else if (a == "--max-diffs")    maxDiffs = std::atoi(next().c_str());
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
+    }
+
+    // Mode 2: compare two UiCapture JSON files — no device needed.
+    if (!diffCaptureA.empty()) {
+        return diffCaptures(diffCaptureA, diffCaptureB, maxDiffs);
     }
 
     if (port.empty() || scriptPath.empty()) {
         std::fprintf(stderr,
-            "usage: m8_diffcheck --port COM3 --script FILE.m8script\n"
-            "              [--golden ref.txt] [--save out.json] [--hold-ms 15]\n");
+            "usage:\n"
+            "  m8_diffcheck --port COM3 --script FILE.m8script\n"
+            "               [--golden ref.txt] [--save out.json] [--hold-ms 15]\n"
+            "\n"
+            "  m8_diffcheck --diff-capture A.json B.json [--max-diffs N]\n");
         return 1;
     }
 

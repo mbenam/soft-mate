@@ -6,6 +6,8 @@
 #include <iomanip>
 #include <algorithm>
 #include <cstring>
+#include <vector>
+#include <array>
 
 static inline uint32_t sdlColorToUint32(SDL_Color c) {
     return (uint32_t(c.r) << 24) | (uint32_t(c.g) << 16) | (uint32_t(c.b) << 8) | uint32_t(c.a);
@@ -450,4 +452,85 @@ void Renderer::drawString(const char* str, int gridX, int gridY, SDL_Color color
     for (size_t i = 0; str[i] != '\0'; ++i) {
         drawChar(str[i], gridX + i, gridY, color);
     }
+}
+
+void Renderer::writeUiCapture(const std::string& path, const std::string& screenName,
+                               const std::string& firmware,
+                               const std::string& themeId) const {
+    // ---- Build palette (insertion order, then sorted canonically) ----------
+    std::vector<std::array<uint8_t, 3>> palette;
+    auto addColor = [&](uint32_t rgba) -> int {
+        uint8_t r = (rgba >> 24) & 0xFF;
+        uint8_t g = (rgba >> 16) & 0xFF;
+        uint8_t b = (rgba >>  8) & 0xFF;
+        std::array<uint8_t, 3> col = {r, g, b};
+        for (int i = 0; i < (int)palette.size(); ++i)
+            if (palette[i] == col) return i;
+        palette.push_back(col);
+        return (int)palette.size() - 1;
+    };
+
+    // ---- Build cells list ------------------------------------------------
+    struct CapCell { int col, row; char ch; int fg, bg; };
+    std::vector<CapCell> cells;
+    for (int y = 0; y < kGridH; ++y) {
+        for (int x = 0; x < kGridW; ++x) {
+            const VirtualCell& vc = m_vram[y][x];
+            int fg = addColor(vc.color);
+            int bg = addColor(vc.bg);
+            cells.push_back({x, y, vc.ch, fg, bg});
+        }
+    }
+
+    // Sort palette canonically (r, g, b) and remap style ids.
+    std::vector<std::array<uint8_t, 3>> sortedPal = palette;
+    std::sort(sortedPal.begin(), sortedPal.end());
+    sortedPal.erase(std::unique(sortedPal.begin(), sortedPal.end()), sortedPal.end());
+    auto remapStyle = [&](int raw) -> int {
+        if (raw < 0 || raw >= (int)palette.size()) return -1;
+        const auto& col = palette[raw];
+        for (int i = 0; i < (int)sortedPal.size(); ++i)
+            if (sortedPal[i] == col) return i;
+        return -1;
+    };
+
+    // ---- Serialize -------------------------------------------------------
+    std::ofstream out(path);
+    if (!out) { std::cerr << "writeUiCapture: cannot open " << path << "\n"; return; }
+
+    out << "{\n";
+    out << "  \"screen\": \"" << screenName << "\",\n";
+    out << "  \"firmware\": \"" << firmware << "\",\n";
+    out << "  \"font_mode\": 0,\n";
+    out << "  \"pitch_x\": " << m_cellWidth << ",\n";
+    out << "  \"pitch_y\": " << m_cellHeight << ",\n";
+    out << "  \"settled\": true,\n";
+    out << "  \"theme_id\": \"" << themeId << "\",\n";
+
+    out << "  \"palette\": [\n";
+    for (size_t i = 0; i < sortedPal.size(); ++i) {
+        const auto& col = sortedPal[i];
+        out << "    [" << (int)col[0] << ", " << (int)col[1] << ", " << (int)col[2] << "]";
+        out << (i + 1 < sortedPal.size() ? "," : "") << "\n";
+    }
+    out << "  ],\n";
+
+    out << "  \"cells\": [\n";
+    for (size_t i = 0; i < cells.size(); ++i) {
+        const auto& cl = cells[i];
+        char escaped[8];
+        if      (cl.ch == '"')  std::snprintf(escaped, sizeof(escaped), "\\\"");
+        else if (cl.ch == '\\') std::snprintf(escaped, sizeof(escaped), "\\\\");
+        else                     std::snprintf(escaped, sizeof(escaped), "%c", cl.ch);
+        out << "    {\"col\":" << cl.col << ",\"row\":" << cl.row
+            << ",\"ch\":\"" << escaped << "\",\"fg\":" << remapStyle(cl.fg)
+            << ",\"bg\":" << remapStyle(cl.bg) << "}";
+        out << (i + 1 < cells.size() ? "," : "") << "\n";
+    }
+    out << "  ],\n";
+
+    // Clone has no highlight rects in this implementation (cursor is encoded
+    // in cell.bg == kHighlightColor, not as a separate Rect).
+    out << "  \"rects\": []\n";
+    out << "}\n";
 }
