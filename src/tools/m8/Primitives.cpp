@@ -1345,5 +1345,57 @@ JsonResult upDir(M8Device& dev, int holdMs) {
     return JsonResult::success();
 }
 
+static void searchTreeRecursive(M8Device& dev, const std::string& want, const std::string& currentPath,
+                                 int currentDepth, int maxDepth, int maxVisits, int holdMs,
+                                 SearchResult& result) {
+    if (currentDepth > maxDepth || result.dirsVisited >= maxVisits) {
+        result.truncated = true;
+        return;
+    }
+    result.dirsVisited++;
+
+    auto rows = enumerateList(dev, holdMs);
+    std::vector<ListRow> subDirs;
+
+    for (const auto& r : rows) {
+        if (isParentRow(r)) continue;
+        std::string canonRow = alnumUpper(r.text);
+        if (canonRow.find(want) != std::string::npos) {
+            std::string fullPath = currentPath.empty() ? r.text : (currentPath + "/" + r.text);
+            result.matches.push_back({fullPath, r.text});
+        }
+        if (isDirectoryRow(r)) {
+            subDirs.push_back(r);
+        }
+    }
+
+    for (const auto& dirRow : subDirs) {
+        if (result.dirsVisited >= maxVisits) {
+            result.truncated = true;
+            break;
+        }
+        auto enterRes = enterDir(dev, dirRow.text, holdMs);
+        if (!enterRes.ok) {
+            result.error = enterRes.error;
+            return;
+        }
+        std::string nextPath = currentPath.empty() ? dirRow.text : (currentPath + "/" + dirRow.text);
+        searchTreeRecursive(dev, want, nextPath, currentDepth + 1, maxDepth, maxVisits, holdMs, result);
+        auto upRes = upDir(dev, holdMs);
+        if (!upRes.ok) {
+            result.error = upRes.error;
+            return;
+        }
+    }
+}
+
+SearchResult searchTree(M8Device& dev, const std::string& needle,
+                        int maxDepth, int maxVisits, int holdMs) {
+    SearchResult result;
+    std::string want = alnumUpper(needle);
+    searchTreeRecursive(dev, want, "", 0, maxDepth, maxVisits, holdMs, result);
+    return result;
+}
+
 } // namespace dev
 } // namespace m8

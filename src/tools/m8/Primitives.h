@@ -105,6 +105,23 @@ JsonResult enterDir(M8Device& dev, const std::string& dirName, int holdMs = 15);
 // Ascend one level (select "/.." or ".." and press EDIT). Verifies the list changed.
 JsonResult upDir(M8Device& dev, int holdMs = 15);
 
+struct FileMatch {
+    std::string path;   // "/"-separated, relative to the browser root
+    std::string name;   // the row text that matched
+};
+
+struct SearchResult {
+    std::vector<FileMatch> matches;
+    bool truncated = false;
+    int  dirsVisited = 0;
+    std::string error;    // non-empty if navigation broke mid-search
+};
+
+// Depth-first search for rows whose name contains `needle` (case-insensitive,
+// alnum-normalized — the same comparison loadFile uses).
+SearchResult searchTree(M8Device& dev, const std::string& needle,
+                        int maxDepth = 4, int maxVisits = 64, int holdMs = 15);
+
 // ---- Assertions -----------------------------------------------------------
 
 // Assert the current screen matches the expected screen.

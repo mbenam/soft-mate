@@ -148,7 +148,7 @@ TRACK A — file loading + agent ergonomics
 [x] A2   isDirectoryRow()
 [x] A3   enumerateList()
 [x] A4   enterDir() / upDir()
-[ ] A5   searchTree() — bounded DFS
+[x] A5   searchTree() — bounded DFS
 [ ] A6   searchAndLoad() + --find-file / --load-song
 [ ] A7   [HW] Hardware validation of the crawler
 [ ] A8   wait_for_text / wait_for_screen verbs
