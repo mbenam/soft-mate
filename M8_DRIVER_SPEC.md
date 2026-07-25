@@ -168,7 +168,7 @@ TRACK C — UI-parity capture
 [x] C5   m8_diffcheck compares UiCapture files
 [x] C6   [HW] Theme + font pinning
 [x] C7   Sweep script over all screens/states
-[ ] C8   [HW] Capture the parity corpus
+[x] C8   [HW] Capture the parity corpus
 ```
 
 ---

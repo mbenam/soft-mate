@@ -79,3 +79,30 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 - **Restoring:** Default theme needs no restoration. Loading a project with a custom theme changes it live; power-cycle or reload the default project to restore.
 - **Clone match:** Clone uses `kHighlightColor = 0x00FFFFFF` (cyan) for cursor — matches M8 default. Per-instrument foreground colours may diverge (known rendering gap, not a theme mismatch).
 - **Corpus requirement:** All C8 parity captures must use factory-default theme and `font_mode=0`. Any change requires re-capturing the full corpus.
+
+---
+
+## C8 — Parity corpus captured (Firmware 6.5.2)
+
+- **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2, factory-default theme, `font_mode=0`.
+- **Command:** `.\tools\ui_sweep.ps1 -Port COM4 -CorpusDir tests/ui/golden/device`
+- **Result:** 11/11 screens passed, 0 failed.
+- **Corpus location:** `tests/ui/golden/device/`
+- **Files captured:**
+
+| File | Screen |
+|------|--------|
+| `SONG.json` | Song sequencer |
+| `CHAIN.json` | Chain editor |
+| `PHRASE.json` | Phrase editor |
+| `INSTRUMENT.json` | Instrument editor |
+| `TABLE.json` | Table editor |
+| `PROJECT.json` | Project settings |
+| `GROOVE.json` | Groove editor |
+| `SCALE.json` | Scale editor |
+| `MIXER.json` | Mixer |
+| `EFFECTS.json` | Effects |
+| `MODS.json` | Modulations |
+
+- **Notes:** Each file contains the device screen state at the cursor's default landing position after navigation from SONG via `--goto-screen`. Modals (LOAD_PROJECT_MODAL, FILE_BROWSER) excluded — they require song-load preconditions the sweep does not set up.
+- **Next step:** Run the clone through the same 11 screens headlessly (via `m8_clone --headless --script`) and call `Renderer::writeUiCapture()` on each. Then run `m8_diffcheck --diff-capture device.json clone.json` per screen.
