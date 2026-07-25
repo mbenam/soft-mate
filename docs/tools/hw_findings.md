@@ -186,4 +186,22 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 
 - **Finding:** Both `0x80` (device golden default) and `0xFF` (`main_makeprobe.cpp` setting) are valid tick counts within `[0x00, 0xFF]`. At 120 BPM (6 ticks/step), `0x80` (128 ticks) provides ~5.33s hold, which fully covers the 2.0s capture window. `0xFF` (255 ticks) provides ~10.6s hold. Neither causes out-of-range clipping or silent misreads on hardware.
 
+---
+
+## R9 — Amplitude Parity Across All Five Instrument Types
+
+- **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
+- **Verification:** Same-session A/B comparison across all 5 instrument types with `volume = 0x7F` (127).
+
+| Instrument Type | Probe Peak | Golden Peak | Ratio (Probe / Golden) | Parity Status |
+|-----------------|------------|-------------|------------------------|---------------|
+| Sampler | 0.999664 | 0.999664 | 1.0000 | PASS |
+| MacroSynth | 0.999664 | 0.999664 | 1.0000 | PASS |
+| WavSynth | 0.999664 | 0.999664 | 1.0000 | PASS |
+| FMSynth | 0.999664 | 0.999664 | 1.0000 | PASS |
+| HyperSynth | 0.999664 | 0.999664 | 1.0000 | PASS |
+
+- **Conclusion:** Amplitude bug resolution (§P7) confirmed across all 5 instrument types.
+
+
 

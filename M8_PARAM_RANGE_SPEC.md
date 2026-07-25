@@ -59,7 +59,7 @@ nothing else in this spec should be built until it does.
 [x] R6  Reconcile ahd.hold against the device golden
 [x] R7  Range-check the mixer fields
 [x] R8  Fix the clone's out-of-range defaults
-[ ] R9  [HW] Re-verify amplitude parity across all five types
+[x] R9  [HW] Re-verify amplitude parity across all five types
 [ ] R10 Record the rule and retire the contradiction
 ```
 
