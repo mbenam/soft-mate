@@ -34,6 +34,7 @@
 #include "m8/Result.h"
 
 #include "m8/Semantic.h"
+#include "m8/Daemon.h"
 
 using namespace m8::dev;
 
@@ -329,7 +330,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
     std::string recordFramesPath, pinGesturesField, scriptPath;
-    bool dumpScreen = false, noReset = false, semanticStateFlag = false;
+    bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
     int recordDurationMs = 5000;
@@ -340,6 +341,7 @@ int main(int argc, char** argv) {
         if      (a == "--port")            port = next();
         else if (a == "--dump-screen")     dumpScreen = true;
         else if (a == "--semantic-state")  semanticStateFlag = true;
+        else if (a == "--serve")           serveMode = true;
         else if (a == "--json")            jsonPath = next();
         else if (a == "--keys")            keysArg = next();
         else if (a == "--load-file")       loadFilePath = next();
@@ -428,6 +430,12 @@ int main(int argc, char** argv) {
     if (semanticStateFlag) {
         std::printf("%s\n", semanticState(dev).toJson().c_str());
         return emitExit(dev, env, jsonPath);
+    }
+
+    if (serveMode) {
+        int daemonRc = runDaemon(dev, holdMs, gapMs, settleMs);
+        if (daemonRc != 0) env.code = ExitCode::COMMAND_FAILED;
+        return emitExit(dev, env);
     }
 
     // --record-frames mode.

@@ -137,8 +137,8 @@ FOUNDATION (mandatory, in order)
 [x] F12  Semantic.h — semanticState()
 [x] F13  --semantic-state flag
 [x] F14  Offline tests for listRows + semanticState + highlights
-[ ] F15  --serve daemon skeleton
-[ ] F16  Daemon command dispatch
+[x] F15  --serve daemon skeleton
+[x] F16  Daemon command dispatch
 [ ] F17  --pin-gestures mutation guard
 [ ] F18  Update docs/tools/m8_nav.md for Foundation changes
 
