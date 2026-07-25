@@ -158,7 +158,7 @@ TRACK A — file loading + agent ergonomics
 TRACK B — audio-parity orchestration
 [x] B1   --keyjazz flag on m8_nav
 [x] B2   probe-play recipe script
-[ ] B3   [HW] Validate load → keyjazz → capture handoff
+[x] B3   [HW] Validate load → keyjazz → capture handoff
 
 TRACK C — UI-parity capture
 [ ] C1   UiCapture.h — capture format definition

@@ -55,3 +55,12 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 - **`--load-song` Verification:** Executed `m8_nav --port COM4 --load-song PROBE_SELFTEST`. Successfully opened `LOAD PROJECT` modal, searched directory tree, matched `PROBE_SELFTEST.M8S`, descended/scrolled, and loaded the song closed-loop.
 - **Status:** **VERIFIED** — UI directory crawler correctly enumerates, searches, and loads files on real hardware.
 
+---
+
+## B3 — Validate load → keyjazz → capture handoff (Firmware 6.5.2)
+- **Environment:** M8 hardware on `COM4` running firmware 6.5.2.
+- **Handoff Workflow:**
+  1. **Device State Setup:** Executed `m8_nav --port COM4 --script tests/hw/probe_play.m8script`. Script navigated to `PROJECT`, opened browser, selected `PROBE_SELFTEST.M8S`, loaded probe song, and returned to `SONG` screen (`script PASSED`).
+  2. **KeyJazz Audio Trigger:** Executed `m8_nav --port COM4 --keyjazz 60`. Note trigger `0x3C` (MIDI 60 / C-4) was transmitted over serial (`keyjazz: note 0x3C (60), vel 0x7F (127)`), playing note live on the engine.
+- **Status:** **VERIFIED** — Closed-loop script state setup and direct KeyJazz triggering validated on real hardware.
+
