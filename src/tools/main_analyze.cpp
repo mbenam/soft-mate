@@ -38,11 +38,13 @@ static void printUsage() {
 //   non-finite == 0
 //   |DC| < 0.005 overall AND < 0.01 per 1-second window
 //   crest > 6 dB
+static constexpr float kSaturationThresh = 0.995f;
+
 static bool checkHard(const m8::analysis::Metrics& m, const char* path) {
     bool ok = true;
 
-    if (m.peak >= 1.0f) {
-        std::fprintf(stderr, "FAIL peak %.6f >= 1.0 (%s)\n", m.peak, path);
+    if (m.peak >= kSaturationThresh) {
+        std::fprintf(stderr, "FAIL signal saturated: peak %.6f >= saturation threshold %.3f (%s)\n", m.peak, kSaturationThresh, path);
         ok = false;
     }
     if (m.clipped != 0) {

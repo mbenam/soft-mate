@@ -279,12 +279,22 @@ int main(int argc, char** argv) {
     for (float s : monoTest) peakTest = std::max(peakTest, std::fabs(s));
 
     const float kMinPeakThresh = 0.005f;
+    static constexpr float kSaturationThresh = 0.995f;
+
     if (peakRef < kMinPeakThresh) {
         std::fprintf(stderr, "error: ref peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakRef, kMinPeakThresh);
         return 2;
     }
     if (peakTest < kMinPeakThresh) {
         std::fprintf(stderr, "error: test peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakTest, kMinPeakThresh);
+        return 2;
+    }
+    if (peakRef >= kSaturationThresh) {
+        std::fprintf(stderr, "error: ref peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakRef, kSaturationThresh);
+        return 2;
+    }
+    if (peakTest >= kSaturationThresh) {
+        std::fprintf(stderr, "error: test peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakTest, kSaturationThresh);
         return 2;
     }
 
