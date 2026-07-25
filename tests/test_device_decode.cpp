@@ -15,6 +15,8 @@
 #include "m8/M8Device.h"
 #include "m8/ScreenModel.h"
 #include "m8/DeviceScriptRunner.h"
+#include "m8/Semantic.h"
+#include <fstream>
 
 using namespace m8::dev;
 
@@ -793,4 +795,51 @@ TEST_CASE("M8Device ReadStats telemetry offline", "[m8_device]") {
     CHECK(stats.framesSeen == 0);
     CHECK_FALSE(stats.settled);
     CHECK_FALSE(stats.timedOut);
+}
+
+TEST_CASE("ScreenGrid listRows filters y=30 to y=210", "[m8_device]") {
+    ScreenGrid grid;
+    // Row at y=10 (top header, should be excluded from listRows)
+    grid.handleFrame(makeCharFrame('H', 0, 10, 255, 255, 255, 0, 0, 0));
+    // Row at y=50 (main area, should be included)
+    grid.handleFrame(makeCharFrame('M', 0, 50, 255, 255, 255, 0, 0, 0));
+    // Row at y=220 (footer, should be excluded)
+    grid.handleFrame(makeCharFrame('F', 0, 220, 255, 255, 255, 0, 0, 0));
+
+    auto rows = grid.listRows();
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0].first == 50);
+    CHECK(rows[0].second == "M");
+}
+
+TEST_CASE("semanticState extraction and toJson", "[m8_device]") {
+    M8Device dev;
+    auto state = semanticState(dev);
+    CHECK(state.screen == Screen::UNKNOWN);
+    CHECK_FALSE(state.isModal);
+    CHECK_FALSE(state.isLiveMode);
+    CHECK_FALSE(state.settled);
+
+    std::string json = state.toJson();
+    CHECK(json.find("\"screen\":") != std::string::npos);
+    CHECK(json.find("\"is_modal\": false") != std::string::npos);
+    CHECK(json.find("\"rows\":") != std::string::npos);
+}
+
+TEST_CASE("ScreenGrid printJson emits highlights array", "[m8_device]") {
+    ScreenGrid grid;
+    grid.highlights.push_back({10, 20, 30, 40, {255, 0, 0}});
+    grid.handleFrame(makeCharFrame('X', 10, 20, 255, 255, 255, 0, 0, 0));
+
+    std::string tmpPath = "test_out_ui/test_highlights.json";
+    grid.printJson(tmpPath);
+
+    std::ifstream in(tmpPath);
+    REQUIRE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content.find("\"highlights\": [") != std::string::npos);
+    CHECK(content.find("\"x\":10") != std::string::npos);
+    CHECK(content.find("\"y\":20") != std::string::npos);
+    CHECK(content.find("\"w\":30") != std::string::npos);
+    CHECK(content.find("\"h\":40") != std::string::npos);
 }

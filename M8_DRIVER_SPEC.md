@@ -136,7 +136,7 @@ FOUNDATION (mandatory, in order)
 [x] F11  printJson emits highlights
 [x] F12  Semantic.h — semanticState()
 [x] F13  --semantic-state flag
-[ ] F14  Offline tests for listRows + semanticState + highlights
+[x] F14  Offline tests for listRows + semanticState + highlights
 [ ] F15  --serve daemon skeleton
 [ ] F16  Daemon command dispatch
 [ ] F17  --pin-gestures mutation guard
