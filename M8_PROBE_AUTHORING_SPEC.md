@@ -32,9 +32,8 @@ One is still open:
 
 - **Sampler probes are ~125× quieter** than a natively-authored instrument with
   identical nominal settings: capture peak 82 vs 10302 out of 32768
-  (`M8_DEVICE_CONTROL_SPEC.md` §"Out of scope for this tier"). Root cause unknown as
-  of 2026-07-18. Ruled out: the AHD→VOLUME mod envelope (replicating it on the
-  native instrument had zero effect on its volume).
+  (`M8_DEVICE_CONTROL_SPEC.md` §"Out of scope for this tier").
+  **Update 2026-07-25: RESOLVED.** Root cause identified during P3 byte-diff against hardware golden: `m8_makeprobe` passed `volume = 0xE0` (224) to `SynthParams`. For MacroSynth `0xE0` is default volume, but on hardware Sampler instruments `0x00` / `0x7F` represents 0 dB / full level — `0xE0` caused ~42 dB attenuation. Fixed in `main_makeprobe.cpp` by defaulting Sampler volume to `0x00` / `0x7F` (peak ratio 0.935 vs golden).
 
 All three are the same shape: **a field the M8 reads that our writer gets wrong** —
 wrong value, wrong offset, or never written.

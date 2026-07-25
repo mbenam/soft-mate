@@ -47,7 +47,7 @@ only so they aren't lost, not tracked further in this document.
 
 | Component | Summary |
 |---|---|
-| `m8_makeprobe` (Sampler probe generation) | Generated Sampler probes are ~125× quieter than an identically-configured, natively-authored instrument (capture peak 82 vs. 10302 / 32768). Root cause unknown — ruled out the AHD→VOLUME mod envelope specifically. Belongs to `M8_HARDWARE_TEST_SPEC.md` / `m8_makeprobe` tooling. |
+| `m8_makeprobe` (Sampler probe generation) | FIXED — Generated Sampler probes previously used volume `0xE0` (MacroSynth default), which attenuated Sampler output by ~42 dB (~125× quieter). Sampler volume default fixed to `0x00` / `0x7F` (0 dB), restoring amplitude parity (peak ratio 0.935 vs golden). |
 | Real M8 hardware (low notes) | EXPECTED BEHAVIOR — MIDI notes 24-27 (C-1 through D#-1) produce zero audio on real hardware due to ~3-octave down-repitching output limits. Use notes at or above C-2 / MIDI 36 for parity probes. |
 | SDL3 UI clone (`src/ui/screens/project/ProjectScreenLayout.h`) | Models `SAMPLE_ROOT` as a normal PROJECT-screen field, DOWN-reachable from `SYSTEM_SETTINGS` — doesn't match real hardware (see bug #17 above). Task spawned separately to reconcile. |
 

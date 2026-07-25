@@ -578,9 +578,8 @@ for anyone calling `loadFile` from an arbitrary starting screen.
 Two more findings from today's session are real and worth fixing, but belong to different specs
 and must not be folded into this tier's scope:
 - **`m8_makeprobe`'s Sampler probes are ~125× quieter than a natively-authored instrument with
-  identical nominal settings** (capture peak 82 vs. 10302 out of 32768). Confirmed not caused by
-  the AHD→VOLUME mod envelope (replicating it on the native instrument had zero effect on
-  volume). Root cause unknown. This is `M8_HARDWARE_TEST_SPEC.md`/`m8_makeprobe` tooling scope.
+  identical nominal settings** (capture peak 82 vs. 10302 out of 32768). **Update 2026-07-25: RESOLVED.**
+  Root cause identified: `m8_makeprobe` passed MacroSynth's default volume `0xE0` to `SynthParams` for Sampler probes. On M8 Sampler instruments, `0x00` or `0x7F` represents 0 dB / full level, whereas `0xE0` caused ~42 dB (125×) attenuation. Fixed in `main_makeprobe.cpp`.
 - **Very low notes (MIDI 24-27, C-1 through D#-1) produced zero audio** on real hardware,
   independent of SLICE or instrument config — contradicts the `sampler-slice-repitch-hw`
   memory's assumption that C-1-based keyjazz would audibly confirm SLICE note-base mapping. This
