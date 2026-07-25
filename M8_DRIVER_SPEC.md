@@ -156,7 +156,7 @@ TRACK A — file loading + agent ergonomics
 [x] A10  Add docs/tools/agent_guide.md
 
 TRACK B — audio-parity orchestration
-[ ] B1   --keyjazz flag on m8_nav
+[x] B1   --keyjazz flag on m8_nav
 [ ] B2   probe-play recipe script
 [ ] B3   [HW] Validate load → keyjazz → capture handoff
 

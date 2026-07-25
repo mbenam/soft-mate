@@ -340,6 +340,8 @@ int main(int argc, char** argv) {
     int holdMs = 40, gapMs = 120;
     int recordDurationMs = 5000;
 
+    int keyjazzNote = -1, keyjazzVel = 0x7F;
+
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
@@ -350,6 +352,8 @@ int main(int argc, char** argv) {
         else if (a == "--allow-mutation")  allowMutation = true;
         else if (a == "--find-file")       findFileArg = next();
         else if (a == "--load-song")       loadSongArg = next();
+        else if (a == "--keyjazz")         keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
+        else if (a == "--keyjazz-vel")     keyjazzVel = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--json")            jsonPath = next();
         else if (a == "--keys")            keysArg = next();
         else if (a == "--load-file")       loadFilePath = next();
@@ -471,6 +475,13 @@ int main(int argc, char** argv) {
     if (!loadSongArg.empty()) {
         int rc = searchAndLoad(dev, loadSongArg, holdMs);
         if (rc != 0) env.code = static_cast<ExitCode>(rc);
+        return emitExit(dev, env);
+    }
+
+    // --keyjazz mode.
+    if (keyjazzNote >= 0) {
+        dev.keyjazz(static_cast<uint8_t>(keyjazzNote), static_cast<uint8_t>(keyjazzVel));
+        std::printf("keyjazz: note 0x%02X (%d), vel 0x%02X (%d)\n", keyjazzNote, keyjazzNote, keyjazzVel, keyjazzVel);
         return emitExit(dev, env);
     }
 
