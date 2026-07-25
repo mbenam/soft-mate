@@ -3,8 +3,11 @@
 goto PROJECT
 cursor PROJECT
 key EDIT
+wait 300
+key EDIT
 wait_for_screen LOAD_PROJECT_MODAL max_ms 3000
 find_in_list "PROBE_SELFTEST"
 key EDIT
-wait_for_screen SONG max_ms 5000
+wait_for_screen PROJECT max_ms 5000
+goto SONG
 state

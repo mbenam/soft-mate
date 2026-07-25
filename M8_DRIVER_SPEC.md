@@ -161,9 +161,9 @@ TRACK B — audio-parity orchestration
 [x] B3   [HW] Validate load → keyjazz → capture handoff
 
 TRACK C — UI-parity capture
-[ ] C1   UiCapture.h — capture format definition
-[ ] C2   Style clustering (RGB → style id)
-[ ] C3   --ui-capture flag on m8_nav
+[x] C1   UiCapture.h — capture format definition
+[x] C2   Style clustering (RGB → style id)
+[x] C3   --ui-capture flag on m8_nav
 [ ] C4   Clone-side emitter (Renderer)
 [ ] C5   m8_diffcheck compares UiCapture files
 [ ] C6   [HW] Theme + font pinning

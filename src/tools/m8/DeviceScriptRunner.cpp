@@ -44,10 +44,13 @@ uint8_t DeviceScriptRunner::mapButton(const std::string& name) {
     if (u == "DOWN")  return Key::DOWN;
     if (u == "LEFT")  return Key::LEFT;
     if (u == "RIGHT") return Key::RIGHT;
-    if (u == "X")     return Key::EDIT;
-    if (u == "Z")     return Key::OPT;
+    if (u == "X" || u == "EDIT")  return Key::EDIT;
+    if (u == "Z" || u == "OPT" || u == "OPTION")  return Key::OPT;
     if (u == "SHIFT") return Key::SHIFT;
-    if (u == "SPACE") return Key::PLAY;
+    if (u == "SPACE" || u == "PLAY") return Key::PLAY;
+    if (u.find_first_not_of("0123456789ABCDEFX") == std::string::npos && !u.empty()) {
+        return static_cast<uint8_t>(std::strtol(u.c_str(), nullptr, 0));
+    }
     return 0;  // unknown
 }
 
@@ -69,6 +72,8 @@ Screen DeviceScriptRunner::mapScreen(const std::string& name) {
         return Screen::INST_POOL;
     if (u == "MIXER")         return Screen::MIXER;
     if (u == "EFFECTS")       return Screen::EFFECTS;
+    if (u == "LOAD_PROJECT_MODAL" || u == "LOADPROJECT" || u == "LOAD_PROJECT")
+        return Screen::LOAD_PROJECT_MODAL;
     return Screen::UNKNOWN;
 }
 
@@ -155,12 +160,16 @@ bool DeviceScriptRunner::loadScript(const std::string& path) {
             // no args
         } else if (toUpper(cmd.verb) == "WAIT_FOR_TEXT") {
             iss >> cmd.arg1;
+            cmd.arg1 = stripQuotes(cmd.arg1);
         } else if (toUpper(cmd.verb) == "WAIT_FOR_SCREEN") {
             iss >> cmd.arg1;
+            cmd.arg1 = stripQuotes(cmd.arg1);
         } else if (toUpper(cmd.verb) == "FIND_IN_LIST") {
             iss >> cmd.arg1;
+            cmd.arg1 = stripQuotes(cmd.arg1);
         } else if (toUpper(cmd.verb) == "ENTER_DIR") {
             iss >> cmd.arg1;
+            cmd.arg1 = stripQuotes(cmd.arg1);
         } else if (toUpper(cmd.verb) == "UP_DIR") {
             // no args
         } else if (toUpper(cmd.verb) == "STATE") {
@@ -437,9 +446,31 @@ bool DeviceScriptRunner::execCommand(M8Device& dev, const Command& cmd, int hold
 
     if (verb == "FIND_IN_LIST") {
         auto res = searchTree(dev, cmd.arg1, 4, 64, holdMs);
-        std::printf("[script] find_in_list \"%s\": %zu matches\n", cmd.arg1.c_str(), res.matches.size());
-        for (const auto& m : res.matches) {
-            std::printf("  - %s\n", m.path.c_str());
+        if (res.matches.empty()) {
+            assertFail(dev, cmd.lineNum, "find_in_list: no matches found for '" + cmd.arg1 + "'");
+            return false;
+        }
+        if (res.matches.size() > 1) {
+            assertFail(dev, cmd.lineNum, "find_in_list: ambiguous match for '" + cmd.arg1 + "'");
+            return false;
+        }
+        std::string want = toUpper(res.matches[0].name);
+        bool found = false;
+        for (int step = 0; step < 64; ++step) {
+            dev.readSettled(120, 200, 1200);
+            auto visible = listRows(dev.grid());
+            for (const auto& r : visible) {
+                if (r.selected && toUpper(r.text).find(want) != std::string::npos) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+            dev.press(Key::DOWN, holdMs);
+        }
+        if (!found) {
+            assertFail(dev, cmd.lineNum, "find_in_list: matched row not selected: " + res.matches[0].name);
+            return false;
         }
         return true;
     }

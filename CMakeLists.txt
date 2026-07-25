@@ -182,6 +182,7 @@ add_library(m8_device STATIC
     src/tools/m8/DeviceScriptRunner.cpp
     src/tools/m8/Semantic.cpp
     src/tools/m8/Daemon.cpp
+    src/tools/m8/UiCapture.cpp
 )
 target_include_directories(m8_device PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
 

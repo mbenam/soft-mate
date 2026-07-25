@@ -35,6 +35,7 @@
 
 #include "m8/Semantic.h"
 #include "m8/Daemon.h"
+#include "m8/UiCapture.h"
 
 using namespace m8::dev;
 
@@ -334,7 +335,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
-    std::string recordFramesPath, pinGesturesField, scriptPath, findFileArg, loadSongArg;
+    std::string recordFramesPath, pinGesturesField, scriptPath, findFileArg, loadSongArg, uiCapturePath;
     bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false, allowMutation = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
@@ -352,6 +353,7 @@ int main(int argc, char** argv) {
         else if (a == "--allow-mutation")  allowMutation = true;
         else if (a == "--find-file")       findFileArg = next();
         else if (a == "--load-song")       loadSongArg = next();
+        else if (a == "--ui-capture")      uiCapturePath = next();
         else if (a == "--keyjazz")         keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--keyjazz-vel")     keyjazzVel = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--json")            jsonPath = next();
@@ -482,6 +484,33 @@ int main(int argc, char** argv) {
     if (keyjazzNote >= 0) {
         dev.keyjazz(static_cast<uint8_t>(keyjazzNote), static_cast<uint8_t>(keyjazzVel));
         std::printf("keyjazz: note 0x%02X (%d), vel 0x%02X (%d)\n", keyjazzNote, keyjazzNote, keyjazzVel, keyjazzVel);
+        return emitExit(dev, env);
+    }
+
+    // --ui-capture mode.
+    if (!uiCapturePath.empty()) {
+        // Confirm the display is stable with a double-read (confirmRead pattern).
+        dev.readScreen();
+        std::string header1 = dev.grid().topHeader();
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        dev.readScreen();
+        std::string header2 = dev.grid().topHeader();
+        bool isSettled = (header1 == header2) && !dev.grid().cells.empty();
+        if (!isSettled) {
+            env.code = ExitCode::UNSETTLED_DISPLAY;
+            env.message = "cannot capture: display did not settle (screen changed or no cells)";
+            return emitExit(dev, env);
+        }
+        auto cap = captureFromGrid(dev.grid(), true);
+        std::ofstream out(uiCapturePath);
+        if (!out) {
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = "cannot open output path: " + uiCapturePath;
+            return emitExit(dev, env);
+        }
+        out << toJson(cap);
+        std::printf("wrote ui capture: %s  (screen=%s  cells=%zu  rects=%zu  palette=%zu)\n",
+                    uiCapturePath.c_str(), cap.screen.c_str(), cap.cells.size(), cap.rects.size(), cap.palette.size());
         return emitExit(dev, env);
     }
 

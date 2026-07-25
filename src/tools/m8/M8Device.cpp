@@ -517,8 +517,11 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
     m_lastRead = ReadStats{};
     uint8_t buf[4096];
     std::vector<uint8_t> frame;
-    auto start = std::chrono::steady_clock::now();
-    auto lastData = start;
+    auto start    = std::chrono::steady_clock::now();
+    // Initialize lastData to before start so that if no data arrives at all,
+    // sinceData grows from the beginning. This correctly handles the case
+    // where the display is already settled (static screen after navigation).
+    auto lastData = start - std::chrono::milliseconds(settleMs);
     for (;;) {
         size_t n = m_port.recv(buf, sizeof(buf));
         auto now = std::chrono::steady_clock::now();
