@@ -601,6 +601,15 @@ int main(int argc, char** argv) {
                              "  value is misread by the device (0xE0 reads as 0x00).\n");
         return 1;
     }
+    if (!m8::checkRange(m8::kMixerDry, 0xC0, rangeErr)) {
+        std::fprintf(stderr, "makeprobe: %s\n", rangeErr.c_str()); return 1;
+    }
+    if (!m8::checkRange(m8::kMasterVolume, 0xE0, rangeErr)) {
+        std::fprintf(stderr, "makeprobe: %s\n", rangeErr.c_str()); return 1;
+    }
+    if (!m8::checkRange(m8::kTrackVolume, 0xE0, rangeErr)) {
+        std::fprintf(stderr, "makeprobe: %s\n", rangeErr.c_str()); return 1;
+    }
 
     if (!inspectPath.empty()) {
         FILE* f = std::fopen(inspectPath.c_str(), "rb");
