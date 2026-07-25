@@ -108,7 +108,7 @@ Same discipline as `M8_DRIVER_SPEC.md`:
 [x] P5   Resolve the AHD envelope contradiction
 [x] P6   Normalize the capture-vs-render comparison
 [ ] P7   Re-measure the sampler amplitude bug
-[ ] P8   Note-range sanity + doc corrections
+[x] P8   Note-range sanity + doc corrections
 ```
 
 ---

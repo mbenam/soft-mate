@@ -48,7 +48,7 @@ only so they aren't lost, not tracked further in this document.
 | Component | Summary |
 |---|---|
 | `m8_makeprobe` (Sampler probe generation) | Generated Sampler probes are ~125× quieter than an identically-configured, natively-authored instrument (capture peak 82 vs. 10302 / 32768). Root cause unknown — ruled out the AHD→VOLUME mod envelope specifically. Belongs to `M8_HARDWARE_TEST_SPEC.md` / `m8_makeprobe` tooling. |
-| Real M8 hardware (low notes) | MIDI notes 24-27 (C-1 through D#-1) produce zero audio on real hardware, independent of SLICE or instrument config. Contradicts the `sampler-slice-repitch-hw` memory's assumption that C-1-based keyjazz would confirm SLICE note-base mapping. Belongs to a sampler-completion spec. |
+| Real M8 hardware (low notes) | EXPECTED BEHAVIOR — MIDI notes 24-27 (C-1 through D#-1) produce zero audio on real hardware due to ~3-octave down-repitching output limits. Use notes at or above C-2 / MIDI 36 for parity probes. |
 | SDL3 UI clone (`src/ui/screens/project/ProjectScreenLayout.h`) | Models `SAMPLE_ROOT` as a normal PROJECT-screen field, DOWN-reachable from `SYSTEM_SETTINGS` — doesn't match real hardware (see bug #17 above). Task spawned separately to reconcile. |
 
 ---

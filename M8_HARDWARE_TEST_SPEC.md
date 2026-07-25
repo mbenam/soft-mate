@@ -31,6 +31,7 @@ rules, honesty rules, hardware-constant rules), `status.md` (current state).
 - **§9.1 sampler probe** — **BUILT + validated offline.** `m8_makeprobe --type sampler
   --sample-path` + type-aware `verifyRoundTrip` (§9.2); our engine's render matches the bundled
   sine (Δ −0.4 dB). This is the honest timbre gate MacroSynth cannot be (saw placeholder).
+  > **Structural lesson:** A self-consistent reader/writer pair (like `verifyRoundTrip`) cannot validate a file format — round-tripping through our own reader only proves internal consistency, not hardware validity. Hardware-valid authoring requires cross-oracle validation against real device-saved `.m8s` files (see `M8_PROBE_AUTHORING_SPEC.md`).
 - **Two product bugs fixed while building the above:** uninitialised `song.midi_settings` in
   `m8_makeprobe` (silent probes — MIDI-routing garbage), and the sampler `sample_path` never
   copied into the engine instrument in `convertSongToEngine` (`m8_render` could not load any
