@@ -256,6 +256,8 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
   - **Attack Phase (0 – 50 ms):** 1 ms attack ramp, RMS 0.245012.
   - **Sustain Phase (50 – 2000 ms):** Constant RMS 0.50012x across all 39 remaining 50 ms buckets. Zero decay observed during 2.0s capture window.
   - **Reconciliation:** The claim in `M8_HARDWARE_TEST_SPEC.md` ("~0.5s blip") is **INCORRECT** — it resulted from unconfigured default envelope hold times. `main_makeprobe.cpp:191`'s comment ("~10.6s hold at 120 BPM") is **CORRECT** (255 ticks = 10.625 s).
+  - **Time Window Limitation:** Both `hold = 0x80` (~5.33s hold) and `hold = 0xFF` (~10.6s hold) exceed the 2.0s capture window. Therefore, discriminating `0x80` vs `0xFF` is **untested within the 2.0s window** and would require a >5.33s (e.g., 7.0s) capture window.
+
 
 
 ---
