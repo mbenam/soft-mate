@@ -241,6 +241,22 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
   2. The claim in `M8_HARDWARE_TEST_SPEC.md` ("~0.5s blip") is **INCORRECT** — it resulted from unconfigured default envelope hold times.
   3. `main_makeprobe.cpp:191`'s comment ("~10.6s hold at 120 BPM") is **CORRECT** (255 ticks = 10.625 s).
 
+---
+
+## V4 — Measured Mixer Parameter Ceilings
+
+- **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
+- **Verification:** Turned each mixer parameter to its hardware maximum via UI and read back stored bytes.
+
+| Parameter | UI Max Displayed | Stored Byte | Match? | Confirmed Ceiling | Status |
+|-----------|------------------|-------------|--------|-------------------|--------|
+| `mixer.dry` | `E0` | `0xE0` (224) | Yes | `0xE0` (224) | Confirmed |
+| `mixer.master_volume` | `E0` | `0xE0` (224) | Yes | `0xE0` (224) | Confirmed |
+| `mixer.track_volume` | `E0` | `0xE0` (224) | Yes | `0xE0` (224) | Confirmed |
+
+- **Finding:** Unlike instrument volume (ceiling `0x7F`), mixer volume parameters (`mixer_dry`, `master_volume`, `track_volume`) have a confirmed hardware ceiling of `0xE0` (224, 0 dB). Writing `0xE0` for mixer parameters is valid and does not exceed hardware bounds.
+
+
 
 
 
