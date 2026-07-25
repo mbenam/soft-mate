@@ -159,9 +159,9 @@ static m8::Song buildProbeSong(
 
     // SynthParams for mod slot 0: AHD -> VOLUME with long hold+decay
     // so the note sustains >= 1.5s at 120 BPM (spec M8_HARDWARE_TEST_SPEC.md §4)
-    auto makeSynthParams = [&]() {
+    auto makeSynthParams = [&](int volVal) {
         m8::SynthParams sp{};
-        sp.volume = static_cast<uint8_t>(volume);
+        sp.volume = static_cast<uint8_t>(volVal);
         sp.pitch = 0;
         sp.fine_pitch = 0;
         sp.filter_type = static_cast<uint8_t>(filterType);
@@ -212,7 +212,8 @@ static m8::Song buildProbeSong(
         ms.color = static_cast<uint8_t>(color);
         ms.degrade = 0;
         ms.reductor = 0;
-        ms.synth_params = makeSynthParams();
+        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
+        ms.synth_params = makeSynthParams(instVol);
         song.instruments[0] = ms;
     } else if (instType == "sampler") {
         // Sampler probe (M8_HARDWARE_TEST_SPEC.md §9.1): our sampler is at hardware
@@ -232,7 +233,8 @@ static m8::Song buildProbeSong(
         smp.loop_start = 0;
         smp.length = 0xFF;      // whole sample
         smp.degrade = 0;
-        smp.synth_params = makeSynthParams();
+        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
+        smp.synth_params = makeSynthParams(instVol);
         song.instruments[0] = smp;
     } else if (instType == "wavsynth") {
         m8::WavSynth ws;
@@ -245,7 +247,8 @@ static m8::Song buildProbeSong(
         ws.mult = 0x80;
         ws.warp = 0;
         ws.scan = 0;
-        ws.synth_params = makeSynthParams();
+        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
+        ws.synth_params = makeSynthParams(instVol);
         song.instruments[0] = ws;
     } else if (instType == "fmsynth") {
         m8::FMSynth fm;
@@ -269,7 +272,8 @@ static m8::Song buildProbeSong(
             op.retrigger = 0;
             op.mod_a = op.mod_b = 0;
         }
-        fm.synth_params = makeSynthParams();
+        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
+        fm.synth_params = makeSynthParams(instVol);
         song.instruments[0] = fm;
     } else if (instType == "hypersynth") {
         m8::HyperSynth hs;
@@ -289,7 +293,8 @@ static m8::Song buildProbeSong(
         hs.default_chord = {};
         hs.default_chord[0] = 60;
         for (auto& ch : hs.chords) ch = {};
-        hs.synth_params = makeSynthParams();
+        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
+        hs.synth_params = makeSynthParams(instVol);
         song.instruments[0] = hs;
     } else {
         throw std::runtime_error("unknown instrument type: " + instType);
@@ -461,8 +466,9 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
     }
 
     if (sp) {
-        if (sp->volume != 0xE0) {
-            std::fprintf(stderr, "  FAIL: volume %02X != 0xE0\n", sp->volume);
+        uint8_t expectedVol = (instType == "sampler") ? 0x00 : 0xE0;
+        if (sp->volume != expectedVol) {
+            std::fprintf(stderr, "  FAIL: volume %02X != %02X\n", sp->volume, expectedVol);
             return false;
         }
         if (sp->mixer_pan != 0x80) {
@@ -537,6 +543,7 @@ int main(int argc, char** argv) {
     std::string sweepParam;
     std::string samplePath;   // M8-absolute path for --type sampler, e.g. /probes/x.wav
     std::string verifyAgainst;
+    std::string inspectPath;
     int shape = 0, timbre = 0x40, color = 0x80;
     int volume = 0xE0;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
@@ -569,7 +576,40 @@ int main(int argc, char** argv) {
         else if (a == "--table-tick")  tableTick = num();
         else if (a == "--slice")       slice = num();
         else if (a == "--verify-against") verifyAgainst = next();
+        else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
+    }
+
+    if (!inspectPath.empty()) {
+        FILE* f = std::fopen(inspectPath.c_str(), "rb");
+        if (!f) { std::fprintf(stderr, "cannot open %s\n", inspectPath.c_str()); return 1; }
+        std::fseek(f, 0, SEEK_END); long sz = std::ftell(f); std::fseek(f, 0, SEEK_SET);
+        std::vector<uint8_t> data(sz); std::fread(data.data(), 1, sz, f); std::fclose(f);
+        m8::BinaryReader reader(std::move(data));
+        m8::Song s = m8::Song::from_reader(reader);
+        std::printf("Inspecting %s (size %ld bytes):\n", inspectPath.c_str(), sz);
+        std::printf("  Name: '%s', Tempo: %.1f, Transpose: %d\n", s.name.c_str(), s.tempo, s.transpose);
+        for (size_t idx = 0; idx < s.instruments.size(); ++idx) {
+            const auto& inst = s.instruments[idx];
+            if (std::holds_alternative<m8::Sampler>(inst)) {
+                const auto& smp = std::get<m8::Sampler>(inst);
+                std::printf("  Inst %zu: SAMPLER name='%s' path='%s' vol=0x%02X pan=0x%02X dry=0x%02X\n",
+                            idx, smp.name.c_str(), smp.sample_path.c_str(), smp.synth_params.volume,
+                            smp.synth_params.mixer_pan, smp.synth_params.mixer_dry);
+                std::printf("         play=0x%02X slice=0x%02X start=0x%02X loop=0x%02X len=0x%02X deg=0x%02X\n",
+                            smp.play_mode, smp.slice, smp.start, smp.loop_start, smp.length, smp.degrade);
+                if (std::holds_alternative<m8::AHDEnv>(smp.synth_params.mods[0])) {
+                    const auto& ahd = std::get<m8::AHDEnv>(smp.synth_params.mods[0]);
+                    std::printf("         mod0 AHD: dest=%d amt=0x%02X att=0x%02X hold=0x%02X dec=0x%02X\n",
+                                ahd.dest, ahd.amount, ahd.attack, ahd.hold, ahd.decay);
+                }
+            } else if (std::holds_alternative<m8::MacroSynth>(inst)) {
+                const auto& ms = std::get<m8::MacroSynth>(inst);
+                std::printf("  Inst %zu: MACROSYNTH name='%s' shape=0x%02X timbre=0x%02X color=0x%02X vol=0x%02X\n",
+                            idx, ms.name.c_str(), ms.shape, ms.timbre, ms.color, ms.synth_params.volume);
+            }
+        }
+        return 0;
     }
 
     uint8_t noteVal = parseNote(note.c_str());
