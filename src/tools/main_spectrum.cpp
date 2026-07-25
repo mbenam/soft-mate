@@ -31,9 +31,92 @@
 using m8::analysis::magnitudeSpectrum;
 using m8::analysis::spectralCentroidHz;
 
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <chrono>
+#include <ctime>
+
+static uint64_t computeFnv1a64(const std::string& filepath, size_t& byteCount) {
+    byteCount = 0;
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f) return 0;
+    uint64_t hash = 14695981039346656037ULL;
+    char buffer[4096];
+    while (f.read(buffer, sizeof(buffer)) || f.gcount() > 0) {
+        std::streamsize count = f.gcount();
+        byteCount += static_cast<size_t>(count);
+        for (std::streamsize i = 0; i < count; ++i) {
+            hash ^= static_cast<uint8_t>(buffer[i]);
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+static std::string hexHash(uint64_t hash) {
+    std::stringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return ss.str();
+}
+
+static std::string getIsoTimestampUtc() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf{};
+#if defined(_WIN32)
+    gmtime_s(&tm_buf, &now_time);
+#else
+    gmtime_r(&now_time, &tm_buf);
+#endif
+    char buf[64];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
+    return std::string(buf);
+}
+
+static std::string jsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\' || c == '"') out.push_back('\\');
+        out.push_back(c);
+    }
+    return out;
+}
+
+static void writeRecordFile(const std::string& recordPath,
+                            const std::string& fullArgv,
+                            const std::string& refPath, size_t bytesRef, uint64_t hashRef,
+                            const std::string& testPath, size_t bytesTest, uint64_t hashTest,
+                            double peakRef, double peakTest,
+                            double saturationThresh, bool refSat, bool testSat,
+                            double normRefDb, double normTestDb,
+                            double ratio, const std::string& status) {
+    if (recordPath.empty()) return;
+    FILE* f = std::fopen(recordPath.c_str(), "w");
+    if (!f) return;
+    std::fprintf(f, "{\n");
+    std::fprintf(f, "  \"tool\": \"m8_spectrum\",\n");
+    std::fprintf(f, "  \"argv\": \"%s\",\n", jsonEscape(fullArgv).c_str());
+    std::fprintf(f, "  \"timestamp_utc\": \"%s\",\n", getIsoTimestampUtc().c_str());
+    std::fprintf(f, "  \"inputs\": {\n");
+    std::fprintf(f, "    \"ref\":  { \"path\": \"%s\", \"bytes\": %zu, \"fnv1a64\": \"%s\" },\n",
+                 jsonEscape(refPath).c_str(), bytesRef, hexHash(hashRef).c_str());
+    std::fprintf(f, "    \"test\": { \"path\": \"%s\", \"bytes\": %zu, \"fnv1a64\": \"%s\" }\n",
+                 jsonEscape(testPath).c_str(), bytesTest, hexHash(hashTest).c_str());
+    std::fprintf(f, "  },\n");
+    std::fprintf(f, "  \"peaks\": { \"ref\": %.9f, \"test\": %.9f },\n", peakRef, peakTest);
+    std::fprintf(f, "  \"saturation\": { \"threshold\": %.3f, \"ref_saturated\": %s, \"test_saturated\": %s },\n",
+                 saturationThresh, refSat ? "true" : "false", testSat ? "true" : "false");
+    std::fprintf(f, "  \"norm_gain_db\": { \"ref\": %.6f, \"test\": %.6f },\n", normRefDb, normTestDb);
+    std::fprintf(f, "  \"result\": { \"ratio\": %.9f, \"status\": \"%s\" }\n", ratio, status.c_str());
+    std::fprintf(f, "}\n");
+    std::fclose(f);
+}
+
 static void printUsage() {
     std::fprintf(stderr,
-        "usage: m8_spectrum --ref <ref.wav> --test <test.wav> [--no-align] [--json <out.json>]\n");
+        "usage: m8_spectrum --ref <ref.wav> --test <test.wav> [--no-align] [--json <out.json>] [--record <rec.json>]\n");
 }
 
 // ---------------------------------------------------------------- helpers
@@ -215,21 +298,19 @@ static float logSpectralDistance(const std::vector<float>& dbRef, const std::vec
     return static_cast<float>(sum / (n - 1));
 }
 
-static std::string jsonEscape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        if (c == '\\' || c == '"') out.push_back('\\');
-        out.push_back(c);
-    }
-    return out;
-}
+
 
 // ---------------------------------------------------------------- main
 
 int main(int argc, char** argv) {
-    std::string refPath, testPath, jsonPath;
+    std::string refPath, testPath, jsonPath, recordPath;
     bool align = true;
+
+    std::string fullArgv;
+    for (int i = 0; i < argc; ++i) {
+        if (i > 0) fullArgv += " ";
+        fullArgv += argv[i];
+    }
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -238,12 +319,25 @@ int main(int argc, char** argv) {
         if      (a == "--ref")      refPath = next();
         else if (a == "--test")     testPath = next();
         else if (a == "--json")     jsonPath = next();
+        else if (a == "--record")   recordPath = next();
         else if (a == "--no-align") align = false;
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); printUsage(); return 2; }
     }
 
     if (refPath.empty() || testPath.empty()) {
         printUsage();
+        return 2;
+    }
+
+    size_t bytesRef = 0, bytesTest = 0;
+    uint64_t hashRef = computeFnv1a64(refPath, bytesRef);
+    uint64_t hashTest = computeFnv1a64(testPath, bytesTest);
+
+    if (bytesRef > 0 && bytesTest > 0 && hashRef == hashTest && bytesRef == bytesTest) {
+        std::fprintf(stderr, "error: identical input files detected (ref '%s' and test '%s' have identical fnv1a64 hash %s) — refusing comparison\n",
+                     refPath.c_str(), testPath.c_str(), hexHash(hashRef).c_str());
+        writeRecordFile(recordPath, fullArgv, refPath, bytesRef, hashRef, testPath, bytesTest, hashTest,
+                        0.0, 0.0, 0.995, false, false, 0.0, 0.0, 0.0, "REFUSED_IDENTICAL_INPUTS");
         return 2;
     }
 
@@ -281,20 +375,20 @@ int main(int argc, char** argv) {
     const float kMinPeakThresh = 0.005f;
     static constexpr float kSaturationThresh = 0.995f;
 
-    if (peakRef < kMinPeakThresh) {
-        std::fprintf(stderr, "error: ref peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakRef, kMinPeakThresh);
-        return 2;
-    }
-    if (peakTest < kMinPeakThresh) {
-        std::fprintf(stderr, "error: test peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakTest, kMinPeakThresh);
-        return 2;
-    }
-    if (peakRef >= kSaturationThresh) {
-        std::fprintf(stderr, "error: ref peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakRef, kSaturationThresh);
-        return 2;
-    }
-    if (peakTest >= kSaturationThresh) {
-        std::fprintf(stderr, "error: test peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakTest, kSaturationThresh);
+    bool refSat = (peakRef >= kSaturationThresh);
+    bool testSat = (peakTest >= kSaturationThresh);
+
+    if (peakRef < kMinPeakThresh || peakTest < kMinPeakThresh || refSat || testSat) {
+        std::string status = "FAIL";
+        if (refSat || testSat) status = "REFUSED_SATURATED";
+        else status = "REFUSED_SILENT";
+        writeRecordFile(recordPath, fullArgv, refPath, bytesRef, hashRef, testPath, bytesTest, hashTest,
+                        peakRef, peakTest, kSaturationThresh, refSat, testSat, 0.0, 0.0,
+                        (peakRef > 0 ? (peakTest / peakRef) : 0.0), status);
+        if (peakRef < kMinPeakThresh) std::fprintf(stderr, "error: ref peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakRef, kMinPeakThresh);
+        else if (peakTest < kMinPeakThresh) std::fprintf(stderr, "error: test peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakTest, kMinPeakThresh);
+        else if (refSat) std::fprintf(stderr, "error: ref peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakRef, kSaturationThresh);
+        else if (testSat) std::fprintf(stderr, "error: test peak (%.6f) >= saturation threshold (%.3f) — signal is saturated/clipped\n", peakTest, kSaturationThresh);
         return 2;
     }
 
@@ -302,6 +396,11 @@ int main(int argc, char** argv) {
     const float normGainTest = (peakTest > 0.0f) ? (1.0f / peakTest) : 1.0f;
     const float normGainRefDb = 20.0f * std::log10(normGainRef);
     const float normGainTestDb = 20.0f * std::log10(normGainTest);
+
+    double ratio = (peakRef > 0.0f) ? (static_cast<double>(peakTest) / peakRef) : 0.0;
+    writeRecordFile(recordPath, fullArgv, refPath, bytesRef, hashRef, testPath, bytesTest, hashTest,
+                    peakRef, peakTest, kSaturationThresh, false, false, normGainRefDb, normGainTestDb,
+                    ratio, "PASS");
 
     for (float& s : monoRef) s *= normGainRef;
     for (float& s : monoTest) s *= normGainTest;

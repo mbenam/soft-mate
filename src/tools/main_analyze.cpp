@@ -26,10 +26,95 @@
 #include <algorithm>
 #include <limits>
 
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <chrono>
+#include <ctime>
+
+static uint64_t computeFnv1a64(const std::string& filepath, size_t& byteCount) {
+    byteCount = 0;
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f) return 0;
+    uint64_t hash = 14695981039346656037ULL;
+    char buffer[4096];
+    while (f.read(buffer, sizeof(buffer)) || f.gcount() > 0) {
+        std::streamsize count = f.gcount();
+        byteCount += static_cast<size_t>(count);
+        for (std::streamsize i = 0; i < count; ++i) {
+            hash ^= static_cast<uint8_t>(buffer[i]);
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+static std::string hexHash(uint64_t hash) {
+    std::stringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return ss.str();
+}
+
+static std::string getIsoTimestampUtc() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf{};
+#if defined(_WIN32)
+    gmtime_s(&tm_buf, &now_time);
+#else
+    gmtime_r(&now_time, &tm_buf);
+#endif
+    char buf[64];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
+    return std::string(buf);
+}
+
+static std::string jsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\' || c == '"') out.push_back('\\');
+        out.push_back(c);
+    }
+    return out;
+}
+
+static void writeAnalyzeRecordFile(const std::string& recordPath,
+                                   const std::string& fullArgv,
+                                   const std::string& pathA, size_t bytesA, uint64_t hashA,
+                                   const std::string& pathB, size_t bytesB, uint64_t hashB,
+                                   double peakA, double peakB,
+                                   double saturationThresh, bool satA, bool satB,
+                                   double ratio, const std::string& status) {
+    if (recordPath.empty()) return;
+    FILE* f = std::fopen(recordPath.c_str(), "w");
+    if (!f) return;
+    std::fprintf(f, "{\n");
+    std::fprintf(f, "  \"tool\": \"m8_analyze\",\n");
+    std::fprintf(f, "  \"argv\": \"%s\",\n", jsonEscape(fullArgv).c_str());
+    std::fprintf(f, "  \"timestamp_utc\": \"%s\",\n", getIsoTimestampUtc().c_str());
+    std::fprintf(f, "  \"inputs\": {\n");
+    std::fprintf(f, "    \"a\": { \"path\": \"%s\", \"bytes\": %zu, \"fnv1a64\": \"%s\" },\n",
+                 jsonEscape(pathA).c_str(), bytesA, hexHash(hashA).c_str());
+    if (!pathB.empty()) {
+        std::fprintf(f, "    \"b\": { \"path\": \"%s\", \"bytes\": %zu, \"fnv1a64\": \"%s\" }\n",
+                     jsonEscape(pathB).c_str(), bytesB, hexHash(hashB).c_str());
+    } else {
+        std::fprintf(f, "    \"b\": null\n");
+    }
+    std::fprintf(f, "  },\n");
+    std::fprintf(f, "  \"peaks\": { \"a\": %.9f, \"b\": %.9f },\n", peakA, peakB);
+    std::fprintf(f, "  \"saturation\": { \"threshold\": %.3f, \"a_saturated\": %s, \"b_saturated\": %s },\n",
+                 saturationThresh, satA ? "true" : "false", satB ? "true" : "false");
+    std::fprintf(f, "  \"result\": { \"ratio\": %.9f, \"status\": \"%s\" }\n", ratio, status.c_str());
+    std::fprintf(f, "}\n");
+    std::fclose(f);
+}
+
 static void printUsage() {
     std::fprintf(stderr,
-        "usage: m8_analyze <file.wav> [--events <events.csv>] [--json <report.json>]\n"
-        "       m8_analyze --diff <a.wav> <b.wav>\n");
+        "usage: m8_analyze <file.wav> [--events <events.csv>] [--json <report.json>] [--record <rec.json>]\n"
+        "       m8_analyze --diff <a.wav> <b.wav> [--record <rec.json>]\n");
 }
 
 // Hard checks from the spec:
@@ -258,15 +343,7 @@ static void printNoteReport(const std::vector<NoteMetrics>& notes, int sr) {
     }
 }
 
-static std::string jsonEscape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        if (c == '\\' || c == '"') out.push_back('\\');
-        out.push_back(c);
-    }
-    return out;
-}
+
 
 static void writeJsonReport(const std::string& jsonPath, const std::string& wavPath,
                              unsigned channels, unsigned sr, drwav_uint64 totalFrames,
@@ -427,13 +504,45 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    std::string fullArgv;
+    for (int i = 0; i < argc; ++i) {
+        if (i > 0) fullArgv += " ";
+        fullArgv += argv[i];
+    }
+
+    std::string recordPath;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--record" && i + 1 < argc) {
+            recordPath = argv[i + 1];
+        }
+    }
+
     // --diff mode
     if (std::string(argv[1]) == "--diff") {
         if (argc < 4) {
             printUsage();
             return 2;
         }
-        return runDiff(argv[2], argv[3]);
+        std::string pathA = argv[2];
+        std::string pathB = argv[3];
+
+        size_t bytesA = 0, bytesB = 0;
+        uint64_t hashA = computeFnv1a64(pathA, bytesA);
+        uint64_t hashB = computeFnv1a64(pathB, bytesB);
+
+        if (bytesA > 0 && bytesB > 0 && hashA == hashB && bytesA == bytesB) {
+            std::fprintf(stderr, "error: identical input files detected (A '%s' and B '%s' have identical fnv1a64 hash %s) — refusing comparison\n",
+                         pathA.c_str(), pathB.c_str(), hexHash(hashA).c_str());
+            writeAnalyzeRecordFile(recordPath, fullArgv, pathA, bytesA, hashA, pathB, bytesB, hashB,
+                                   0.0, 0.0, 0.995, false, false, 0.0, "REFUSED_IDENTICAL_INPUTS");
+            return 2;
+        }
+
+        int res = runDiff(pathA, pathB);
+        writeAnalyzeRecordFile(recordPath, fullArgv, pathA, bytesA, hashA, pathB, bytesB, hashB,
+                               0.0, 0.0, 0.995, false, false, (res == 0 ? 1.0 : 0.0), (res == 0 ? "PASS" : "FAIL"));
+        return res;
     }
 
     std::string path, eventsPath, jsonPath;
@@ -443,6 +552,7 @@ int main(int argc, char** argv) {
 
         if      (a == "--events") eventsPath = next();
         else if (a == "--json")   jsonPath = next();
+        else if (a == "--record") recordPath = next();
         else if (path.empty())    path = a;
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); printUsage(); return 2; }
     }
@@ -502,6 +612,12 @@ int main(int argc, char** argv) {
     }
 
     bool ok = checkHard(m, path.c_str());
+
+    size_t bytesSingle = 0;
+    uint64_t hashSingle = computeFnv1a64(path, bytesSingle);
+    writeAnalyzeRecordFile(recordPath, fullArgv, path, bytesSingle, hashSingle, "", 0, 0,
+                           m.peak, 0.0, kSaturationThresh, (m.peak >= kSaturationThresh), false,
+                           1.0, ok ? "PASS" : "FAIL");
 
     if (!jsonPath.empty()) {
         writeJsonReport(jsonPath, path, channels, sr, totalFrames, m, ok, eventsPath, notes);
