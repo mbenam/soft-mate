@@ -375,6 +375,11 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
     }
 
+    if (settleMs >= maxMs) {
+        std::fprintf(stderr, "error (2): --settle-ms (%d) must be less than --max-ms (%d)\n", settleMs, maxMs);
+        return static_cast<int>(ExitCode::UNKNOWN_ARG);
+    }
+
     if (!loadFilePath.empty() && holdMs > 20) holdMs = 15;
     if (port.empty()) {
         std::fprintf(stderr,
@@ -636,7 +641,7 @@ int main(int argc, char** argv) {
         std::printf("\n=== press 0x%02X (%zu/%zu) ===\n", keys[k], k + 1, keys.size());
         dev.press(keys[k], holdMs);
         std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
-        dev.readSettled(120, 150, settleMs);
+        dev.readSettled(120, settleMs, maxMs);
         dev.grid().printText(stdout);
     }
 

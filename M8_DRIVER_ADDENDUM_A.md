@@ -19,7 +19,7 @@ narrower than the step described, plus one process fix.
 ```
 [x] D1  Restore the lost exit-code distinctions
 [x] D2  Add the `extra` payload field to Envelope
-[ ] D3  Fix the settle/max naming at main_nav.cpp:614
+[x] D3  Fix the settle/max naming at main_nav.cpp:614
 [ ] D4  Route ui_sweep through the daemon
 [ ] D5  Expand the sweep to per-field cursor states
 [ ] D6  Add modal and transport states to the corpus
