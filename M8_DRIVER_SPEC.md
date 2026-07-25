@@ -125,7 +125,7 @@ Tick in this file, in the same commit as the step.
 FOUNDATION (mandatory, in order)
 [x] F1   ReadStats struct + accessor
 [x] F2   readSettled() explicit 3-arg read
-[ ] F3   Fix swapped readScreen args in main_nav.cpp
+[x] F3   Fix swapped readScreen args in main_nav.cpp
 [ ] F4   Widen the read ceilings in Primitives.cpp
 [ ] F5   Offline test for read telemetry
 [ ] F6   Result.h — ExitCode enum + Envelope

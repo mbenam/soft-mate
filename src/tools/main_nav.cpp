@@ -388,7 +388,7 @@ int main(int argc, char** argv) {
         std::printf("gestures: not loaded (file missing or no edit gestures pinned)\n");
     }
 
-    dev.readScreen(minMs, settleMs);
+    dev.readSettled(minMs, settleMs, maxMs);
     Firmware fw = dev.firmware();
     std::printf("device: hw_type=%d  firmware=%d.%d.%d  font_mode=%d\n",
                 fw.hwType, fw.major, fw.minor, fw.patch, fw.fontMode);
@@ -490,7 +490,7 @@ int main(int argc, char** argv) {
         std::printf("\n=== press 0x%02X (%zu/%zu) ===\n", keys[k], k + 1, keys.size());
         dev.press(keys[k], holdMs);
         std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
-        dev.readScreen(150, settleMs);
+        dev.readSettled(120, 150, settleMs);
         dev.grid().printText(stdout);
     }
 
