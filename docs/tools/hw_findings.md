@@ -2,6 +2,8 @@
 
 Documenting live hardware measurements, USB capture level baselines, device golden files, and diff findings.
 
+> **Findings Format Invariant:** Any table of measured continuous audio values must cite the committed record file (`.record.json` or data artifact) it came from. Discrete readings directly observed on the device UI (such as §R1 instrument volume ceilings or §V4 mixer ceilings) are exempt.
+
 ---
 
 ## P0 — Pin the capture measurement baseline
