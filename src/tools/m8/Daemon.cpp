@@ -3,10 +3,14 @@
 #include "Primitives.h"
 #include "Result.h"
 #include "DeviceScriptRunner.h"
+#include "UiCapture.h"
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <map>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 namespace m8 {
 namespace dev {
@@ -126,6 +130,33 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
                 if (rc != 0) {
                     code = ExitCode::COMMAND_FAILED;
                     errMessage = "script execution failed: " + runner.lastError();
+                }
+            }
+        } else if (verbU == "CAPTURE") {
+            std::string path = params["path"];
+            if (path.empty()) path = params["out"];
+            if (path.empty()) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "CAPTURE requires path parameter";
+            } else {
+                dev.readScreen();
+                std::string header1 = dev.grid().topHeader();
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                dev.readScreen();
+                std::string header2 = dev.grid().topHeader();
+                bool isSettled = (header1 == header2) && !dev.grid().cells.empty();
+                if (!isSettled) {
+                    code = ExitCode::UNSETTLED_DISPLAY;
+                    errMessage = "cannot capture: display did not settle";
+                } else {
+                    auto cap = captureFromGrid(dev.grid(), true);
+                    std::ofstream out(path);
+                    if (!out) {
+                        code = ExitCode::COMMAND_FAILED;
+                        errMessage = "cannot open output path: " + path;
+                    } else {
+                        out << toJson(cap);
+                    }
                 }
             }
         } else if (verbU == "STATE" || verbU == "SEMANTIC_STATE") {
