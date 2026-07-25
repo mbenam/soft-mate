@@ -145,7 +145,7 @@ FOUNDATION (mandatory, in order)
 TRACK A — file loading + agent ergonomics
 [x] A0   Decide the SD-card access question (gate for A1-A7)
 [x] A1   [HW] Discover directory-row marker → docs/tools/hw_findings.md
-[ ] A2   isDirectoryRow()
+[x] A2   isDirectoryRow()
 [ ] A3   enumerateList()
 [ ] A4   enterDir() / upDir()
 [ ] A5   searchTree() — bounded DFS

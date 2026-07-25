@@ -139,6 +139,42 @@ inline bool isLiveMode(const ScreenGrid& g) {
         && h.find("EXIT") != std::string::npos;
 }
 
+// ---- List/browser rows -----------------------------------------------------
+
+struct ListRow {
+    int         y = -1;           // pixel y of the row
+    std::string text;             // trimmed row text
+    bool        selected = false; // cursor is on this row
+};
+
+// Enumerate main-area rows as a selectable list. Used by the file browser and
+// by any screen an agent needs to scan. Screen order, blank rows skipped.
+inline std::vector<ListRow> listRows(const ScreenGrid& grid) {
+    std::vector<ListRow> out;
+    int curY = grid.cursorRowY();
+    for (auto& [y, text] : grid.mainRows()) {
+        size_t b = text.find_first_not_of(' ');
+        if (b == std::string::npos) continue;
+        size_t e = text.find_last_not_of(' ');
+        ListRow r;
+        r.y        = y;
+        r.text     = text.substr(b, e - b + 1);
+        r.selected = (y == curY);
+        out.push_back(r);
+    }
+    return out;
+}
+
+// True if a browser list row denotes a directory rather than a file.
+// CONFIRMED (fw 6.5.2, see hw_findings.md §A1).
+inline bool isDirectoryRow(const ListRow& r) {
+    if (r.text == "/.." || r.text == "..") return true;
+    if (!r.text.empty() && (r.text.front() == '/' || r.text.back() == '/')) return true;
+    return false;
+}
+
+inline bool isParentRow(const ListRow& r) { return r.text == "/.." || r.text == ".."; }
+
 // ---- Navigation graph -----------------------------------------------------
 //
 // The M8 UI is a 2D grid. SHIFT+arrows move between screens; arrows move
