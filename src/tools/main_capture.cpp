@@ -213,10 +213,106 @@ static bool findAudioDevice(ma_context* ctx, const char* match,
 
 // ---- WAV writer (same as m8_render) ---------------------------------------
 
-static void writeWav(const std::string& path, const std::vector<float>& interleaved,
-                     int channels, int sampleRate) {
-    const uint32_t nFrames  = static_cast<uint32_t>(interleaved.size() / channels);
-    const uint32_t dataSize = nFrames * channels * 2;
+static uint64_t computeFnv1a64(const std::string& filepath, size_t& byteCount) {
+    byteCount = 0;
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f) return 0;
+    uint64_t hash = 14695981039346656037ULL;
+    char buffer[4096];
+    while (f.read(buffer, sizeof(buffer)) || f.gcount() > 0) {
+        std::streamsize count = f.gcount();
+        byteCount += static_cast<size_t>(count);
+        for (std::streamsize i = 0; i < count; ++i) {
+            hash ^= static_cast<uint8_t>(buffer[i]);
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+static std::string hexHash(uint64_t hash) {
+    std::stringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return ss.str();
+}
+
+static std::string getIsoTimestampUtc() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf{};
+#if defined(_WIN32)
+    gmtime_s(&tm_buf, &now_time);
+#else
+    gmtime_r(&now_time, &tm_buf);
+#endif
+    char buf[64];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
+    return std::string(buf);
+}
+
+struct CaptureManifest {
+    std::string port;
+    double seconds = 0.0;
+    float preRollMs = 0.0f;
+    float tailSeconds = 0.0f;
+    int keyjazzNote = -1;
+    uint8_t keyjazzVel = 0;
+    bool checkLevel = false;
+    float floorLevel = 0.0f;
+    float measuredPeak = 0.0f;
+    bool levelPassed = true;
+};
+
+static void writeManifestFile(const std::string& wavPath,
+                              int channels, int sampleRate,
+                              size_t nFrames,
+                              const CaptureManifest& cm) {
+    std::string manifestPath = wavPath;
+    if (manifestPath.length() >= 4 && manifestPath.substr(manifestPath.length() - 4) == ".wav") {
+        manifestPath = manifestPath.substr(0, manifestPath.length() - 4) + ".manifest.json";
+    } else {
+        manifestPath += ".manifest.json";
+    }
+
+    size_t byteCount = 0;
+    uint64_t hash = computeFnv1a64(wavPath, byteCount);
+
+    FILE* f = std::fopen(manifestPath.c_str(), "w");
+    if (!f) return;
+
+    std::fprintf(f, "{\n");
+    std::fprintf(f, "  \"output_path\": \"%s\",\n", wavPath.c_str());
+    std::fprintf(f, "  \"bytes\": %zu,\n", byteCount);
+    std::fprintf(f, "  \"fnv1a64\": \"%s\",\n", hexHash(hash).c_str());
+    std::fprintf(f, "  \"sample_rate\": %d,\n", sampleRate);
+    std::fprintf(f, "  \"channels\": %d,\n", channels);
+    std::fprintf(f, "  \"duration_seconds\": %.3f,\n", static_cast<double>(nFrames) / sampleRate);
+    std::fprintf(f, "  \"port\": \"%s\",\n", cm.port.c_str());
+    std::fprintf(f, "  \"timestamp_utc\": \"%s\",\n", getIsoTimestampUtc().c_str());
+    std::fprintf(f, "  \"capture_settings\": {\n");
+    std::fprintf(f, "    \"seconds\": %.2f,\n", cm.seconds);
+    std::fprintf(f, "    \"pre_roll_ms\": %.1f,\n", cm.preRollMs);
+    std::fprintf(f, "    \"tail_seconds\": %.2f,\n", cm.tailSeconds);
+    std::fprintf(f, "    \"keyjazz_note\": %d,\n", cm.keyjazzNote);
+    std::fprintf(f, "    \"keyjazz_vel\": %d\n", cm.keyjazzVel);
+    std::fprintf(f, "  },\n");
+    std::fprintf(f, "  \"check_level\": {\n");
+    std::fprintf(f, "    \"enabled\": %s,\n", cm.checkLevel ? "true" : "false");
+    std::fprintf(f, "    \"floor_level\": %.5f,\n", cm.floorLevel);
+    std::fprintf(f, "    \"measured_peak\": %.5f,\n", cm.measuredPeak);
+    std::fprintf(f, "    \"passed\": %s\n", cm.levelPassed ? "true" : "false");
+    std::fprintf(f, "  }\n");
+    std::fprintf(f, "}\n");
+    std::fclose(f);
+    std::printf("  wrote %s\n", manifestPath.c_str());
+}
+
+static void writeWav(const std::string& path,
+                     const std::vector<float>& interleaved,
+                     int channels, int sampleRate,
+                     const CaptureManifest* cm = nullptr) {
+    size_t nFrames = interleaved.size() / channels;
+    uint32_t dataSize = static_cast<uint32_t>(interleaved.size() * sizeof(int16_t));
     const uint32_t riffSize = 36 + dataSize;
 
     FILE* f = std::fopen(path.c_str(), "wb");
@@ -244,6 +340,10 @@ static void writeWav(const std::string& path, const std::vector<float>& interlea
     std::fclose(f);
     std::printf("  wrote %-28s  %6.2f s\n", path.c_str(),
                 static_cast<double>(nFrames) / sampleRate);
+
+    if (cm) {
+        writeManifestFile(path, channels, sampleRate, nFrames, *cm);
+    }
 }
 
 // ---- trim to note onset ---------------------------------------------------
@@ -522,18 +622,26 @@ int main(int argc, char** argv) {
             std::getline(std::cin, dummy);
 
             auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
-            checkCapturePeak(trimmed, floorLevel, checkLevel);
+            bool levelPassed = checkCapturePeak(trimmed, floorLevel, checkLevel);
+            float peak = 0.0f;
+            for (float s : trimmed) peak = std::max(peak, std::fabs(s));
+
+            CaptureManifest cm{ port, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel, checkLevel, floorLevel, peak, levelPassed };
             std::string path = outDir + "/" + e.label + ".wav";
-            writeWav(path, trimmed, 2, 48000);
+            writeWav(path, trimmed, 2, 48000, &cm);
             ++ok;
         }
         std::printf("\nbatch complete: %zu/%zu captured\n", ok, batchEntries.size());
     } else {
         auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
-        checkCapturePeak(trimmed, floorLevel, checkLevel);
+        bool levelPassed = checkCapturePeak(trimmed, floorLevel, checkLevel);
+        float peak = 0.0f;
+        for (float s : trimmed) peak = std::max(peak, std::fabs(s));
+
+        CaptureManifest cm{ port, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel, checkLevel, floorLevel, peak, levelPassed };
 
         if (!outPath.empty()) {
-            writeWav(outPath, trimmed, 2, 48000);
+            writeWav(outPath, trimmed, 2, 48000, &cm);
         } else if (!outDir.empty()) {
             std::filesystem::create_directories(outDir);
             // Default filename from timestamp
@@ -543,7 +651,7 @@ int main(int argc, char** argv) {
             char filename[64];
             std::snprintf(filename, sizeof(filename), "capture_%lld.wav", millis);
             std::string path = outDir + "/" + filename;
-            writeWav(path, trimmed, 2, 48000);
+            writeWav(path, trimmed, 2, 48000, &cm);
         } else {
             std::fprintf(stderr, "no output path specified\n");
         }

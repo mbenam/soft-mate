@@ -34,7 +34,7 @@ evidence is a build output instead of something a person is trusted to transcrib
 ```
 [x] W1  --record flag emitting a measurement record
 [x] W2  Input checksums in the record
-[ ] W3  Capture manifest from m8_capture
+[x] W3  Capture manifest from m8_capture
 [ ] W4  [HW] Re-run V2 with committed artifacts
 [ ] W5  [HW] Re-run V3 at the stated bucket resolution
 [ ] W6  [HW] Settle the hold comparison, or mark it untested
