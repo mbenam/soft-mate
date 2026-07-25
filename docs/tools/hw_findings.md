@@ -127,5 +127,20 @@ Audit of delivered behaviours against specifications (`M8_DRIVER_SPEC.md` and `M
 | **D4** | PASS | Daemonized sweep via `m8_nav --serve` with `CAPTURE` verb. Frame resend `'R'` sent once per run. |
 | **D5** | PASS | Per-field cursor walk executed. 79 total capture files generated in `tests/ui/golden/device/`. Unreached cursor fields recorded cleanly in `_sweep_log.txt`. |
 | **D6** | PASS | Modal (`LOAD_PROJECT_MODAL.json`) and transport playing states (`SONG__PLAYING.json`, `CHAIN__PLAYING.json`, `PHRASE__PLAYING.json`) captured and state restored post-capture. |
-| **m8_tests** | PASS | Core engine test suite passes cleanly (892,205 assertions in 176 test cases). |
+---
 
+## R1 — Device Goldens & Volume Range Confirmation
+
+- **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
+- **Fixture directory:** `tests/fixtures/device_golden/`
+- **Captured Goldens (5 total):**
+
+| File | Instrument Type | UI Max Vol | Stored Vol Byte | Match? | Status |
+|------|-----------------|------------|-----------------|--------|--------|
+| `Sampler.m8s` | Sampler | `0x7F` (127) | `0x7F` | Yes | Confirmed |
+| `MacroSynth.m8s` | MacroSynth | `0x7F` (127) | `0x7F` | Yes | Confirmed |
+| `WavSynth.m8s` | WavSynth | `0x7F` (127) | `0x7F` | Yes | Confirmed |
+| `FMSynth.m8s` | FMSynth | `0x7F` (127) | `0x7F` | Yes | Confirmed |
+| `HyperSynth.m8s` | HyperSynth | `0x7F` (127) | `0x7F` | Yes | Confirmed |
+
+- **Finding:** The hardware UI volume ceiling for **ALL FIVE** instrument types is `0x7F` (127, 0 dB). Writing `0xE0` (224) exceeds the hardware limit across all types and is read by the M8 device as `0x00` (silence). The previous P3 finding ("Sampler requires 0x00, MacroSynth default is 0xE0") is retired in favor of the global `0x7F` range limit.

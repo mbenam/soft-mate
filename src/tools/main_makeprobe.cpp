@@ -414,7 +414,7 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                          smp.sample_path.c_str(), samplePath.c_str());
             return false;
         }
-    } else {
+    } else if (instType == "macrosynth") {
         if (!std::holds_alternative<m8::MacroSynth>(song.instruments[0])) {
             std::fprintf(stderr, "  FAIL: instrument 0 is not MacroSynth\n");
             return false;
@@ -430,6 +430,21 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
         }
         if (ms.color != color) {
             std::fprintf(stderr, "  FAIL: color %02X != %02X\n", ms.color, color);
+            return false;
+        }
+    } else if (instType == "wavsynth") {
+        if (!std::holds_alternative<m8::WavSynth>(song.instruments[0])) {
+            std::fprintf(stderr, "  FAIL: instrument 0 is not WavSynth\n");
+            return false;
+        }
+    } else if (instType == "fmsynth") {
+        if (!std::holds_alternative<m8::FMSynth>(song.instruments[0])) {
+            std::fprintf(stderr, "  FAIL: instrument 0 is not FMSynth\n");
+            return false;
+        }
+    } else if (instType == "hypersynth") {
+        if (!std::holds_alternative<m8::HyperSynth>(song.instruments[0])) {
+            std::fprintf(stderr, "  FAIL: instrument 0 is not HyperSynth\n");
             return false;
         }
     }
