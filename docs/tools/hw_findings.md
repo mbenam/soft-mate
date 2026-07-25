@@ -148,6 +148,25 @@ Audit of delivered behaviours against specifications (`M8_DRIVER_SPEC.md` and `M
 
 ---
 
+## R2 (retroactive) — Field Range Provenance Table
+
+Complete audit of parameter ranges observed across `.m8s` goldens and hardware tests:
+
+| Parameter | Observed Min/Max | Confirmed Status | Measurement Provenance |
+|-----------|------------------|------------------|------------------------|
+| `instrument.volume` | `0x00` – `0x7F` | **Confirmed** | §R1 (UI max turned to ceiling on 5 instrument types, max `0x7F`) |
+| `mixer.dry` | `0x00` – `0xE0` | **Confirmed** | §V4 (UI max turned to ceiling on hardware, max `0xE0`) |
+| `mixer.master_volume` | `0x00` – `0xE0` | **Confirmed** | §V4 (UI max turned to ceiling on hardware, max `0xE0`) |
+| `mixer.track_volume` | `0x00` – `0xE0` | **Confirmed** | §V4 (UI max turned to ceiling on hardware, max `0xE0`) |
+| `mixer.pan` | `0x00` – `0xFF` | Observed-only | Not measured via UI sweep |
+| `mod0.amount` | `0x00` – `0xFF` | Observed-only | Not measured via UI sweep |
+| `mod0.attack` | `0x00` – `0xFF` | Observed-only | Not measured via UI sweep |
+| `mod0.hold` | `0x00` – `0xFF` | Observed-only | Not measured via UI sweep |
+| `mod0.decay` | `0x00` – `0xFF` | Observed-only | Not measured via UI sweep |
+
+
+---
+
 ## R5 — Audit of Hard-Coded Literals
 
 Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
