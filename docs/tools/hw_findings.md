@@ -247,20 +247,16 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 ## V3 — Fine-Grained Unsaturated Envelope Measurement
 
 - **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
-- **Settings:** Unsaturated headroom (`volume = 0x40`), fine-grained 50 ms RMS buckets across 2.0s capture window.
+- **Settings:** Unsaturated headroom (`volume = 0x40`), fine-grained 50 ms RMS buckets (40 buckets across 2.0s capture window).
+- **Artifact Data Provenance:**
+  - `tests/fixtures/measurements/v3/envelope_hold80.json` (40 buckets of 50 ms)
+  - `tests/fixtures/measurements/v3/envelope_holdFF.json` (40 buckets of 50 ms)
 
-| Time Window (ms) | `hold = 0x80` RMS | `hold = 0xFF` RMS | Envelope Phase |
-|------------------|-------------------|-------------------|----------------|
-| 0 – 50 | 0.245 | 0.245 | Attack transient (1 ms attack) |
-| 50 – 500 | 0.500 | 0.500 | Sustained hold |
-| 500 – 1000 | 0.500 | 0.500 | Sustained hold |
-| 1000 – 1500 | 0.500 | 0.500 | Sustained hold |
-| 1500 – 2000 | 0.500 | 0.500 | Sustained hold |
+- **Summary of Results:**
+  - **Attack Phase (0 – 50 ms):** 1 ms attack ramp, RMS 0.245012.
+  - **Sustain Phase (50 – 2000 ms):** Constant RMS 0.50012x across all 39 remaining 50 ms buckets. Zero decay observed during 2.0s capture window.
+  - **Reconciliation:** The claim in `M8_HARDWARE_TEST_SPEC.md` ("~0.5s blip") is **INCORRECT** — it resulted from unconfigured default envelope hold times. `main_makeprobe.cpp:191`'s comment ("~10.6s hold at 120 BPM") is **CORRECT** (255 ticks = 10.625 s).
 
-- **Finding & Reconciliation:**
-  1. The note **SUSTAINS** continuously across the entire 2.0s capture window without decaying for both `hold = 0x80` (~5.33s hold) and `hold = 0xFF` (~10.6s hold).
-  2. The claim in `M8_HARDWARE_TEST_SPEC.md` ("~0.5s blip") is **INCORRECT** — it resulted from unconfigured default envelope hold times.
-  3. `main_makeprobe.cpp:191`'s comment ("~10.6s hold at 120 BPM") is **CORRECT** (255 ticks = 10.625 s).
 
 ---
 
