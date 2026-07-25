@@ -127,7 +127,7 @@ FOUNDATION (mandatory, in order)
 [x] F2   readSettled() explicit 3-arg read
 [x] F3   Fix swapped readScreen args in main_nav.cpp
 [x] F4   Widen the read ceilings in Primitives.cpp
-[ ] F5   Offline test for read telemetry
+[x] F5   Offline test for read telemetry
 [ ] F6   Result.h — ExitCode enum + Envelope
 [ ] F7   Single exit path in main_nav.cpp
 [ ] F8   Normalize pinGestures return codes

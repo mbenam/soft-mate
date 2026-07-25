@@ -784,3 +784,13 @@ TEST_CASE("computeRoute: restricted horizontal moves to y=0 only", "[hwdecode]")
     CHECK(steps[3].keyMask == (Key::SHIFT | Key::UP));
     CHECK(steps[3].viaScreen == Screen::PROJECT);
 }
+
+TEST_CASE("M8Device ReadStats telemetry offline", "[m8_device]") {
+    M8Device dev;
+    const auto& stats = dev.lastRead();
+    CHECK(stats.elapsedMs == 0);
+    CHECK(stats.quietMs == 0);
+    CHECK(stats.framesSeen == 0);
+    CHECK_FALSE(stats.settled);
+    CHECK_FALSE(stats.timedOut);
+}
