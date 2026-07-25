@@ -470,7 +470,18 @@ TEST_CASE("T0 makeprobe round-trip in CI", "[io]") {
     std::filesystem::remove(outPath);
 }
 
+static void ensureSamplerProbeExists() {
+    if (!std::filesystem::exists("hwtest_out/probes/probe_sampler.m8s")) {
+        std::filesystem::create_directories("hwtest_out/probes");
+        std::string exeDir = getTestExeDir();
+        std::string makeprobePath = exeDir + "/m8_makeprobe.exe";
+        std::string cmd = "\"" + makeprobePath + "\" --type sampler --sample-path samples/test.wav --out hwtest_out/probes/probe_sampler.m8s";
+        std::system(cmd.c_str());
+    }
+}
+
 TEST_CASE("S-RT1 sampler fields round-trip through save/reload", "[io]") {
+    ensureSamplerProbeExists();
     auto a = loadSong("hwtest_out/probes/probe_sampler.m8s", "hwtest_out");
     REQUIRE(a.ok);
     REQUIRE(a.writable);
@@ -530,6 +541,7 @@ TEST_CASE("S-RT1 sampler fields round-trip through save/reload", "[io]") {
 }
 
 TEST_CASE("S-DET2 detune loads/saves signed fine_pitch correctly", "[io]") {
+    ensureSamplerProbeExists();
     auto a = loadSong("hwtest_out/probes/probe_sampler.m8s", "hwtest_out");
     REQUIRE(a.ok);
 

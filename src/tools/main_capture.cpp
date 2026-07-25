@@ -363,6 +363,24 @@ static std::vector<float> captureOnce(SerialPort& serial, CaptureData& captureDa
     return trimmed;
 }
 
+static bool checkCapturePeak(const std::vector<float>& samples, float floorLevel, bool enforceCheck) {
+    float peak = 0.0f;
+    for (float s : samples) {
+        float absS = std::abs(s);
+        if (absS > peak) peak = absS;
+    }
+    std::printf("capture peak: %.5f (floor: %.5f)\n", peak, floorLevel);
+    if (enforceCheck && peak < floorLevel) {
+        std::fprintf(stderr, "\n========================================================\n");
+        std::fprintf(stderr, "WARNING: Capture peak (%.5f) is below floor (%.5f)!\n", peak, floorLevel);
+        std::fprintf(stderr, "Host Windows recording level for M8 input may have reset.\n");
+        std::fprintf(stderr, "Verify Windows Sound Settings -> M8 Input Volume is 100%%.\n");
+        std::fprintf(stderr, "========================================================\n\n");
+        return false;
+    }
+    return true;
+}
+
 // ---- main -----------------------------------------------------------------
 
 int main(int argc, char** argv) {
@@ -382,6 +400,8 @@ int main(int argc, char** argv) {
     uint8_t stopMask = 0x08;
     int keyjazzNote = -1;          // >=0 => play a live note instead of PLAY toggle
     uint8_t keyjazzVel = 0x7F;
+    bool checkLevel = false;
+    float floorLevel = 0.5f;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -399,6 +419,12 @@ int main(int argc, char** argv) {
         else if (a == "--stop-mask")  stopMask  = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--keyjazz")    keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0)); // MIDI note (60=C-4)
         else if (a == "--keyjazz-vel") keyjazzVel = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
+        else if (a == "--check-level") {
+            checkLevel = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                floorLevel = static_cast<float>(std::atof(next().c_str()));
+            }
+        }
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
     }
 
@@ -496,6 +522,7 @@ int main(int argc, char** argv) {
             std::getline(std::cin, dummy);
 
             auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
+            checkCapturePeak(trimmed, floorLevel, checkLevel);
             std::string path = outDir + "/" + e.label + ".wav";
             writeWav(path, trimmed, 2, 48000);
             ++ok;
@@ -503,6 +530,7 @@ int main(int argc, char** argv) {
         std::printf("\nbatch complete: %zu/%zu captured\n", ok, batchEntries.size());
     } else {
         auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
+        checkCapturePeak(trimmed, floorLevel, checkLevel);
 
         if (!outPath.empty()) {
             writeWav(outPath, trimmed, 2, 48000);

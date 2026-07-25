@@ -52,7 +52,7 @@ target_include_directories(DaisySP PUBLIC "${daisysp_SOURCE_DIR}/DaisySP-LGPL/So
 # -------------------------------------------------------------------
 # m8-files-cxx (song file I/O library)
 # -------------------------------------------------------------------
-add_subdirectory(third_party/m8-files-cxx/src)
+add_subdirectory(third_party/m8-files-cxx)
 
 # -------------------------------------------------------------------
 # Engine library (no SDL) — used by m8_tests, m8_render, m8_analyze
@@ -238,6 +238,7 @@ if(MSVC)
     target_compile_options(m8_tests PRIVATE /FS /bigobj)
 endif()
 
+list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
 include(Catch)
 catch_discover_tests(m8_tests)
 
