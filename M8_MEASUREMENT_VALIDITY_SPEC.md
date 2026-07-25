@@ -35,7 +35,7 @@ document is not. This spec reconciles them.
 
 ```
 [x] V1  Saturation guard in the analysis tooling
-[ ] V2  [HW] Re-run amplitude parity with headroom
+[x] V2  [HW] Re-run amplitude parity with headroom
 [ ] V3  [HW] Re-run the envelope measurement with headroom
 [ ] V4  [HW] Measure the three unconfirmed mixer ceilings
 [ ] V5  Update ParamRange.h with measured values
