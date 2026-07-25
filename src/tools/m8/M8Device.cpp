@@ -385,6 +385,17 @@ void ScreenGrid::printJson(const std::string& path) const {
     o << "  \"hw_type\": " << hwType
       << ", \"fw\": \"" << fwMajor << "." << fwMinor << "." << fwPatch << "\""
       << ", \"font_mode\": " << fontMode << ",\n";
+    o << "  \"highlights\": [\n";
+    bool firstHl = true;
+    for (const auto& rect : highlights) {
+        if (!firstHl) o << ",\n";
+        firstHl = false;
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "    {\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d}",
+                      rect.x, rect.y, rect.w, rect.h);
+        o << buf;
+    }
+    o << "\n  ],\n";
     o << "  \"cells\": [\n";
     bool first = true;
     for (auto& [pos, c] : cells) {

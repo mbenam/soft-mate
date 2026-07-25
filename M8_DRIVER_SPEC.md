@@ -133,7 +133,7 @@ FOUNDATION (mandatory, in order)
 [x] F8   Normalize pinGestures return codes
 [x] F9   ScreenGrid listRows()
 [x] F10  Promote isModal/isLiveMode to ScreenModel.h
-[ ] F11  printJson emits highlights
+[x] F11  printJson emits highlights
 [ ] F12  Semantic.h — semanticState()
 [ ] F13  --semantic-state flag
 [ ] F14  Offline tests for listRows + semanticState + highlights
