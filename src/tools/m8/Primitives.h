@@ -90,6 +90,14 @@ std::optional<std::string> readField(M8Device& dev, const std::string& fieldName
 int pressUntil(M8Device& dev, std::function<bool(const ScreenGrid&)> predicate,
                uint8_t key, int maxPresses = 30, int holdMs = 15);
 
+// ---- List enumeration ------------------------------------------------------
+
+// Enumerate every row of the current browser list, scrolling as needed.
+// Scrolls to the top first, then walks DOWN collecting rows until the
+// selection stops changing (bottom) or maxRows is hit.
+std::vector<ListRow> enumerateList(M8Device& dev, int holdMs = 15,
+                                   int maxRows = 256);
+
 // ---- Assertions -----------------------------------------------------------
 
 // Assert the current screen matches the expected screen.

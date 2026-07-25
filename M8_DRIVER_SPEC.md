@@ -146,7 +146,7 @@ TRACK A — file loading + agent ergonomics
 [x] A0   Decide the SD-card access question (gate for A1-A7)
 [x] A1   [HW] Discover directory-row marker → docs/tools/hw_findings.md
 [x] A2   isDirectoryRow()
-[ ] A3   enumerateList()
+[x] A3   enumerateList()
 [ ] A4   enterDir() / upDir()
 [ ] A5   searchTree() — bounded DFS
 [ ] A6   searchAndLoad() + --find-file / --load-song

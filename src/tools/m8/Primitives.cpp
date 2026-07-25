@@ -1225,5 +1225,41 @@ int loadFile(M8Device& dev, const std::string& target, int holdMs) {
     return 14;
 }
 
+std::vector<ListRow> enumerateList(M8Device& dev, int holdMs, int maxRows) {
+    std::string lastCursorText;
+    for (int i = 0; i < 64; ++i) {
+        dev.readSettled(120, 200, 1200);
+        std::string curText = dev.grid().cursorMainText();
+        if (i > 0 && curText == lastCursorText) break;
+        lastCursorText = curText;
+        dev.press(Key::UP, holdMs);
+    }
+
+    std::vector<ListRow> result;
+    std::string prevSelectedText;
+    for (int step = 0; step < maxRows; ++step) {
+        dev.readSettled(120, 200, 1200);
+        auto visible = listRows(dev.grid());
+        std::string curSelectedText;
+        for (const auto& r : visible) {
+            if (r.selected) curSelectedText = r.text;
+            bool exists = false;
+            for (const auto& existing : result) {
+                if (existing.text == r.text) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) result.push_back(r);
+        }
+        if (step > 0 && curSelectedText == prevSelectedText) {
+            break;
+        }
+        prevSelectedText = curSelectedText;
+        dev.press(Key::DOWN, holdMs);
+    }
+    return result;
+}
+
 } // namespace dev
 } // namespace m8
