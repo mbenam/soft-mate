@@ -328,6 +328,7 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
     if (!env.ok() && !env.message.empty()) {
         std::fprintf(stderr, "error (%d): %s\n", env.exitCode(), env.message.c_str());
     }
+    env.emit(stdout);
     return env.exitCode();
 }
 
@@ -460,6 +461,7 @@ int main(int argc, char** argv) {
 
     // --find-file mode.
     if (!findFileArg.empty()) {
+        env.action = "find-file";
         auto gotoRes = openLoadModal(dev, holdMs);
         if (!gotoRes.ok) {
             env.code = ExitCode::TARGET_UNREACHABLE;
@@ -472,7 +474,21 @@ int main(int argc, char** argv) {
         for (const auto& m : sres.matches) {
             std::printf("  - %s\n", m.path.c_str());
         }
-        if (sres.matches.empty() && sres.error.empty()) {
+
+        std::string matchesJson = "\"matches\":[";
+        for (size_t i = 0; i < sres.matches.size(); ++i) {
+            matchesJson += "\"" + jsonEscape(sres.matches[i].path) + "\"";
+            if (i + 1 < sres.matches.size()) matchesJson += ",";
+        }
+        matchesJson += "]";
+        env.extra.push_back(matchesJson);
+        env.extra.push_back("\"dirs_visited\":" + std::to_string(sres.dirsVisited));
+        env.extra.push_back(std::string("\"truncated\":") + (sres.truncated ? "true" : "false"));
+
+        if (sres.matches.size() > 1) {
+            env.code = ExitCode::AMBIGUOUS_MATCH;
+            env.message = "ambiguous match (" + std::to_string(sres.matches.size()) + " candidates found for '" + findFileArg + "')";
+        } else if (sres.matches.empty() && sres.error.empty()) {
             env.code = ExitCode::NOT_FOUND;
             env.message = "no matches found for '" + findFileArg + "'";
         } else if (!sres.error.empty()) {
