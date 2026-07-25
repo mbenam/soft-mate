@@ -134,7 +134,7 @@ static int pinGestures(M8Device& dev, const std::string& field, int holdMs) {
         }, Key::SHIFT | Key::DOWN, 30, holdMs);
         if (presses < 0) {
             std::fprintf(stderr, "FAILED: could not find field '%s' on screen\n", field.c_str());
-            return 2;
+            return 1;
         }
         std::printf("  found %s after %d SHIFT+DOWN presses\n", field.c_str(), presses);
     }
