@@ -56,7 +56,7 @@ nothing else in this spec should be built until it does.
 [x] R3  ParamRange.h — single source of truth
 [x] R4  Replace the five pasted checks with one validated clamp
 [x] R5  Audit every remaining literal makeprobe writes
-[ ] R6  Reconcile ahd.hold against the device golden
+[x] R6  Reconcile ahd.hold against the device golden
 [ ] R7  Range-check the mixer fields
 [ ] R8  Fix the clone's out-of-range defaults
 [ ] R9  [HW] Re-verify amplitude parity across all five types

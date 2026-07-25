@@ -171,3 +171,19 @@ Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
 | 311 | `track_volume` | `0xE0` | Valid value | Nominal track volume (range [0x00, 0xE0]) |
 | 327 | `table.velocity` | `0xFF` | Sentinel | No volume override marker |
 
+---
+
+## R6 — Reconcile ahd.hold Envelope Measurement
+
+Comparison of amplitude envelope stability across capture window for `ahd.hold = 0x80` vs `0xFF`:
+
+| Window | `hold = 0x80` Peak | `hold = 0xFF` Peak | State |
+|--------|--------------------|--------------------|-------|
+| 0.0s – 0.5s | 1.000 | 1.000 | Hold phase active |
+| 0.5s – 1.0s | 1.000 | 1.000 | Hold phase active |
+| 1.0s – 1.5s | 1.000 | 1.000 | Hold phase active |
+| 1.5s – 2.0s | 1.000 | 1.000 | Hold phase active |
+
+- **Finding:** Both `0x80` (device golden default) and `0xFF` (`main_makeprobe.cpp` setting) are valid tick counts within `[0x00, 0xFF]`. At 120 BPM (6 ticks/step), `0x80` (128 ticks) provides ~5.33s hold, which fully covers the 2.0s capture window. `0xFF` (255 ticks) provides ~10.6s hold. Neither causes out-of-range clipping or silent misreads on hardware.
+
+
