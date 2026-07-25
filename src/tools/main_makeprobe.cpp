@@ -16,6 +16,7 @@
 #include "synths.hpp"
 #include "instruments.hpp"
 #include "writer.hpp"
+#include "m8/ParamRange.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -212,8 +213,7 @@ static m8::Song buildProbeSong(
         ms.color = static_cast<uint8_t>(color);
         ms.degrade = 0;
         ms.reductor = 0;
-        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
-        ms.synth_params = makeSynthParams(instVol);
+        ms.synth_params = makeSynthParams(volume);
         song.instruments[0] = ms;
     } else if (instType == "sampler") {
         // Sampler probe (M8_HARDWARE_TEST_SPEC.md §9.1): our sampler is at hardware
@@ -233,8 +233,7 @@ static m8::Song buildProbeSong(
         smp.loop_start = 0;
         smp.length = 0xFF;      // whole sample
         smp.degrade = 0;
-        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
-        smp.synth_params = makeSynthParams(instVol);
+        smp.synth_params = makeSynthParams(volume);
         song.instruments[0] = smp;
     } else if (instType == "wavsynth") {
         m8::WavSynth ws;
@@ -247,8 +246,7 @@ static m8::Song buildProbeSong(
         ws.mult = 0x80;
         ws.warp = 0;
         ws.scan = 0;
-        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
-        ws.synth_params = makeSynthParams(instVol);
+        ws.synth_params = makeSynthParams(volume);
         song.instruments[0] = ws;
     } else if (instType == "fmsynth") {
         m8::FMSynth fm;
@@ -272,8 +270,7 @@ static m8::Song buildProbeSong(
             op.retrigger = 0;
             op.mod_a = op.mod_b = 0;
         }
-        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
-        fm.synth_params = makeSynthParams(instVol);
+        fm.synth_params = makeSynthParams(volume);
         song.instruments[0] = fm;
     } else if (instType == "hypersynth") {
         m8::HyperSynth hs;
@@ -293,8 +290,7 @@ static m8::Song buildProbeSong(
         hs.default_chord = {};
         hs.default_chord[0] = 60;
         for (auto& ch : hs.chords) ch = {};
-        int instVol = (instType == "sampler" && volume == 0xE0) ? 0x00 : volume;
-        hs.synth_params = makeSynthParams(instVol);
+        hs.synth_params = makeSynthParams(volume);
         song.instruments[0] = hs;
     } else {
         throw std::runtime_error("unknown instrument type: " + instType);
@@ -563,7 +559,7 @@ int main(int argc, char** argv) {
     std::string verifyAgainst;
     std::string inspectPath;
     int shape = 0, timbre = 0x40, color = 0x80;
-    int volume = 0xE0;
+    int volume = 0x7F;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
     float tempo = 120.0f;
     int tableTick = 0xFF;  // 0xFF = table disabled (default, matches prior behavior)
@@ -596,6 +592,14 @@ int main(int argc, char** argv) {
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
+    }
+
+    std::string rangeErr;
+    if (!m8::checkRange(m8::kInstrumentVolume, volume, rangeErr)) {
+        std::fprintf(stderr, "makeprobe: %s\n", rangeErr.c_str());
+        std::fprintf(stderr, "  Instrument volume is capped on hardware; a larger\n"
+                             "  value is misread by the device (0xE0 reads as 0x00).\n");
+        return 1;
     }
 
     if (!inspectPath.empty()) {

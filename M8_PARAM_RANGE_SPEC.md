@@ -54,7 +54,7 @@ nothing else in this spec should be built until it does.
 [x] R1  [SD] Capture the four missing device goldens
 [x] R2  Extract the observed ranges into a table
 [x] R3  ParamRange.h — single source of truth
-[ ] R4  Replace the five pasted checks with one validated clamp
+[x] R4  Replace the five pasted checks with one validated clamp
 [ ] R5  Audit every remaining literal makeprobe writes
 [ ] R6  Reconcile ahd.hold against the device golden
 [ ] R7  Range-check the mixer fields
