@@ -24,7 +24,7 @@ narrower than the step described, plus one process fix.
 [x] D5  Expand the sweep to per-field cursor states
 [x] D6  Add modal and transport states to the corpus
 [x] D7  Re-verify the ticked steps whose output nobody saw
-[ ] D8  Update docs for D1-D6
+[x] D8  Update docs for D1-D6
 ```
 
 Same discipline: one commit per step prefixed with the step id, tick in this file in

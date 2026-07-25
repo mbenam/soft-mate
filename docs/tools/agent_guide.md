@@ -96,15 +96,19 @@ When driving `.m8script` files via `m8_nav --script <path>`, the following verbs
 
 ---
 
-## 5. Exit Codes (`ExitCode` enum)
+## 5. Exit Codes (`ExitCode` enum) & Agent Decision Rules
 
-| Code | Name | Meaning |
-|---|---|---|
-| 0 | `SUCCESS` | Operation completed successfully |
-| 1 | `DEVICE_NOT_FOUND` | Serial port could not be opened |
-| 2 | `UNKNOWN_ARG` | Bad CLI flag or missing argument |
-| 3 | `UNSETTLED_DISPLAY` | Display unreadable / no characters decoded |
-| 4 | `COMMAND_FAILED` | Command or script assertion failed |
-| 5 | `TIMED_OUT` | Timed out waiting for display settle |
-| 6 | `AMBIGUOUS_MATCH` | Screen or file match was ambiguous |
-| 7 | `TARGET_UNREACHABLE` | Target screen, field, or directory path unreachable |
+Exit codes are append-only and stable. An agent driving `m8_nav` must handle exit codes according to these rules:
+
+| Code | Name | Meaning | Recommended Agent Action |
+|---|---|---|---|
+| 0 | `SUCCESS` | Operation completed successfully | Proceed to next step. |
+| 1 | `DEVICE_NOT_FOUND` | Serial port could not be opened | Check COM port wiring/connection. |
+| 2 | `UNKNOWN_ARG` | Bad CLI flag or `--settle-ms >= --max-ms` | Fix CLI arguments. |
+| 3 | `UNSETTLED_DISPLAY` | Display unreadable / no characters decoded | Retry read or increase `--settle-ms`. |
+| 4 | `COMMAND_FAILED` | Command or script assertion failed | Re-orient with `state` and retry once. |
+| 5 | `TIMED_OUT` | Timed out waiting for display settle | Increase `--max-ms` or retry. |
+| 6 | `AMBIGUOUS_MATCH` | Screen or file match was ambiguous | Inspect `matches` array in payload; refine search pattern or prompt user. |
+| 7 | `TARGET_UNREACHABLE` | Target screen, field, or directory path unreachable | Re-orient with `state` and retry once. |
+| 8 | `NOT_FOUND` | File absent on SD card or field absent on screen | **STOP AND ASK**: Do not retry automatically; report missing file/field to user. |
+| 9 | `NO_DATA` | Port opened but no display frames decoded | **CHECK POWER**: Device is powered off or serial stream is disconnected. |

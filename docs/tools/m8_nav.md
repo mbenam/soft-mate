@@ -105,16 +105,33 @@ clone-generated golden reference.
 
 ## Exit codes (`ExitCode` enum in `Result.h`)
 
+Exit codes are append-only and stable:
+
 | Value | Enum Name | Meaning |
 |---|---|---|
 | 0 | `SUCCESS` | Command completed successfully |
-| 1 | `DEVICE_NOT_FOUND` | Serial port open failure |
-| 2 | `UNKNOWN_ARG` | Bad CLI flag or missing argument |
-| 3 | `UNSETTLED_DISPLAY` | No characters decoded / screen unsettled |
+| 1 | `DEVICE_NOT_FOUND` | Serial port open failure (e.g. invalid COM port) |
+| 2 | `UNKNOWN_ARG` | Bad CLI flag, missing argument, or `--settle-ms >= --max-ms` |
+| 3 | `UNSETTLED_DISPLAY` | Display unsettled during capture |
 | 4 | `COMMAND_FAILED` | Command/script failed during execution |
 | 5 | `TIMED_OUT` | Timed out waiting for device response |
-| 6 | `AMBIGUOUS_MATCH` | Screen/field match was ambiguous or unknown |
+| 6 | `AMBIGUOUS_MATCH` | Screen match was ambiguous or `--find-file` returned multiple matches |
 | 7 | `TARGET_UNREACHABLE` | Target screen or field could not be reached |
+| 8 | `NOT_FOUND` | Genuine no-match: file not found on SD card or field absent |
+| 9 | `NO_DATA` | Serial port opened but no display frames decoded (device powered off) |
+
+## Output Envelope & Payload (`M8NAV_RESULT`)
+
+On exit, `m8_nav` emits a single structured JSON result line:
+
+```json
+M8NAV_RESULT {"ok":true,"code":0,"action":"find-file","screen":"LOADPROJECT","cursor_field":"PROBE","cursor_text":"PROBE.M8S","settled":true,"read_ms":475,"matches":["PROBE.M8S"],"dirs_visited":1,"truncated":false}
+```
+
+The envelope carries standard fields (`ok`, `code`, `action`, `message`, `screen`, `cursor_field`, `cursor_text`, `settled`, `read_ms`) plus free-form payload entries in `extra`:
+- `matches`: string array of matched file paths on `AMBIGUOUS_MATCH` or `--find-file`.
+- `dirs_visited`: number of directories traversed during search.
+- `truncated`: boolean indicating whether search depth/visit cap was hit.
 
 ## Examples
 
