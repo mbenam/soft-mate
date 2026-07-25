@@ -60,7 +60,7 @@ nothing else in this spec should be built until it does.
 [x] R7  Range-check the mixer fields
 [x] R8  Fix the clone's out-of-range defaults
 [x] R9  [HW] Re-verify amplitude parity across all five types
-[ ] R10 Record the rule and retire the contradiction
+[x] R10 Record the rule and retire the contradiction
 ```
 
 Same working discipline as the other specs: one commit per step prefixed with the

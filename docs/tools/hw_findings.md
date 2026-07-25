@@ -29,8 +29,9 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 
 ## P3 — Fix what the diff reveals (Sampler Volume Bug Root Cause)
 - **Prior Symptom:** Generated sampler probes played ~125× (~42 dB) quieter than natively-authored instruments.
-- **Root Cause:** `m8_makeprobe` passed `volume = 0xE0` (224) to `SynthParams`. For MacroSynth `0xE0` is nominal default volume, but on hardware Sampler instruments `0x00` represents 0 dB / full volume (`0xE0` caused severe attenuation).
-- **Fix:** Updated `main_makeprobe.cpp` to default `sp.volume = 0x00` (0 dB) for Sampler instruments.
+- **Root Cause & Range Rule:** `m8_makeprobe` passed `volume = 0xE0` (224) to `SynthParams`. The prior theory ("Sampler uses 0x00, MacroSynth default is 0xE0") was incorrect. **All 5 instrument types share a global UI volume ceiling of `0x7F` (127).** Writing `0xE0` exceeds the hardware range ceiling, causing the M8 device to treat instrument volume as `0x00` (silence).
+- **Fix:** Created `src/tools/m8/ParamRange.h` (single source of truth) and updated `main_makeprobe.cpp` to validate instrument volume against `kInstrumentVolume` ceiling (`0x7F` max).
+
 
 ---
 
