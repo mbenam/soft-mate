@@ -273,6 +273,29 @@ int main(int argc, char** argv) {
     drwav_free(pcmRef, nullptr);
     drwav_free(pcmTest, nullptr);
 
+    float peakRef = 0.0f;
+    for (float s : monoRef) peakRef = std::max(peakRef, std::fabs(s));
+    float peakTest = 0.0f;
+    for (float s : monoTest) peakTest = std::max(peakTest, std::fabs(s));
+
+    const float kMinPeakThresh = 0.005f;
+    if (peakRef < kMinPeakThresh) {
+        std::fprintf(stderr, "error: ref peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakRef, kMinPeakThresh);
+        return 2;
+    }
+    if (peakTest < kMinPeakThresh) {
+        std::fprintf(stderr, "error: test peak (%.5f) is below threshold (%.5f) — recording is silent\n", peakTest, kMinPeakThresh);
+        return 2;
+    }
+
+    const float normGainRef = (peakRef > 0.0f) ? (1.0f / peakRef) : 1.0f;
+    const float normGainTest = (peakTest > 0.0f) ? (1.0f / peakTest) : 1.0f;
+    const float normGainRefDb = 20.0f * std::log10(normGainRef);
+    const float normGainTestDb = 20.0f * std::log10(normGainTest);
+
+    for (float& s : monoRef) s *= normGainRef;
+    for (float& s : monoTest) s *= normGainTest;
+
     const size_t onsetRef  = align ? detectOnset(monoRef,  sr) : 0;
     const size_t onsetTest = align ? detectOnset(monoTest, sr) : 0;
 
@@ -335,10 +358,10 @@ int main(int argc, char** argv) {
         testDbAtPeak[i] = dbTest[peaks[i].bin];
 
     // ---- report ----
-    std::printf("ref:   %s  (%u ch, %u Hz, onset %.1f ms)\n",
-                refPath.c_str(), chRef, srRef, 1000.0 * onsetRef / sr);
-    std::printf("test:  %s  (%u ch, %u Hz, onset %.1f ms)\n",
-                testPath.c_str(), chTest, srTest, 1000.0 * onsetTest / sr);
+    std::printf("ref:   %s  (%u ch, %u Hz, onset %.1f ms, peak %.5f, norm %+0.2f dB)\n",
+                refPath.c_str(), chRef, srRef, 1000.0 * onsetRef / sr, peakRef, normGainRefDb);
+    std::printf("test:  %s  (%u ch, %u Hz, onset %.1f ms, peak %.5f, norm %+0.2f dB)\n",
+                testPath.c_str(), chTest, srTest, 1000.0 * onsetTest / sr, peakTest, normGainTestDb);
     std::printf("analysis window: %zu samples (%.1f ms), %.2f Hz/bin%s\n\n",
                 windowLen, 1000.0 * windowLen / sr, binHz, align ? "" : "  [--no-align]");
 
@@ -371,6 +394,10 @@ int main(int argc, char** argv) {
         std::fprintf(f, "  \"aligned\": %s,\n", align ? "true" : "false");
         std::fprintf(f, "  \"onset_ref_samples\": %zu,\n", onsetRef);
         std::fprintf(f, "  \"onset_test_samples\": %zu,\n", onsetTest);
+        std::fprintf(f, "  \"peak_ref_pre_norm\": %.5f,\n", peakRef);
+        std::fprintf(f, "  \"peak_test_pre_norm\": %.5f,\n", peakTest);
+        std::fprintf(f, "  \"norm_gain_ref_db\": %.4f,\n", normGainRefDb);
+        std::fprintf(f, "  \"norm_gain_test_db\": %.4f,\n", normGainTestDb);
         std::fprintf(f, "  \"fundamental_ref_hz\": %.3f,\n", fundRef);
         std::fprintf(f, "  \"fundamental_test_hz\": %.3f,\n", fundTest);
         std::fprintf(f, "  \"fundamental_ok\": %s,\n", fundOk ? "true" : "false");

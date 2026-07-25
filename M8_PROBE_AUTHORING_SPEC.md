@@ -106,7 +106,7 @@ Same discipline as `M8_DRIVER_SPEC.md`:
 [ ] P3   Fix what the diff reveals
 [x] P4   Replace verifyRoundTrip with cross-oracle validation
 [x] P5   Resolve the AHD envelope contradiction
-[ ] P6   Normalize the capture-vs-render comparison
+[x] P6   Normalize the capture-vs-render comparison
 [ ] P7   Re-measure the sampler amplitude bug
 [ ] P8   Note-range sanity + doc corrections
 ```
