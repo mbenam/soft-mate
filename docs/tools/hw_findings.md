@@ -14,3 +14,13 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 
 ### 2. Device Hardware Status
 - Physical M8 hardware re-enumeration baseline measurement requires hardware attached over USB (COM port + M8 USB audio endpoint).
+
+---
+
+## P5 — Resolve the AHD envelope contradiction
+
+### Envelope Hold Duration Analysis
+- **Tempo Baseline:** 120 BPM with default 6 ticks per step => 1 tick = 41.67 ms (1000 samples at 48 kHz).
+- **Hold Calculation:** `hold = 0xFF` (255 ticks) yields ~10.6 seconds of sustained peak volume.
+- **Resolution:** Updated `m8_makeprobe` to set `ahd.hold = 0xFF` (max hold), guaranteeing sustained full-scale amplitude over the entire capture/analysis window (1.5 - 5.0 s) with no early decay blip.
+

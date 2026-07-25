@@ -181,16 +181,14 @@ static m8::Song buildProbeSong(
         sp.mixer_delay = 0;
         sp.mixer_reverb = 0;
 
-        // Mod slot 0: AHD -> VOLUME (dest=1), full amount, long hold+decay.
-        // At 120 BPM, 1 tick = 1000 samples. hold=0x80=128 ticks, decay=0x80=128 ticks,
-        // so the note is at full volume ~2.67 s then decays ~2.67 s (~5 s total) — ample
-        // for the >= 1.5 s analysis window, and longer than the phrase so retriggers are
-        // seamless.
+        // Mod slot 0: AHD -> VOLUME (dest=1), full amount, maximum hold (0xFF=255 ticks).
+        // At 120 BPM (6 ticks/step), 1 tick = 41.67 ms. hold=0xFF provides ~10.6 seconds
+        // of sustained peak volume, guaranteeing a steady tone over the full capture window.
         m8::AHDEnv ahd;
         ahd.dest = 1;           // VOLUME
         ahd.amount = 0xFF;      // full positive
         ahd.attack = 0x01;      // fast attack
-        ahd.hold = 0x80;        // long hold
+        ahd.hold = 0xFF;        // max hold (~10.6s at 120 BPM)
         ahd.decay = 0x80;       // long decay
         sp.mods[0] = ahd;
 

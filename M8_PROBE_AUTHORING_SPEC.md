@@ -105,7 +105,7 @@ Same discipline as `M8_DRIVER_SPEC.md`:
 [x] P2   Byte-diff harness: generated vs device golden
 [ ] P3   Fix what the diff reveals
 [x] P4   Replace verifyRoundTrip with cross-oracle validation
-[ ] P5   Resolve the AHD envelope contradiction
+[x] P5   Resolve the AHD envelope contradiction
 [ ] P6   Normalize the capture-vs-render comparison
 [ ] P7   Re-measure the sampler amplitude bug
 [ ] P8   Note-range sanity + doc corrections
