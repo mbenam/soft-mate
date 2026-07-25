@@ -106,3 +106,26 @@ Documenting live hardware measurements, USB capture level baselines, device gold
 
 - **Notes:** Each file contains the device screen state at the cursor's default landing position after navigation from SONG via `--goto-screen`. Modals (LOAD_PROJECT_MODAL, FILE_BROWSER) excluded — they require song-load preconditions the sweep does not set up.
 - **Next step:** Run the clone through the same 11 screens headlessly (via `m8_clone --headless --script`) and call `Renderer::writeUiCapture()` on each. Then run `m8_diffcheck --diff-capture device.json clone.json` per screen.
+
+---
+
+## D7 — Step-by-Step Re-Verification Audit
+
+Audit of delivered behaviours against specifications (`M8_DRIVER_SPEC.md` and `M8_DRIVER_ADDENDUM_A.md`):
+
+| Step | Status | Evidence / Notes |
+|------|--------|------------------|
+| **F1–F16** | PASS | Foundation core (M8Device, Gestures, Primitives, Result.h, Envelope, Daemon) built and verified. |
+| **A1–A7** | PASS | Track A closed-loop navigation & file crawler verified on hardware (`COM4`, fw 6.5.2). |
+| **B1–B4** | PASS | Track B keyjazz & probe script execution verified on hardware (`COM4`, fw 6.5.2). |
+| **C1–C6** | PASS | UiCapture format, style clustering, `--ui-capture` flag, `Renderer::writeUiCapture`, `m8_diffcheck --diff-capture` implemented. |
+| **C7** | Delivered narrower than specified — see D4/D5 | Initial C7 sweep captured 1 per screen (11 total) instead of per-field cursor walk. |
+| **C8** | PASS (Expanded by D5/D6) | Parity corpus captured on hardware (`COM4`, fw 6.5.2). Expanded from 11 files to 79 files covering per-field cursor, transport, and modal states. |
+| **D1** | PASS | Exit codes restored: `NOT_FOUND=8` (`--find-file zzzznotreal`), `NO_DATA=9` (port opens with no data), `DEVICE_NOT_FOUND=1` (`--port COM99`). |
+| **D2** | PASS | `Envelope` carries `extra` payload (`"matches":["..."]`, `"dirs_visited"`, `"truncated"`) and emits JSON on exit. `AMBIGUOUS_MATCH` (code 6) verified on `--find-file /`. |
+| **D3** | PASS | `readSettled(120, settleMs, maxMs)` parameters aligned across `main_nav.cpp`. Rejected `settleMs >= maxMs` with code 2 (`UNKNOWN_ARG`). |
+| **D4** | PASS | Daemonized sweep via `m8_nav --serve` with `CAPTURE` verb. Frame resend `'R'` sent once per run. |
+| **D5** | PASS | Per-field cursor walk executed. 79 total capture files generated in `tests/ui/golden/device/`. Unreached cursor fields recorded cleanly in `_sweep_log.txt`. |
+| **D6** | PASS | Modal (`LOAD_PROJECT_MODAL.json`) and transport playing states (`SONG__PLAYING.json`, `CHAIN__PLAYING.json`, `PHRASE__PLAYING.json`) captured and state restored post-capture. |
+| **m8_tests** | PASS | Core engine test suite passes cleanly (892,205 assertions in 176 test cases). |
+

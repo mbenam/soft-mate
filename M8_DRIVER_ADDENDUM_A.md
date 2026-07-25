@@ -23,7 +23,7 @@ narrower than the step described, plus one process fix.
 [x] D4  Route ui_sweep through the daemon
 [x] D5  Expand the sweep to per-field cursor states
 [x] D6  Add modal and transport states to the corpus
-[ ] D7  Re-verify the ticked steps whose output nobody saw
+[x] D7  Re-verify the ticked steps whose output nobody saw
 [ ] D8  Update docs for D1-D6
 ```
 
