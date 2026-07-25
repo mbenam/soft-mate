@@ -493,6 +493,7 @@ void M8Device::close() {
 }
 
 void M8Device::readInto(int minMs, int settleMs, int maxMs) {
+    m_lastRead = ReadStats{};
     uint8_t buf[4096];
     std::vector<uint8_t> frame;
     auto start = std::chrono::steady_clock::now();
@@ -503,14 +504,19 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
         if (n > 0) {
             lastData = now;
             for (size_t i = 0; i < n; ++i)
-                if (m_slip.feed(buf[i], frame)) m_grid.handleFrame(frame);
+                if (m_slip.feed(buf[i], frame)) {
+                    m_grid.handleFrame(frame);
+                    ++m_lastRead.framesSeen;
+                }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         int sinceStart = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
         int sinceData  = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(now - lastData).count());
-        if (sinceStart >= maxMs) break;
-        if (sinceStart >= minMs && sinceData >= settleMs) break;
+        m_lastRead.elapsedMs = sinceStart;
+        m_lastRead.quietMs   = sinceData;
+        if (sinceStart >= maxMs) { m_lastRead.timedOut = true; break; }
+        if (sinceStart >= minMs && sinceData >= settleMs) { m_lastRead.settled = true; break; }
     }
 }
 
@@ -602,6 +608,10 @@ void M8Device::step(int settleMs, int maxMs) {
 
 void M8Device::readScreen(int settleMs, int maxMs) {
     read(settleMs, maxMs);
+}
+
+void M8Device::readSettled(int minMs, int settleMs, int maxMs) {
+    readInto(minMs, settleMs, maxMs);
 }
 
 } // namespace dev

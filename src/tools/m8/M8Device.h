@@ -148,6 +148,17 @@ struct SerialPort {
 
 // ---- M8Device -------------------------------------------------------------
 
+// Telemetry for the most recent read. Lets callers (and agents) distinguish
+// "the screen went quiet and I read a settled frame" from "I gave up on a
+// timeout and this grid may be mid-repaint".
+struct ReadStats {
+    int  elapsedMs   = 0;      // wall time spent in the read
+    int  quietMs     = 0;      // ms since the last byte arrived, at exit
+    int  framesSeen  = 0;      // complete SLIP frames decoded this read
+    bool settled     = false;  // true = exited via the settle branch
+    bool timedOut    = false;  // true = exited via the maxMs branch
+};
+
 class M8Device {
 public:
     M8Device() = default;
@@ -194,8 +205,15 @@ public:
     // Read a settled screen without pressing anything.
     void readScreen(int settleMs = 250, int maxMs = 2000);
 
+    // Explicit 3-arg read. Prefer this over readScreen() in new code: the
+    // 2-arg form's (settleMs, maxMs) order has been misread at call sites.
+    // If maxMs <= settleMs the settle branch can never fire and the read
+    // degenerates to a fixed maxMs delay.
+    void readSettled(int minMs, int settleMs, int maxMs);
+
     // Access the underlying grid.
     const ScreenGrid& grid() const { return m_grid; }
+    const ReadStats& lastRead() const { return m_lastRead; }
 
 private:
     void readInto(int minMs, int settleMs, int maxMs);
@@ -203,6 +221,7 @@ private:
     SerialPort m_port;
     SlipDecoder m_slip;
     ScreenGrid m_grid;
+    ReadStats m_lastRead;
     bool m_open = false;
 };
 
