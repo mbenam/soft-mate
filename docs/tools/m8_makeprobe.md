@@ -80,9 +80,9 @@ the whole sweep aborts (exit 1) on the first verification failure.
   `longest_silence` gate). The AHD envelope's long hold (below) means each retrigger lands before
   the previous note decays, so it reads as one continuous tone.
 - **A volume-modulation envelope is attached to mod slot 0**: `AHDEnv{dest=1 (VOLUME), amount=0xFF,
-  attack=0x01, hold=0x80, decay=0x80}` — at 120 BPM (1 tick = 1000 samples) this holds full volume
-  for ~2.67s then decays over ~2.67s (~5s total), comfortably covering the ≥1.5s analysis window
-  `M8_HARDWARE_TEST_SPEC.md` §4 requires. **This envelope was hardware-tested 2026-07-18 and found
+  attack=0x01, hold=0x80, decay=0x80}` — at 120 BPM (1 tick = 1000 samples) intended to hold full volume
+  for ~2.67s then decay over ~2.67s (~5s total; unverified, see `hw_findings.md` §V3/§R6), covering
+  the ≥1.5s analysis window `M8_HARDWARE_TEST_SPEC.md` §4 requires. **This envelope was hardware-tested 2026-07-18 and found
   to have zero measurable effect on output volume** when the same configuration was replicated on
   a natively-authored instrument — so it is *not* what's causing the near-silent-probe bug
   described below; whatever is causing that is still unknown.

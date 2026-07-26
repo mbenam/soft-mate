@@ -184,7 +184,7 @@ Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
 | 179 | `sp.mixer_pan` | `0x80` | Valid value | Centered pan (range [0x00, 0xFF]) |
 | 180 | `sp.mixer_dry` | `0xC0` | Valid value | Nominal 0 dB dry mix (range [0x00, 0xE0], §V4 confirmed max 0xE0) |
 | 189 | `ahd.amount` | `0xFF` | Valid value | Full positive mod amount (matches golden) |
-| 191 | `ahd.hold` | `0xFF` | Valid value | Sustained hold (matches golden, see §V3) |
+| 191 | `ahd.hold` | `0xFF` | Valid value | Sustained hold (makeprobe writes 0xFF vs golden's 0x80; unvalidated) |
 | 192 | `ahd.decay` | `0x80` | Valid value | Nominal decay (matches golden) |
 | 201 | `sp.associated_eq` | `0xFF` | Sentinel | No associated EQ marker |
 | 234 | `smp.length` | `0xFF` | Valid value | Whole sample playback length marker |
@@ -196,6 +196,10 @@ Audit of hard-coded bytes written by `src/tools/main_makeprobe.cpp`:
 ---
 
 ## R6 — Reconcile ahd.hold Envelope Measurement
+
+> **UNVERIFIED.** Measurements in this section show peak 1.000 across
+> all windows, indicating a saturated capture that cannot distinguish
+> the compared configurations. Superseded by §X6 when run.
 
 Comparison of amplitude envelope stability across capture window for `ahd.hold = 0x80` vs `0xFF`:
 

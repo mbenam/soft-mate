@@ -41,7 +41,7 @@ rules, honesty rules, hardware-constant rules), `status.md` (current state).
 full-scale sample confirmed loaded on-device; the M8 `OUTPUT VOL` does not affect the USB tap, so
 the suspect is the host's **Windows recording level** for the M8 input (reset on USB
 re-enumeration). Also, parity probes need a **sustaining** amp — the current AHD→VOLUME mod decays
-to zero, giving a ~0.5 s blip, not a steady tone to analyse [SUPERSEDED by `docs/tools/hw_findings.md` §P1 and `docs/tools/m8_makeprobe.md`: hardware measurements confirmed `AHDEnv{hold=0x80, decay=0x80}` holds full volume for ~2.67s then decays over ~2.67s (~5s total), sustaining over the analysis window]. Both are acceptance-gate concerns:
+to zero, giving a ~0.5 s blip, not a steady tone to analyse [DISPUTED — no verified measurement. §V3 measured a sustaining envelope but its records failed `--verify-record` and are quarantined; §R6's flat 1.000 readings indicate a saturated capture. The ~2.67s figure in `main_makeprobe.cpp` is an assumption, not a measurement. Pending X6 in `specs/M8_EVIDENCE_REPAIR_SPEC.md`.]. Both are acceptance-gate concerns:
 **audio parity has been demoted from a development driver to a later acceptance gate** — synths
 are now implemented from their reference DSP and validated offline (see `status.md` Roadmap), so
 these do not currently block feature work.
