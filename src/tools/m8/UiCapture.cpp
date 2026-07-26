@@ -155,6 +155,102 @@ bool fromJson(const std::string& text, UiCapture& out, std::string& err) {
     out.settled = findKeyBool("settled");
     out.themeId = findKeyString("theme_id");
 
+    // Parse cells array
+    {
+        size_t cb = text.find("\"cells\":");
+        if (cb != std::string::npos) {
+            size_t arrStart = text.find('[', cb);
+            if (arrStart != std::string::npos) {
+                size_t arrEnd = text.find(']', arrStart);
+                if (arrEnd != std::string::npos) {
+                    std::string arr = text.substr(arrStart + 1, arrEnd - arrStart - 1);
+                    size_t pos = 0;
+                    while (pos < arr.size()) {
+                        size_t objStart = arr.find('{', pos);
+                        if (objStart == std::string::npos) break;
+                        size_t objEnd = arr.find('}', objStart);
+                        if (objEnd == std::string::npos) break;
+                        std::string obj = arr.substr(objStart + 1, objEnd - objStart - 1);
+
+                        UiCell cell;
+                        auto getField = [&](const std::string& key) -> std::string {
+                            size_t p = obj.find("\"" + key + "\":");
+                            if (p == std::string::npos) return "";
+                            size_t v = p + key.size() + 3;
+                            if (v >= obj.size()) return "";
+                            if (obj[v] == '"') {
+                                size_t e = obj.find('"', v + 1);
+                                return (e != std::string::npos) ? obj.substr(v + 1, e - v - 1) : "";
+                            }
+                            size_t e = obj.find_first_of(",}", v);
+                            return (e != std::string::npos) ? obj.substr(v, e - v) : obj.substr(v);
+                        };
+
+                        auto toInt = [](const std::string& s, int def = 0) -> int {
+                            try { return std::stoi(s); } catch (...) { return def; }
+                        };
+                        std::string chStr = getField("ch");
+
+                        cell.col = toInt(getField("col"));
+                        cell.row = toInt(getField("row"));
+                        cell.ch = chStr.empty() ? ' ' : chStr[0];
+                        cell.fgStyle = toInt(getField("fg"), -1);
+                        cell.bgStyle = toInt(getField("bg"), -1);
+                        out.cells.push_back(cell);
+
+                        pos = objEnd + 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Parse rects array
+    {
+        size_t rb = text.find("\"rects\":");
+        if (rb != std::string::npos) {
+            size_t arrStart = text.find('[', rb);
+            if (arrStart != std::string::npos) {
+                size_t arrEnd = text.find(']', arrStart);
+                if (arrEnd != std::string::npos) {
+                    std::string arr = text.substr(arrStart + 1, arrEnd - arrStart - 1);
+                    size_t pos = 0;
+                    while (pos < arr.size()) {
+                        size_t objStart = arr.find('{', pos);
+                        if (objStart == std::string::npos) break;
+                        size_t objEnd = arr.find('}', objStart);
+                        if (objEnd == std::string::npos) break;
+                        std::string obj = arr.substr(objStart + 1, objEnd - objStart - 1);
+
+                        UiRect rect;
+                        auto getField = [&](const std::string& key) -> std::string {
+                            size_t p = obj.find("\"" + key + "\":");
+                            if (p == std::string::npos) return "";
+                            size_t v = p + key.size() + 3;
+                            if (v >= obj.size()) return "";
+                            size_t e = obj.find_first_of(",}", v);
+                            return (e != std::string::npos) ? obj.substr(v, e - v) : obj.substr(v);
+                        };
+                        auto toInt = [](const std::string& s, int def = 0) -> int {
+                            try { return std::stoi(s); } catch (...) { return def; }
+                        };
+
+                        rect.col = toInt(getField("col"));
+                        rect.row = toInt(getField("row"));
+                        rect.offsetX = toInt(getField("off_x"));
+                        rect.offsetY = toInt(getField("off_y"));
+                        rect.wPx = toInt(getField("w_px"));
+                        rect.hPx = toInt(getField("h_px"));
+                        rect.style = toInt(getField("style"), -1);
+                        out.rects.push_back(rect);
+
+                        pos = objEnd + 1;
+                    }
+                }
+            }
+        }
+    }
+
     return true;
 }
 

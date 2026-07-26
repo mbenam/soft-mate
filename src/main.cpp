@@ -792,6 +792,7 @@ int main(int argc, char* argv[]) {
                 std::string* sampRoot;
                 CommandRing<EngineCommand, 1024>* cmdRing;
                 bool* audioActive;
+                std::string currentScreenName;
             };
             static ScriptCtxHelper helper; // static so C function pointers can access it
             helper.renderer   = &renderer;
@@ -808,6 +809,29 @@ int main(int argc, char* argv[]) {
             helper.sampRoot   = &sampleRoot;
             helper.cmdRing    = &commandRing;
             helper.audioActive = &audioActive;
+
+            // Compute current screen name for ui_capture
+            {
+                auto viewTypeToStr = [](m8::ui::ViewType v) -> const char* {
+                    switch (v) {
+                        case m8::ui::ViewType::SONG: return "SONG";
+                        case m8::ui::ViewType::CHAIN: return "CHAIN";
+                        case m8::ui::ViewType::PHRASE: return "PHRASE";
+                        case m8::ui::ViewType::INSTRUMENT: return "INST.";
+                        case m8::ui::ViewType::TABLE: return "TABLE";
+                        case m8::ui::ViewType::PROJECT: return "PROJECT";
+                        case m8::ui::ViewType::GROOVE: return "GROOVE";
+                        case m8::ui::ViewType::MIXER: return "MIXER";
+                        case m8::ui::ViewType::INST_MOD: return "INST. MODS";
+                        case m8::ui::ViewType::EFFECTS: return "EFFECT SETTINGS";
+                        case m8::ui::ViewType::SCALE: return "SCALE";
+                        case m8::ui::ViewType::INST_POOL: return "INSTRUMENT POOL";
+                        case m8::ui::ViewType::FILE_BROWSER: return "FILE BROWSER";
+                        default: return "UNKNOWN";
+                    }
+                };
+                helper.currentScreenName = viewTypeToStr(viewManager.getCurrentView());
+            }
 
             ScriptAppContext sctx;
             sctx.userData = &helper;
@@ -855,6 +879,7 @@ int main(int argc, char* argv[]) {
                 m8::ui::project::setSampleRoot(root);
             };
             sctx.audioActive = helper.audioActive;
+            sctx.currentScreenName = &helper.currentScreenName;
             sctx.renderOffline = [](int seconds, const std::string& path, void* u) -> bool {
                 auto* h = static_cast<ScriptCtxHelper*>(u);
                 if (seconds <= 0) return false;

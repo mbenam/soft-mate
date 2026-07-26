@@ -1,0 +1,7 @@
+# ui_capture_smoke.m8script — boot, navigate to MIXER, emit a UiCapture JSON.
+# Run:
+#   build\Release\m8_clone.exe --script tests\ui\scripts\ui_capture_smoke.m8script --headless --out-dir test_out_ui\ui_capture
+
+goto MIXER
+wait 5
+ui_capture MIXER

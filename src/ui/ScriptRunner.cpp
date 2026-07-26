@@ -465,6 +465,16 @@ bool ScriptRunner::parseLine(const std::string& raw, int lineNum, Command& out) 
         out.arg  = rest;
         return true;
     }
+    if (verb == "ui_capture") {
+        if (rest.empty()) {
+            std::cerr << "Script parse error line " << lineNum
+                      << ": ui_capture needs a <name>\n";
+            return false;
+        }
+        out.type = CmdType::UI_CAPTURE;
+        out.arg  = rest;
+        return true;
+    }
 
     // ── assert commands ────────────────────────────────────────────────────
     // Declare assert_screen locals here (outside the if-block) so that
@@ -940,6 +950,7 @@ bool ScriptRunner::onFrameStart() {
     case CmdType::ASSERT_FIELD:
     case CmdType::ASSERT_WAV:
     case CmdType::ASSERT_MATCHES_GOLDEN:
+    case CmdType::UI_CAPTURE:
         // These are handled in onFrameEnd or directly here
         break;
     }
@@ -1062,6 +1073,20 @@ bool ScriptRunner::onFrameEnd(const ScriptAppContext& ctx) {
                     SDL_DestroySurface(surf);
                 }
             }
+            ++m_cmdIndex; progress = true;
+            break;
+        }
+
+        // ── UI CAPTURE (UiCapture JSON) ────────────────────────────────────
+        case CmdType::UI_CAPTURE: {
+            std::string path = outPath(c.arg);
+            if (!path.empty() && path.back() != '.' &&
+                path.find(".json") == std::string::npos)
+                path += ".json";
+            std::string screenName = (ctx.currentScreenName && !ctx.currentScreenName->empty())
+                                     ? *ctx.currentScreenName : "UNKNOWN";
+            ctx.renderer->writeUiCapture(path, screenName);
+            std::printf("ui_capture: wrote %s (screen=%s)\n", path.c_str(), screenName.c_str());
             ++m_cmdIndex; progress = true;
             break;
         }

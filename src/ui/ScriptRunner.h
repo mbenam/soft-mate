@@ -20,6 +20,7 @@ struct ScriptAppContext {
     void (*setSampleRoot)(const std::string& root, void* ctx) = nullptr;
     bool (*renderOffline)(int seconds, const std::string& path, void* ctx) = nullptr;
     bool* audioActive = nullptr;  // points at main.cpp's stream-null flag
+    const std::string* currentScreenName = nullptr;  // populated by main.cpp for ui_capture
     // Track-0 playhead observability (M8_APP_AUTOMATION_SPEC.md Tier 2). Reads the
     // engine's wait-free packed playhead atomic directly (Engine::getPlayheadState /
     // getPlayhead) -- NOT the shadow grid, which can't see the playhead line
@@ -73,7 +74,9 @@ private:
         // Tier 3: author-and-verify vocabulary.
         ASSERT_FIELD, GOTO_SCREEN, ASSERT_WAV,
         // Tier 5: golden snapshot testing.
-        ASSERT_MATCHES_GOLDEN
+        ASSERT_MATCHES_GOLDEN,
+        // C5: UiCapture JSON export (device-vs-clone comparison).
+        UI_CAPTURE
     };
 
     struct Command {
