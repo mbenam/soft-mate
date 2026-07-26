@@ -336,8 +336,144 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 - **Date:** 2026-07-26
 
 
+## UI-2 — Same song on both sides
+
+Before comparing device vs clone MIXER captures, both must show the same song
+and the same screen. Without this, diffs are noise.
+
+### Procedure
+
+1. **Pick a known song file.** Use `songs/sunrise.m8s` or `songs/opening.m8s`.
+   Both are committed to the repo.
+
+2. **Load on the clone:**
+   ```
+   $script = @"
+   load songs/sunrise.m8s
+   goto MIXER
+   ui_capture clone_MIXER
+   "@
+   $script | Out-File -FilePath "test_out_ui\cap_mixer.m8script" -Encoding utf8
+   build\Release\m8_clone.exe --script test_out_ui\cap_mixer.m8script --headless --out-dir test_out_ui
+   ```
+
+3. **Load on the device** (requires hardware connected):
+   ```
+   build\Release\m8_nav.exe --serve daemon --serial COM<port>
+   ```
+   In another terminal:
+   ```
+   .\tools\ui_sweep.ps1 -Port COM<port> -Song "songs/sunrise.m8s"
+   ```
+   Or manually: load the same `.m8s` file on the device, navigate to MIXER,
+   then run `tools\ui_capture.ps1 -Port COM<port> -Screen MIXER`.
+
+4. **Verify match.** Both captures must show the same:
+   - Tempo value (e.g. `T>120`)
+   - Track volume hex values (e.g. `E0`)
+   - Output volume label (e.g. `98`)
+   - Track labels (e.g. `CH`, `DE`, `RE`)
+
+5. **Render side-by-side.** Use `tools/render_ui.py` or the PowerShell grids
+   in `test_out_ui/` to produce 40-column text representations.
+
+### Why this matters
+
+The device MIXER golden (`tests/ui/golden/device/MIXER.json`, 767 cells) was
+captured with an unknown song (tempo 120, track vol `E0`). The clone's default
+demo song (tempo 128, output vol `98`) produces a visually different MIXER
+screen. Cell counts and layout positions cannot be meaningfully compared until
+both sides render the same content.
+
+### Current captures
+
+| Source | File | Cells | Tempo | Output vol | Track labels |
+|--------|------|-------|-------|------------|--------------|
+| Device | `tests/ui/golden/device/MIXER.json` | 767 | T>120 | 98 | CH DE RE |
+| Clone  | `test_out_ui/clone_MIXER.json`      | 205 | T>128 | 98 | CH DE RE |
+
+**Note:** The clone capture above uses the default demo song, not the device's
+song. To do a valid comparison, re-run steps 2-3 with the same `.m8s` file on
+both sides.
+
+- **Date:** 2026-07-26
 
 
+## UI-3a — 205 vs 767 cells: missing horizontal separator bars
+
+The device MIXER emits 767 cells (143 glyphs + 624 bg-only). The clone emits
+205 cells (116 glyphs + 89 bg-only). The 535-cell gap is almost entirely
+background-only cells that the device draws but the clone does not.
+
+### Root cause
+
+`MixerScreen.cpp` draws:
+1. Static text via `drawString()` / `drawChar()` — stamps `ch` and `fg` but
+   **not** `bg`. These cells appear in the capture only if they happen to
+   overlap a cell already written by `fillRectPixel`.
+2. Vertical volume bars via `DrawVerticalBar()` → `fillRectPixel()` — stamps
+   `bg`, `fg`, and increments `writeCount`. These cells appear correctly.
+
+The device MIXER also draws **full-width horizontal separator bars** —
+rows 1, 2, 4 (40 cyan-bg cells each) and partial fills on rows 3, 5–23.
+The clone has no code path to render these bars. `fillRectPixel()` itself
+works correctly (confirmed: it writes `m_vram[cy][cx].bg` and increments
+`writeCount`), but it is never called for the horizontal bars.
+
+### Device MIXER bg-only cells by row
+
+| Row | bg-only cells | Description |
+|-----|--------------|-------------|
+| 1 | 40 | Full-width cyan bar |
+| 2 | 40 | Full-width cyan bar |
+| 3 | 30 | Partial cyan (title region) |
+| 4 | 40 | Full-width cyan bar |
+| 5 | 22 | Partial fills |
+| 6 | 40 | Full-width cyan bar |
+| 7–12 | 18 each | Track label backgrounds |
+| 13–23 | 17–40 each | Scattered fills |
+
+### Fix
+
+`MixerScreen.cpp` needs a new drawing pass (before the text/bar pass) that
+renders the horizontal separator bars. This is a layout-only change — no
+engine or data-model work required.
+
+- **Date:** 2026-07-26
+
+
+## UI-3b — Vertical row offset (3 rows)
+
+The device MIXER title "MIXER" appears at row 3; the clone's title is at
+row 0. The clone is shifted 3 rows higher.
+
+### Side-by-side (40-col text grids)
+
+See `test_out_ui/MIXER_side_by_side.txt`. Key landmarks:
+
+| Content | Device row | Clone row | Offset |
+|---------|-----------|-----------|--------|
+| "MIXER" title | 3 | 0 | -3 |
+| "OUTPUT VOL" | 5 | 3 | -2 |
+| Track bars start | 7 | 9 | +2 |
+| Track vol hex | 12 | 18 | +6 |
+| "MX DE RE" labels | 18 | 20 | +2 |
+
+### Cause
+
+The device uses pitch_y=10 (24 visible rows in 240px). The clone uses
+pitch_y=8 (30 visible rows). The device reserves rows 0–2 as top chrome
+(maybe nav/status), while the clone puts the title at row 0. The layouts
+are proportionally different — the offset is not a uniform shift but a
+consequence of different vertical density.
+
+### Impact
+
+Once Task 2's missing bars are added, the vertical alignment should be
+re-measured. The current offset may shrink or change character once both
+screens render the same content.
+
+- **Date:** 2026-07-26
 
 
 
