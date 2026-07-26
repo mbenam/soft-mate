@@ -37,7 +37,7 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
         {"OUTPUT VOL", 0, 3, "LABEL_LITE", "", "static", false, 0},
 
         // Master Sends
-        {"CH", 0, 20, "LABEL_DIM", "", "static", false, 0},
+        {"MX", 0, 20, "LABEL_DIM", "", "static", false, 0},
         {"DE", 4, 20, "LABEL_DIM", "", "static", false, 0},
         {"RE", 8, 20, "LABEL_DIM", "", "static", false, 0},
 
@@ -45,7 +45,7 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
         {"--", 16, 19, "LABEL_DIM", "", "static", false, 0},
         {"INPUT", 12, 20, "LABEL_DIM", "", "static", false, 0},
         {"USB", 18, 20, "LABEL_DIM", "", "static", false, 0},
-        {"CH", 9, 21, "LABEL_DIM", "", "static", false, 0},
+        {"MX", 9, 21, "LABEL_DIM", "", "static", false, 0},
         {"DE", 9, 22, "LABEL_DIM", "", "static", false, 0},
         {"RE", 9, 23, "LABEL_DIM", "", "static", false, 0},
 
