@@ -1,0 +1,4 @@
+# cap_phrase_matched.m8script — load probe and capture PHRASE screen
+load probe_selftest.m8s
+goto PHRASE
+ui_capture clone_PHRASE_matched
