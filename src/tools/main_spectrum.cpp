@@ -116,7 +116,197 @@ static void writeRecordFile(const std::string& recordPath,
 
 static void printUsage() {
     std::fprintf(stderr,
-        "usage: m8_spectrum --ref <ref.wav> --test <test.wav> [--no-align] [--json <out.json>] [--record <rec.json>]\n");
+        "usage: m8_spectrum --ref <ref.wav> --test <test.wav> [--no-align] [--json <out.json>] [--record <rec.json>]\n"
+        "       m8_spectrum --verify-record <record.json>\n");
+}
+
+static int runVerifyRecord(const std::string& recordPath) {
+    std::ifstream f(recordPath);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "error: cannot open record file '%s'\n", recordPath.c_str());
+        return 2;
+    }
+    std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+
+    struct InputRecord {
+        std::string key;
+        std::string path;
+        size_t bytes = 0;
+        std::string hash;
+    };
+    std::vector<InputRecord> inputs;
+
+    // Find "inputs" section
+    size_t inputsPos = json.find("\"inputs\"");
+    if (inputsPos != std::string::npos) {
+        size_t braceStart = json.find('{', inputsPos);
+        if (braceStart != std::string::npos) {
+            int depth = 0;
+            size_t braceEnd = std::string::npos;
+            for (size_t i = braceStart; i < json.size(); ++i) {
+                if (json[i] == '{') depth++;
+                else if (json[i] == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        braceEnd = i;
+                        break;
+                    }
+                }
+            }
+            if (braceEnd != std::string::npos) {
+                std::string inputsBlock = json.substr(braceStart, braceEnd - braceStart + 1);
+
+                // Find all "path" occurrences in inputsBlock
+                size_t pPos = 0;
+                while ((pPos = inputsBlock.find("\"path\"", pPos)) != std::string::npos) {
+                    // Find object start '{' before pPos
+                    size_t objStart = inputsBlock.rfind('{', pPos);
+                    // Find object end '}' after pPos
+                    size_t objEnd = inputsBlock.find('}', pPos);
+
+                    if (objStart != std::string::npos && objEnd != std::string::npos && objStart < objEnd) {
+                        std::string objText = inputsBlock.substr(objStart, objEnd - objStart + 1);
+
+                        // Find key name before objStart
+                        std::string key = "input";
+                        size_t keyQuoteEnd = inputsBlock.rfind('"', objStart);
+                        if (keyQuoteEnd != std::string::npos && keyQuoteEnd > 0) {
+                            size_t keyQuoteStart = inputsBlock.rfind('"', keyQuoteEnd - 1);
+                            if (keyQuoteStart != std::string::npos) {
+                                key = inputsBlock.substr(keyQuoteStart + 1, keyQuoteEnd - keyQuoteStart - 1);
+                            }
+                        }
+
+                        InputRecord rec;
+                        rec.key = key;
+
+                        // Extract path
+                        size_t pathValStart = objText.find(':', objText.find("\"path\""));
+                        if (pathValStart != std::string::npos) {
+                            size_t q1 = objText.find('"', pathValStart);
+                            if (q1 != std::string::npos) {
+                                std::string val;
+                                bool escaped = false;
+                                for (size_t i = q1 + 1; i < objText.size(); ++i) {
+                                    char c = objText[i];
+                                    if (escaped) {
+                                        if (c == '\\' || c == '"') val.push_back(c);
+                                        else if (c == 'n') val.push_back('\n');
+                                        else if (c == 't') val.push_back('\t');
+                                        else val.push_back(c);
+                                        escaped = false;
+                                    } else if (c == '\\') {
+                                        escaped = true;
+                                    } else if (c == '"') {
+                                        break;
+                                    } else {
+                                        val.push_back(c);
+                                    }
+                                }
+                                rec.path = val;
+                            }
+                        }
+
+                        // Extract bytes
+                        size_t bytesValStart = objText.find("\"bytes\"");
+                        if (bytesValStart != std::string::npos) {
+                            size_t colon = objText.find(':', bytesValStart);
+                            if (colon != std::string::npos) {
+                                size_t dStart = objText.find_first_of("0123456789", colon);
+                                if (dStart != std::string::npos) {
+                                    rec.bytes = std::stoull(objText.substr(dStart));
+                                }
+                            }
+                        }
+
+                        // Extract fnv1a64
+                        size_t hashValStart = objText.find("\"fnv1a64\"");
+                        if (hashValStart != std::string::npos) {
+                            size_t colon = objText.find(':', hashValStart);
+                            if (colon != std::string::npos) {
+                                size_t q1 = objText.find('"', colon);
+                                if (q1 != std::string::npos) {
+                                    size_t q2 = objText.find('"', q1 + 1);
+                                    if (q2 != std::string::npos) {
+                                        rec.hash = objText.substr(q1 + 1, q2 - q1 - 1);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!rec.path.empty()) {
+                            inputs.push_back(rec);
+                        }
+                    }
+                    pPos += 6; // move past "path"
+                }
+            }
+        }
+    }
+
+    // Check peaks warning
+    size_t peaksPos = json.find("\"peaks\"");
+    if (peaksPos != std::string::npos) {
+        size_t braceStart = json.find('{', peaksPos);
+        if (braceStart != std::string::npos) {
+            size_t braceEnd = json.find('}', braceStart);
+            if (braceEnd != std::string::npos) {
+                std::string peaksBlock = json.substr(braceStart, braceEnd - braceStart + 1);
+                std::vector<double> peakValues;
+                size_t colonPos = 0;
+                while ((colonPos = peaksBlock.find(':', colonPos)) != std::string::npos) {
+                    size_t dStart = peaksBlock.find_first_of("0123456789.-", colonPos);
+                    if (dStart != std::string::npos) {
+                        try {
+                            double v = std::stod(peaksBlock.substr(dStart));
+                            peakValues.push_back(v);
+                        } catch (...) {}
+                    }
+                    colonPos++;
+                }
+                if (peakValues.size() >= 2 && peakValues[0] == peakValues[1]) {
+                    std::printf("warning: record peak values are bit-identical (%.9f)\n", peakValues[0]);
+                }
+            }
+        }
+    }
+
+    if (inputs.empty()) {
+        std::fprintf(stderr, "error: record file '%s' contains no verifiable inputs\n", recordPath.c_str());
+        return 2;
+    }
+
+    bool allOk = true;
+    for (const auto& in : inputs) {
+        // Test file existence first
+        std::ifstream testFile(in.path, std::ios::binary);
+        if (!testFile.is_open()) {
+            std::printf("input '%s' (%s): MISSING\n", in.key.c_str(), in.path.c_str());
+            allOk = false;
+            continue;
+        }
+        testFile.close();
+
+        size_t actBytes = 0;
+        uint64_t actHashInt = computeFnv1a64(in.path, actBytes);
+        std::string actHashStr = hexHash(actHashInt);
+
+        std::string recHashLower = in.hash;
+        for (char& c : recHashLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        std::string actHashLower = actHashStr;
+        for (char& c : actHashLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        if (actBytes == in.bytes && actHashLower == recHashLower) {
+            std::printf("input '%s' (%s): OK\n", in.key.c_str(), in.path.c_str());
+        } else {
+            std::printf("input '%s' (%s): HASH MISMATCH (recorded %s, actual %s)\n",
+                        in.key.c_str(), in.path.c_str(), in.hash.c_str(), actHashStr.c_str());
+            allOk = false;
+        }
+    }
+
+    return allOk ? 0 : 1;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -303,6 +493,17 @@ static float logSpectralDistance(const std::vector<float>& dbRef, const std::vec
 // ---------------------------------------------------------------- main
 
 int main(int argc, char** argv) {
+    std::string verifyRecordPath;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--verify-record" && i + 1 < argc) {
+            verifyRecordPath = argv[i + 1];
+        }
+    }
+    if (!verifyRecordPath.empty()) {
+        return runVerifyRecord(verifyRecordPath);
+    }
+
     std::string refPath, testPath, jsonPath, recordPath;
     bool align = true;
 
