@@ -659,3 +659,152 @@ TEST_CASE("L13 unmodeled FX commands preserved on save", "[io]") {
     std::filesystem::remove("temp_fxrt2.m8s");
     std::filesystem::remove("temp_fxrt2_out.m8s");
 }
+
+// Helper: patch mixer_settings bytes into a .m8s file at the known offset.
+// MixerSettings sits at byte offset 0xCE in V4/V4.1 songs (right before grooves
+// at 0xEE). Song::write() does not persist mixer_settings, so write_over() cannot
+// be used to test them — we must patch the raw bytes.
+static constexpr size_t MIXER_OFFSET = 0xCE;
+
+static void patchMonoAnalog(std::vector<uint8_t>& data,
+                            uint8_t vol, uint8_t cho, uint8_t del, uint8_t rev) {
+    data[MIXER_OFFSET + 0x0D] = vol;  // a_vol0 (left/mono volume)
+    data[MIXER_OFFSET + 0x0E] = 0xFF; // a_vol1 = 0xFF sentinel (mono)
+    data[MIXER_OFFSET + 0x10] = cho;  // a_cho0
+    data[MIXER_OFFSET + 0x12] = del;  // a_del0
+    data[MIXER_OFFSET + 0x14] = rev;  // a_rev0
+}
+
+static void patchStereoAnalog(std::vector<uint8_t>& data,
+                               uint8_t lVol, uint8_t rVol,
+                               uint8_t lCho, uint8_t rCho,
+                               uint8_t lDel, uint8_t rDel,
+                               uint8_t lRev, uint8_t rRev) {
+    data[MIXER_OFFSET + 0x0D] = lVol;  // a_vol0 (left)
+    data[MIXER_OFFSET + 0x0E] = rVol;  // a_vol1 (right — NOT 0xFF, so stereo)
+    data[MIXER_OFFSET + 0x10] = lCho;  // a_cho0 (left)
+    data[MIXER_OFFSET + 0x11] = rCho;  // right chorus
+    data[MIXER_OFFSET + 0x12] = lDel;  // a_del0 (left)
+    data[MIXER_OFFSET + 0x13] = rDel;  // right delay
+    data[MIXER_OFFSET + 0x14] = lRev;  // a_rev0 (left)
+    data[MIXER_OFFSET + 0x15] = rRev;  // right reverb
+}
+
+static void patchUsbInput(std::vector<uint8_t>& data,
+                           uint8_t vol, uint8_t cho, uint8_t del, uint8_t rev) {
+    data[MIXER_OFFSET + 0x0F] = vol;  // usb_volume
+    data[MIXER_OFFSET + 0x16] = cho;  // usb_cho
+    data[MIXER_OFFSET + 0x17] = del;  // usb_del
+    data[MIXER_OFFSET + 0x18] = rev;  // usb_rev
+}
+
+// IO-1 — analog_input mono variant loads into engine mixer fields.
+TEST_CASE("IO-1 mono analog_input maps to in_vol/in_cho/in_del/in_rev", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    patchMonoAnalog(data, 0x11, 0x22, 0x33, 0x44);
+    patchUsbInput(data, 0x55, 0x66, 0x77, 0x88);
+
+    std::ofstream f("temp_io1.m8s", std::ios::binary);
+    f.write(reinterpret_cast<const char*>(data.data()), data.size());
+    f.close();
+
+    auto loaded = loadSong("temp_io1.m8s", "");
+    REQUIRE(loaded.ok);
+    REQUIRE(loaded.state.mixer.in_vol == 0x11);
+    REQUIRE(loaded.state.mixer.in_cho == 0x22);
+    REQUIRE(loaded.state.mixer.in_del == 0x33);
+    REQUIRE(loaded.state.mixer.in_rev == 0x44);
+    REQUIRE(loaded.state.mixer.usb_vol == 0x55);
+    REQUIRE(loaded.state.mixer.usb_cho == 0x66);
+    REQUIRE(loaded.state.mixer.usb_del == 0x77);
+    REQUIRE(loaded.state.mixer.usb_rev == 0x88);
+
+    std::filesystem::remove("temp_io1.m8s");
+}
+
+// IO-2 — analog_input stereo variant loads left channel into engine mixer fields.
+// The library's read path intentionally discards the right-channel bytes and
+// constructs the right channel from left-channel values (types.cpp:198). So
+// the stereo test verifies that left-channel values arrive in the engine fields,
+// and that the right-channel bytes do not interfere.
+TEST_CASE("IO-2 stereo analog_input maps left channel to in_vol/in_cho/in_del/in_rev", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    // Left channel: 0xAA/0xBB/0xCC/0xDD. Right channel: 0x11/0x22/0x33/0x44.
+    patchStereoAnalog(data, 0xAA, 0x11, 0xBB, 0x22, 0xCC, 0x33, 0xDD, 0x44);
+    patchUsbInput(data, 0x55, 0x66, 0x77, 0x88);
+
+    std::ofstream f("temp_io2.m8s", std::ios::binary);
+    f.write(reinterpret_cast<const char*>(data.data()), data.size());
+    f.close();
+
+    auto loaded = loadSong("temp_io2.m8s", "");
+    REQUIRE(loaded.ok);
+    // Must match left channel — the library discards right-channel bytes
+    REQUIRE(loaded.state.mixer.in_vol == 0xAA);
+    REQUIRE(loaded.state.mixer.in_cho == 0xBB);
+    REQUIRE(loaded.state.mixer.in_del == 0xCC);
+    REQUIRE(loaded.state.mixer.in_rev == 0xDD);
+    REQUIRE(loaded.state.mixer.usb_vol == 0x55);
+    REQUIRE(loaded.state.mixer.usb_cho == 0x66);
+    REQUIRE(loaded.state.mixer.usb_del == 0x77);
+    REQUIRE(loaded.state.mixer.usb_rev == 0x88);
+
+    std::filesystem::remove("temp_io2.m8s");
+}
+
+// IO-3 — stereo analog_input round-trips through library read.
+// The library intentionally mirrors the Rust reference: right channel is
+// constructed from left-channel values (types.cpp:198), so both sides of the
+// pair carry identical values regardless of what the file contains.
+TEST_CASE("IO-3 stereo analog_input round-trips through library read", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    patchStereoAnalog(data, 0xAA, 0x11, 0xBB, 0x22, 0xCC, 0x33, 0xDD, 0x44);
+
+    m8::BinaryReader r(data);
+    auto song = m8::Song::from_reader(r);
+
+    // Must be stereo variant
+    REQUIRE(std::holds_alternative<
+        std::pair<m8::InputMixerSettings, m8::InputMixerSettings>>(
+        song.mixer_settings.analog_input));
+
+    auto& pair = std::get<std::pair<m8::InputMixerSettings, m8::InputMixerSettings>>(
+        song.mixer_settings.analog_input);
+    // Left channel carries the written values
+    REQUIRE(pair.first.volume == 0xAA);
+    REQUIRE(pair.first.chorus == 0xBB);
+    REQUIRE(pair.first.delay == 0xCC);
+    REQUIRE(pair.first.reverb == 0xDD);
+    // Right channel is constructed from left (library discards right-channel bytes)
+    REQUIRE(pair.second.volume == 0xAA);
+    REQUIRE(pair.second.chorus == 0xBB);
+    REQUIRE(pair.second.delay == 0xCC);
+    REQUIRE(pair.second.reverb == 0xDD);
+}
+
+// IO-4 — mono analog_input round-trips through library read.
+TEST_CASE("IO-4 mono analog_input round-trips through library read", "[io]") {
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    patchMonoAnalog(data, 0x11, 0x22, 0x33, 0x44);
+
+    m8::BinaryReader r(data);
+    auto song = m8::Song::from_reader(r);
+
+    // Must be mono variant
+    REQUIRE(std::holds_alternative<m8::InputMixerSettings>(
+        song.mixer_settings.analog_input));
+
+    auto& mono = std::get<m8::InputMixerSettings>(song.mixer_settings.analog_input);
+    REQUIRE(mono.volume == 0x11);
+    REQUIRE(mono.chorus == 0x22);
+    REQUIRE(mono.delay == 0x33);
+    REQUIRE(mono.reverb == 0x44);
+}

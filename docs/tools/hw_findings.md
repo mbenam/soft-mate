@@ -667,3 +667,32 @@ constant offset would correct.
 
 - **Date:** 2026-07-26
 
+### UI-4e — Stereo analog_input lost on save (known limitation)
+
+`convertEngineToSong()` in `src/io/SongIO.cpp:568-574` always writes
+`analog_input` as a mono `InputMixerSettings` (single variant alternative).
+The read path (`convertSongToEngine`, lines 316-330) handles both mono and
+stereo variants, taking the left/mono channel for the engine fields.
+
+**Operation that loses data:** Loading a song with stereo analog input
+(a_vol1 ≠ 0xFF), then saving it via `saveSong()` or `saveNewSong()`.
+
+**What is lost:** The right-channel analog input settings. After save,
+`a_vol1` becomes 0xFF (mono sentinel), and the right-channel
+volume/chorus/delay/reverb bytes become 0xFF (the sentinel written by
+`MixerSettings::write()`).
+
+**Why not fixed:** The engine's `MixerState` has no right-channel analog
+input fields — only `in_vol`/`in_cho`/`in_del`/`in_rev` (left/mono). The
+library's read path also discards right-channel bytes and constructs the
+right channel from left-channel values (types.cpp:198), mirroring a quirk
+in the Rust reference implementation. So the right-channel data is never
+used by either the engine or the library. Fixing the write path would
+require adding right-channel fields to `MixerState` and using them in the
+audio path, which is out of scope.
+
+**Test coverage:** IO-2 and IO-3 in `test_persistence.cpp` verify the
+read-path behavior. The write-path limitation is accepted, not tested.
+
+- **Date:** 2026-07-26
+
