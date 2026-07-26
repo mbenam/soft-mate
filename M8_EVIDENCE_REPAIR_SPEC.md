@@ -82,7 +82,7 @@ BLOCKED, and explain your reasoning in the findings file.
 [ ] X5  [HW] Re-capture and re-run the V2 amplitude comparison
 [ ] X6  [HW] Re-capture and re-run the V3 envelope measurement
 [ ] X7  [HW] Settle the hold comparison or mark it untested
-[ ] X8  Final consistency sweep
+[x] X8  Final consistency sweep
 ```
 
 ---

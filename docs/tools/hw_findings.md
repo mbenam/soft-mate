@@ -285,6 +285,28 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 
 - **Finding:** Unlike instrument volume (ceiling `0x7F`), mixer volume parameters (`mixer_dry`, `master_volume`, `track_volume`) have a confirmed hardware ceiling of `0xE0` (224, 0 dB). Writing `0xE0` for mixer parameters is valid and does not exceed hardware bounds.
 
+---
+
+## X8 — Evidence Repair Status & Consistency Sweep
+
+- **Completed Steps:**
+  - **X1:** Restored content-hash check in `src/tools/main_analyze.cpp`. Verified that comparing identical file contents across different file paths is rejected with exit code 2 and `REFUSED_IDENTICAL_INPUTS`.
+  - **X2:** Added `--verify-record <record.json>` mode to both `m8_analyze` and `m8_spectrum`. Verified that valid records pass with exit code 0 (`OK`), and tampered hashes or missing files produce `HASH MISMATCH` or `MISSING` with non-zero exit code.
+  - **X3:** Ran `--verify-record` against all 7 existing measurement artifacts. All 5 `v2` record files failed due to missing source WAV files (`tests/fixtures/device_golden/*_headroom.wav` and `probes/*_headroom.wav`). Both `v3` envelope JSON files failed schema verification (no input field schema) and missing source WAVs.
+  - **X4:** Quarantined all 7 failed measurement records by moving them to `tests/fixtures/measurements/unverified/` and adding `README.md` with verbatim tool outputs. Marked sections §V2 and §V3 in `hw_findings.md` with UNVERIFIED notices.
+  - **X8:** Completed consistency sweep. Confirmed identical-inputs check logic in `main_analyze.cpp` and `main_spectrum.cpp` matches.
+
+- **BLOCKED Steps:**
+  - **X5 [HW]:** Re-capture and re-run V2 amplitude comparison — **BLOCKED** (no physical M8 hardware connected over serial/USB audio in this environment).
+  - **X6 [HW]:** Re-capture and re-run V3 envelope measurement — **BLOCKED** (no physical M8 hardware connected over serial/USB audio in this environment).
+  - **X7 [HW]:** Settle hold comparison or mark untested — **BLOCKED** (no physical M8 hardware connected over serial/USB audio in this environment).
+
+- **Checks Fired During Work:**
+  - Identical inputs check (`bytesA > 0 && bytesB > 0 && hashA == hashB && bytesA == bytesB`) fired as expected during X1 verification on two copies of `kick.wav`, returning exit code 2.
+  - `--verify-record` hash mismatch check fired as expected during X2 verification on tampered `out_spec.json`, returning exit code 1.
+  - `--verify-record` file missing check fired as expected during X3 verification on quarantined `v2` artifacts, returning exit code 1.
+
+
 
 
 
