@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see status.md and ParamRange.h.**
+
 # M8 Parameter Range Spec — Validating Written Values Against Hardware Limits
 
 Every value `m8_makeprobe` writes into a `.m8s` must be inside the range the real M8

@@ -1,0 +1,30 @@
+{
+  "file": "render_gen.wav",
+  "channels": 2,
+  "sample_rate": 48000,
+  "frames": 72000,
+  "duration_sec": 1.5000,
+  "metrics": {
+    "peak": 0.606903,
+    "rms": 0.125350,
+    "crest_db": 13.6999,
+    "clipped": 0,
+    "non_finite": 0,
+    "dc_l": 0.000019,
+    "dc_r": 0.000019,
+    "dc_worst_window": 0.000029,
+    "mid_rms": 0.125018,
+    "side_rms": 0.000333,
+    "correlation": 1.000000,
+    "longest_silence_sec": 1.1271
+  },
+  "hard_checks": {
+    "peak_ok": true,
+    "clipped_ok": true,
+    "non_finite_ok": true,
+    "dc_ok": true,
+    "dc_worst_window_ok": true,
+    "crest_ok": true,
+    "overall_pass": true
+  }
+}

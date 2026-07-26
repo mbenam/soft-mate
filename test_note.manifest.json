@@ -1,0 +1,23 @@
+{
+  "output_path": "test_note.wav",
+  "bytes": 276100,
+  "fnv1a64": "d5f51413e0146326",
+  "sample_rate": 48000,
+  "channels": 2,
+  "duration_seconds": 1.438,
+  "port": "COM4",
+  "timestamp_utc": "2026-07-26T00:27:31Z",
+  "capture_settings": {
+    "seconds": 1.50,
+    "pre_roll_ms": 5.0,
+    "tail_seconds": 0.00,
+    "keyjazz_note": 60,
+    "keyjazz_vel": 127
+  },
+  "check_level": {
+    "enabled": true,
+    "floor_level": 0.50000,
+    "measured_peak": 0.04013,
+    "passed": false
+  }
+}

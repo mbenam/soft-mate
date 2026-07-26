@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_analyze.md, docs/tools/m8_spectrum.md, and status.md.**
+
 # M8 Measurement Validity Spec — Making the Parity Tests Able To Fail
 
 Follow-on to `M8_PARAM_RANGE_SPEC.md`, which is 10/10 ticked. The range finding it

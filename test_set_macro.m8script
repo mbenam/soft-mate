@@ -1,0 +1,8 @@
+goto INSTRUMENT
+cursor AMP
+set AMP 40
+goto MODS
+cursor AMT
+set AMT 80
+goto INSTRUMENT
+dump_screen

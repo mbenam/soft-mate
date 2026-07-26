@@ -54,10 +54,12 @@ match real hardware.
 
 | Flag | Required | Meaning |
 |---|---|---|
-| `--ref <path>` | yes | Reference WAV (ground truth — typically real hardware). |
-| `--test <path>` | yes | Test WAV to compare against the reference (typically `m8_render` output). |
+| `--ref <path>` | yes | Reference WAV (ground truth — typically real hardware). Required unless `--verify-record` is used. |
+| `--test <path>` | yes | Test WAV to compare against the reference (typically `m8_render` output). Required unless `--verify-record` is used. |
 | `--no-align` | no | Skip per-file onset detection; both files are read from sample 0 (still skips 50ms for the attack-transient exclusion, just measured from file start rather than detected onset). |
 | `--json <path>` | no | Also write a machine-readable report. |
+| `--record <path>` | no | Write an execution record JSON file containing run arguments, input file hashes (FNV-1a 64-bit), peak levels, saturation threshold, spectral metrics, and status. |
+| `--verify-record <path>` | no | Verify a previously recorded run record file by confirming input files exist and match recorded FNV-1a 64-bit hashes. Exits 0 on match, non-zero on mismatch or missing inputs. |
 
 ## JSON schema
 
@@ -108,3 +110,4 @@ m8_spectrum --ref ref.wav --test mine.wav --no-align --json diff.json
 - Harmonic-table peaks are always picked from the **reference** spectrum; the test spectrum is
   only ever read at those same bins for comparison — a peak that exists in test but not in ref
   (e.g. test has extra harmonic content) will not appear in the `harmonics` table at all.
+- **Saturation refusal (`kSaturationThresh = 0.995`) is expected tool behavior:** If either input peak `>= 0.995`, the tool exits code 2 with status `REFUSED_SATURATED` and declines to report a peak ratio or spectral comparison. This is the tool guarding against clipped inputs distorting comparisons, not a tool bug.

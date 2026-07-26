@@ -1,0 +1,7 @@
+goto INSTRUMENT
+cursor TYPE
+key EDIT+DOWN
+wait 200
+key EDIT
+wait 200
+dump_screen

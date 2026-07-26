@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see status.md and tests/test_ui_scripts.cpp.**
+
 # M8-SDL3 — UI Test Harness Spec
 
 A scriptable test mode for `m8_clone` so the agent can drive the *application* — not just the

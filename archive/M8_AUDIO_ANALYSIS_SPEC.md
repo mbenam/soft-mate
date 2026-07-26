@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_analyze.md and docs/tools/m8_spectrum.md.**
+
 # M8-SDL3 — Audio Analysis Tools Spec
 
 Two C++ tools so the agent can measure its own output instead of shipping a WAV to a human and

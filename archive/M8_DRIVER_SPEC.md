@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_nav.md and status.md.**
+
 # M8 Driver Spec — Framebuffer Foundation + Parity Tracks
 
 Everything that talks to a real M8 over serial. Supersedes `M8_NAV_AGENT_UX_SPEC.md`

@@ -55,6 +55,11 @@ so every routine must work from an *unknown* starting state.
 | `--semantic-state` | — | Output high-level semantic state JSON (screen name, modal state, cursor field/value, list rows). |
 | `--serve` | — | Interactive daemon mode reading line-delimited commands from `stdin` and emitting JSON responses to `stdout`. |
 | `--allow-mutation` | `false` | Required flag for `--pin-gestures` to permit sending edit commands to the device. |
+| `--find-file <name>` | — | Navigate to LOAD PROJECT modal and recursively search file tree up to 4 levels / 64 directories for `<name>`. Returns candidates in envelope JSON. |
+| `--load-song <name>` | — | Search for `<name>` using tree search and select/load it via closed-loop navigation. |
+| `--ui-capture <path>` | — | Wait for display to settle, capture full UI state (`UiCapture` struct: screen, cells, rects, palette) and write JSON file. |
+| `--keyjazz <note>` | — | Send live MIDI keyjazz note-on to connected device (`0`..`127`, e.g. `60` for C-4). |
+| `--keyjazz-vel <vel>` | `127` | Velocity for `--keyjazz` note (`0`..`255`, default `0x7F`). |
 | `--json <path>` | — | Write the decoded grid as JSON (cells with colors and `highlights` rect array). |
 | `--keys <list>` | — | Comma-separated key masks (decimal or `0x` hex) to press one at a time, dumping the screen after each. Manual/diagnostic mode. |
 | `--load-file <name>` | — | Closed-loop load: navigate to PROJECT → LOAD PROJECT browser → find and select `<name>` → confirm. Returns exit code 0 on success, non-zero on failure. |

@@ -208,4 +208,6 @@ The specs in the repo are the source of truth for what to build:
 Values in them were verified against hardware. Do not substitute your own. If a spec is
 wrong, say so and stop — do not quietly diverge.
 
+A spec's final step is always "fold findings into reference docs, then archive this spec," and it can't be ticked while any other step is unticked.
+
 `status.md` must reflect reality: what is implemented vs what is spec'd. Keep it honest.

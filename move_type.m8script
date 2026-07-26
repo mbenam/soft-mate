@@ -1,0 +1,4 @@
+goto INSTRUMENT
+cursor TYPE
+key OPT+RIGHT
+dump_screen

@@ -1,0 +1,4 @@
+goto INSTRUMENT
+cursor AMP
+key OPT+DOWN
+dump_screen

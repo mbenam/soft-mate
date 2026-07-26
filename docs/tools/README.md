@@ -81,3 +81,17 @@ m8_diffcheck --script foo.m8script --golden ref.txt  →  same, diffed against a
   here — `m8_nav.md` and `m8_diffcheck.md` summarize the hardware-testing gotchas found as of
   2026-07-18, but that spec document is the living, authoritative source for current status
   (Tier 4.5 reliability hardening was in progress at the time these docs were written).
+
+## Documentation verification script
+
+The script [`tools/check_doc_flags.py`](../../tools/check_doc_flags.py) automatically extracts `--flag` string literals from `src/tools/main_*.cpp` files and verifies that every CLI flag is documented in its corresponding `docs/tools/m8_*.md` document.
+
+Run standalone:
+```powershell
+python tools/check_doc_flags.py
+```
+
+Run via test suite:
+```powershell
+.\build\Release\m8_tests.exe "[doc]" --reporter compact
+```

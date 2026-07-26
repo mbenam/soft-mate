@@ -1,0 +1,30 @@
+{
+  "file": "render_golden.wav",
+  "channels": 2,
+  "sample_rate": 48000,
+  "frames": 72000,
+  "duration_sec": 1.5000,
+  "metrics": {
+    "peak": 0.649292,
+    "rms": 0.320240,
+    "crest_db": 6.1393,
+    "clipped": 0,
+    "non_finite": 0,
+    "dc_l": -0.001466,
+    "dc_r": -0.001471,
+    "dc_worst_window": 0.002882,
+    "mid_rms": 0.319407,
+    "side_rms": 0.000837,
+    "correlation": 1.000000,
+    "longest_silence_sec": 0.0003
+  },
+  "hard_checks": {
+    "peak_ok": true,
+    "clipped_ok": true,
+    "non_finite_ok": true,
+    "dc_ok": true,
+    "dc_worst_window_ok": true,
+    "crest_ok": true,
+    "overall_pass": true
+  }
+}

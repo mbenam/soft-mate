@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see status.md and src/io/SongIO.cpp.**
+
 # M8-SDL3 — Song Persistence Spec (`.m8s` load/save)
 
 **Goal:** open and save real M8 song files, using the parity-tested `m8-files-cxx` port at

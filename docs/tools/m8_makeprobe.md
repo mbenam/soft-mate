@@ -47,12 +47,16 @@ capture it with [`m8_capture`](m8_capture.md), then compare the two with
 | `--timbre <n>` | `0x40` | MacroSynth timbre. |
 | `--color <n>` | `0x80` | MacroSynth color. |
 | `--volume <n>` | `0xE0` | `synth_params.volume` (the mixer/channel-strip level, distinct from the on-screen "AMP" instrument-type field — see Gotchas). |
+| `--mod-amt <n>` | `0xFF` | Volume modulation envelope amount (`0x00`..`0xFF`, `0x80` = neutral/half for headroom captures). |
+| `--mod-hold <n>` | `0xFF` | Volume modulation envelope hold duration (`0x00`..`0xFF`). |
 | `--filter-type <n>` | `0` | `synth_params.filter_type`. |
 | `--filter-cutoff <n>` | `0xFF` | `synth_params.filter_cutoff`. |
 | `--filter-res <n>` | `0` | `synth_params.filter_res`. |
 | `--tempo <bpm>` | `120.0` | Song tempo (float). |
 | `--table-tick <n>` | `0xFF` (disabled) | Assigns table 0 to the phrase step via an FX command (library FX byte `0x06`, engine `FxCmd::TBL`) at this tick rate. `0xFF` means "don't assign a table" — setting `table_tick` on the instrument alone does **not** enable table execution; `Engine::tickTable()` is a no-op until a table is actually assigned via this FX command. |
 | `--slice <n>` | `0` (off) | **Sampler-only.** `0`=off, `1`=FILE (WAV-embedded slice markers), `2`-`0x80`=N equal divisions. Added for the SLICE note-base hardware investigation (`sampler-slice-repitch-hw` memory). |
+| `--verify-against <path>` | — | Verify the generated probe file structure against another existing `.m8s` file. |
+| `--inspect <path>` | — | Read and print structural and patch details of an existing `.m8s` probe file. |
 
 Any unrecognized flag prints `unknown arg: <flag>` and exits 1.
 

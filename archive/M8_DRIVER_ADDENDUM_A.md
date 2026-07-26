@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_nav.md and status.md.**
+
 # M8 Driver Spec — Addendum A: Post-Implementation Gaps
 
 Follow-on to `M8_DRIVER_SPEC.md`, which is now 40/40 ticked. This addendum covers

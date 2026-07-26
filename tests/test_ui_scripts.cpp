@@ -128,6 +128,7 @@ TEST_CASE("UI scripts", "[ui]") {
             }
 
             const std::string outDir = "test_out_ui\\" + name;
+            fs::create_directories(outDir);
             const std::string runCmd = std::string(kClone) +
                 " --script tests\\ui\\" + name + ".m8script" +
                 " --headless --out-dir " + outDir;
@@ -161,4 +162,9 @@ TEST_CASE("UI scripts", "[ui]") {
             }
         }
     }
+}
+
+TEST_CASE("CLI tool flags match documentation", "[doc]") {
+    int rc = std::system("python tools/check_doc_flags.py");
+    REQUIRE(rc == 0);
 }

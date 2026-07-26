@@ -1,0 +1,7 @@
+goto INSTRUMENT
+key OPT+LEFT
+key OPT+LEFT
+key OPT+LEFT
+key OPT+LEFT
+key OPT+LEFT
+dump_screen

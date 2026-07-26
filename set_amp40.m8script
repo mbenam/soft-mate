@@ -1,0 +1,4 @@
+goto INSTRUMENT
+cursor AMP
+set AMP 40
+dump_screen

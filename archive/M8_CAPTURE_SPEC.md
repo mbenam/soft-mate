@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_makeprobe.md and docs/tools/m8_capture.md.**
+
 # M8-SDL3 — Hardware Capture Spec
 
 Two C++ tools that produce clean single-note recordings off a real M8 headless, so

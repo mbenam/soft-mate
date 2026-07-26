@@ -31,11 +31,13 @@ or a theme difference) will **not** be flagged as a diff by this tool.
 
 | Flag | Required | Meaning |
 |---|---|---|
-| `--port <name>` | yes | Serial port, e.g. `COM3`. |
-| `--script <path>` | yes | The `.m8script` to run. Must complete with exit 0 (script pass) before any diff comparison happens. |
+| `--port <name>` | yes (Mode 1) | Serial port, e.g. `COM3`. Required unless `--diff-capture` is used. |
+| `--script <path>` | yes (Mode 1) | The `.m8script` to run. Must complete with exit 0 (script pass) before any diff comparison happens. Required unless `--diff-capture` is used. |
 | `--golden <path>` | no | A **plain-text** grid file to compare the final screen against (see format below). If omitted, the tool just prints the final screen and exits 0 — no comparison performed. |
 | `--save <path>` | no | Also write the final screen as JSON (cells with colors — via `ScreenGrid::printJson`, the *full* representation, unlike the glyph-only comparison). |
 | `--hold-ms <n>` | `15` | Button hold duration passed through to the script runner. |
+| `--diff-capture <a.json> <b.json>` | no (Mode 2) | Compare two `UiCapture` JSON files directly (offline mode, no serial device required). |
+| `--max-diffs <n>` | `20` | Maximum number of cell or rect differences to report under `--diff-capture`. |
 
 ## Golden reference format
 

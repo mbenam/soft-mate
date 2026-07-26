@@ -43,10 +43,12 @@ borderline pass — read the printed FAIL line, it states which check and by how
 
 | Flag | Meaning |
 |---|---|
-| `<file.wav>` (positional, first non-flag arg) | The WAV to analyze. Required unless `--diff` is used. |
+| `<file.wav>` (positional, first non-flag arg) | The WAV to analyze. Required unless `--diff` or `--verify-record` is used. |
 | `--events <path>` | Enables per-note analysis using the given events CSV (see below). |
 | `--json <path>` | Also write a machine-readable JSON report (see schema below). |
 | `--diff <a.wav> <b.wav>` | Switches to diff mode entirely — ignores all other flags, compares two files sample-by-sample. |
+| `--record <path>` | Write an execution record JSON file containing run arguments, input file hashes (FNV-1a 64-bit), peak levels, saturation threshold, and overall status. |
+| `--verify-record <path>` | Verify a previously recorded run record file by confirming input files exist and match recorded FNV-1a 64-bit hashes. Exits 0 on match, non-zero on mismatch or missing inputs. |
 
 ## Per-note analysis (`--events`)
 
@@ -151,3 +153,4 @@ m8_analyze --diff golden.wav candidate.wav
 - The JSON's per-field `hard_checks` booleans are a second, independent computation from the
   stdout `FAIL` lines — if you need to know exactly why a run failed, read stdout, not just the
   JSON's `overall_pass`.
+- **Saturation threshold (`kSaturationThresh = 0.995`) refusal behavior**: When input peak `>= 0.995`, the tool exits non-zero and declines to validate amplitude/ratio metrics (reporting `FAIL signal saturated` or `REFUSED_SATURATED`). Clipping masks defects and invalidates comparisons. This refusal is expected safety behavior, not a tool failure or bug.

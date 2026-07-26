@@ -1,3 +1,5 @@
+> **ARCHIVED — implemented, see docs/tools/m8_makeprobe.md and docs/tools/m8_capture.md.**
+
 # M8 Probe Authoring Spec — Making Generated `.m8s` Files Valid On Hardware
 
 Everything about *what a probe file contains* and *how its audio is compared to the

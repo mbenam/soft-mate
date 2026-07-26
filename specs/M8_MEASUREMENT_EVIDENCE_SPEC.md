@@ -1,5 +1,7 @@
 # M8 Measurement Evidence Spec — Making Measurements Reproducible From The Repo
 
+> **INVALIDATED STEPS NOTE:** Although this spec reads 7/7 ticked, steps W4 and W5 produced measurement artifacts (`envelope_hold80.json` and `envelope_holdFF.json`) that were later quarantined as unverified (missing input audio source files / missing verifiable schema references — see [`tests/fixtures/measurements/unverified/README.md`](tests/fixtures/measurements/unverified/README.md)). Ticked-but-invalidated is not complete. This spec remains **ACTIVE**.
+
 Follow-on to `M8_MEASUREMENT_VALIDITY_SPEC.md`, which is 8/8 ticked. V1, V4, and V5
 landed cleanly: the saturation guard is correctly implemented in both analysis tools,
 the mixer ceilings were measured as discrete UI maxima, and `ParamRange.h` marks

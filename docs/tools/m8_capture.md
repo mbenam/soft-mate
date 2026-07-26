@@ -48,6 +48,14 @@ earlier, since-superseded guess at the bit layout — the mask constants actuall
 | `--stop-mask <hex>` | `0x08` | Same value as start by default (PLAY is a toggle, not separate start/stop keys). |
 | `--keyjazz <note>` | *(none — uses PLAY toggle)* | MIDI note number (60 = C-4). If set (`>= 0`), captures via keyjazz note-on/off instead of PLAY start/stop — plays one live note, not the sequencer. |
 | `--keyjazz-vel <n>` | `0x7F` | Velocity for keyjazz mode. |
+| `--check-level [floor]` | `disabled` (`0.5` if argument omitted) | Verify that the captured audio peak level meets or exceeds `floor`. Logs peak measurement and pass/fail state to stderr and the capture manifest. |
+
+## Capture Manifest (`<name>.manifest.json`)
+
+Every recorded WAV file automatically generates a companion JSON manifest (`<wav_path>.manifest.json`). The manifest contains:
+- Output metadata: `output_path`, `bytes`, `fnv1a64` hash, `sample_rate`, `channels`, `duration_seconds`, `timestamp_utc`.
+- Capture settings: `seconds`, `pre_roll_ms`, `tail_seconds`, `keyjazz_note`, `keyjazz_vel`.
+- Level check results: `enabled`, `floor_level`, `measured_peak`, `passed`.
 
 ## Batch file format (`--batch`)
 
