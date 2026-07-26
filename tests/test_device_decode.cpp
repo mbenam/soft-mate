@@ -858,3 +858,57 @@ TEST_CASE("ScreenGrid printJson emits highlights array", "[m8_device]") {
     CHECK(content.find("\"w\":30") != std::string::npos);
     CHECK(content.find("\"h\":40") != std::string::npos);
 }
+
+// ---- Task 1a: palette id remapping bug test ---------------------------------
+//
+// buildPalette() sorts the palette by RGB but never remaps the cells'
+// fgStyle/bgStyle values. This test builds a grid whose colours are inserted
+// in a non-RGB-sorted order, runs captureFromGrid(), and asserts that every
+// cell's palette index resolves to the RGB that was put into the grid.
+
+TEST_CASE("captureFromGrid palette ids resolve to correct RGB after sort", "[hwdecode]") {
+    // Insert colours in a non-sorted order:
+    //   cell (0,0): fg=(248,252,248) white, bg=(0,0,0) black
+    //   cell (1,0): fg=(0,252,248)   cyan,   bg=(0,0,0) black
+    //
+    // First-seen order: white=0, black=1, cyan=2
+    // Sorted RGB order: black=0, cyan=1, white=2
+    //
+    // After a correct remap, cell (0,0).fgStyle must be 2 (white), not 0.
+    // After a correct remap, cell (1,0).fgStyle must be 1 (cyan), not 2.
+    ScreenGrid grid;
+    grid.handleFrame(makeCharFrame('A', 0,  0, 248, 252, 248, 0, 0, 0));  // fg=white, bg=black
+    grid.handleFrame(makeCharFrame('B', 8,  0,   0, 252, 248, 0, 0, 0));  // fg=cyan,   bg=black
+
+    auto cap = captureFromGrid(grid, true, "TEST");
+
+    // Expected sorted palette: [0,0,0]=0, [0,252,248]=1, [248,252,248]=2
+    REQUIRE(cap.palette.size() == 3);
+
+    // Verify the sorted palette order.
+    CHECK(cap.palette[0] == (std::array<uint8_t,3>{0, 0, 0}));
+    CHECK(cap.palette[1] == (std::array<uint8_t,3>{0, 252, 248}));
+    CHECK(cap.palette[2] == (std::array<uint8_t,3>{248, 252, 248}));
+
+    REQUIRE(cap.cells.size() == 2);
+
+    // For each cell, the palette id must resolve to the original RGB.
+    for (const auto& cell : cap.cells) {
+        REQUIRE(cell.fgStyle >= 0);
+        REQUIRE(cell.fgStyle < (int)cap.palette.size());
+        REQUIRE(cell.bgStyle >= 0);
+        REQUIRE(cell.bgStyle < (int)cap.palette.size());
+
+        if (cell.ch == 'A') {
+            // fg was white (248,252,248) → must resolve to palette[2]
+            CHECK(cap.palette[cell.fgStyle] == (std::array<uint8_t,3>{248, 252, 248}));
+            // bg was black (0,0,0) → must resolve to palette[0]
+            CHECK(cap.palette[cell.bgStyle] == (std::array<uint8_t,3>{0, 0, 0}));
+        } else if (cell.ch == 'B') {
+            // fg was cyan (0,252,248) → must resolve to palette[1]
+            CHECK(cap.palette[cell.fgStyle] == (std::array<uint8_t,3>{0, 252, 248}));
+            // bg was black (0,0,0) → must resolve to palette[0]
+            CHECK(cap.palette[cell.bgStyle] == (std::array<uint8_t,3>{0, 0, 0}));
+        }
+    }
+}

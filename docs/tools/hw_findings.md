@@ -576,3 +576,63 @@ highlight — and will be tackled first.
 
 - **Date:** 2026-07-26 (rewritten from open-bug list to deferred list)
 
+
+## UI-5 — Palette id remapping bug in UiCapture
+
+### Bug
+
+`buildPalette()` in `src/tools/m8/UiCapture.cpp` sorted the palette by RGB
+and deduplicated it, but never remapped the `fgStyle`/`bgStyle` indices in
+cells and rects. `addColor()` assigned palette indices in first-seen order as
+cells were walked, so every style id referenced the pre-sort palette while the
+serialized `"palette"` array was post-sort. All fg/bg ids in device captures
+were therefore mislabeled.
+
+### Root cause
+
+Two-phase design flaw: `captureFromGrid()` accumulated palette entries via
+`addColor()` (first-seen order), then called `buildPalette()` which sorted
+the palette without updating the cell/rect style ids that referenced it.
+
+### Fix
+
+`buildPalette()` now builds a remap table (old index → new index in the
+sorted palette) and updates all `fgStyle`, `bgStyle`, and `style` values in
+cells and rects before replacing the palette with the sorted version.
+
+### Regression test
+
+`"captureFromGrid palette ids resolve to correct RGB after sort"` in
+`test_device_decode.cpp` — builds a grid with fg colours inserted in
+non-RGB-sorted order, runs `captureFromGrid()`, and asserts that every
+cell's palette index resolves to the original RGB. Fails with old code
+(4 CHECK failures), passes with fix.
+
+### FromJson palette parsing
+
+`fromJson()` now parses the `"palette"` array into `c.palette` (previously
+skipped it entirely). This enables `--diff-capture` to resolve style ids
+to actual RGB values for cross-capture comparison.
+
+### Colour partition comparison
+
+`--diff-capture` now compares colour structure, not absolute RGB. For each
+capture, distinct RGBs are sorted canonically and assigned labels 0, 1, 2,
+... in that order. Two captures agree if cells that share a colour on one
+side share a colour on the other. This handles the M8's user-selectable
+themes (device white is [248,252,248], clone white is [255,255,255]).
+
+### Measurements
+
+**BLOCKED** — M8 hardware not connected (COM4 unavailable; only COM3
+(Intel AMT SOL) detected). Re-capture of PHRASE goldens with the fixed
+code requires hardware.
+
+### MIXER golden note
+
+`tests/ui/golden/device/MIXER.json` was captured before this fix. Its
+style ids are therefore still mislabeled. Its colour data should not be
+trusted until it is re-captured.
+
+- **Date:** 2026-07-26
+

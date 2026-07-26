@@ -23,6 +23,7 @@
 #include <sstream>
 #include <set>
 #include <map>
+#include <algorithm>
 
 #include "m8/M8Device.h"
 #include "m8/ScreenModel.h"
@@ -36,6 +37,36 @@ using namespace m8::dev;
 // ---------------------------------------------------------------------------
 // UiCapture diff (C5)
 // ---------------------------------------------------------------------------
+
+// Resolve a style id to its RGB triple from the palette.
+static std::array<uint8_t, 3> resolveRGB(const UiCapture& c, int styleId) {
+    if (styleId >= 0 && styleId < (int)c.palette.size())
+        return c.palette[styleId];
+    return {0, 0, 0};
+}
+
+// Build a canonical label for each distinct RGB in a capture: collect all
+// resolved RGBs from cells, sort them canonically, and assign label 0, 1, 2,
+// ... in that sorted order. This makes the labels independent of palette order
+// and first-appearance order — two captures that use the same set of colours
+// (regardless of how their palettes or cell traversals are ordered) get the
+// same canonical labels.
+static std::map<std::array<uint8_t,3>, int> buildCanonicalLabels(const UiCapture& c) {
+    // Collect all distinct RGBs that appear in any cell's fg or bg.
+    std::set<std::array<uint8_t,3>> rgbSet;
+    for (const auto& cell : c.cells) {
+        rgbSet.insert(resolveRGB(c, cell.fgStyle));
+        rgbSet.insert(resolveRGB(c, cell.bgStyle));
+    }
+
+    // Sort canonically (r, g, b) and assign labels in that order.
+    std::map<std::array<uint8_t,3>, int> rgbToLabel;
+    int label = 0;
+    for (const auto& rgb : rgbSet) {
+        rgbToLabel[rgb] = label++;
+    }
+    return rgbToLabel;
+}
 
 static std::string readFile(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
@@ -84,6 +115,10 @@ static int diffCaptures(const std::string& pathA, const std::string& pathB, int 
     std::printf("comparing: %s  (%zu cells)  vs  %s  (%zu cells)\n",
                 pathA.c_str(), a.cells.size(), pathB.c_str(), b.cells.size());
 
+    // Build canonical label maps (first-appearance of resolved RGB in row-major scan).
+    auto labelsA = buildCanonicalLabels(a);
+    auto labelsB = buildCanonicalLabels(b);
+
     int diffs = 0;
     // Collect all keys.
     std::set<int> allKeys;
@@ -96,11 +131,11 @@ static int diffCaptures(const std::string& pathA, const std::string& pathB, int 
         bool inB = mapB.count(k) > 0;
         if (!inA) {
             const auto& c = mapB[k];
-            std::printf("  [%d,%d] only in B: ch='%c' fg=%d bg=%d\n", c.col, c.row, c.ch, c.fgStyle, c.bgStyle);
+            std::printf("  [%d,%d] only in B: ch='%c'\n", c.col, c.row, c.ch);
             ++diffs;
         } else if (!inB) {
             const auto& c = mapA[k];
-            std::printf("  [%d,%d] only in A: ch='%c' fg=%d bg=%d\n", c.col, c.row, c.ch, c.fgStyle, c.bgStyle);
+            std::printf("  [%d,%d] only in A: ch='%c'\n", c.col, c.row, c.ch);
             ++diffs;
         } else {
             const auto& ca = mapA[k];
@@ -108,12 +143,26 @@ static int diffCaptures(const std::string& pathA, const std::string& pathB, int 
             if (ca.ch != cb.ch) {
                 std::printf("  [%d,%d] ch: A='%c' B='%c'\n", ca.col, ca.row, ca.ch, cb.ch);
                 ++diffs;
+            } else {
+                // Compare colour partition: resolve to RGB, then canonical label.
+                auto fgA = resolveRGB(a, ca.fgStyle);
+                auto bgA = resolveRGB(a, ca.bgStyle);
+                auto fgB = resolveRGB(b, cb.fgStyle);
+                auto bgB = resolveRGB(b, cb.bgStyle);
+                int canFgA = labelsA[fgA];
+                int canBgA = labelsA[bgA];
+                int canFgB = labelsB[fgB];
+                int canBgB = labelsB[bgB];
+                if (canFgA != canFgB || canBgA != canBgB) {
+                    std::printf("  [%d,%d] style: A[fg=%d rgb=(%d,%d,%d),bg=%d rgb=(%d,%d,%d)]  B[fg=%d rgb=(%d,%d,%d),bg=%d rgb=(%d,%d,%d)]\n",
+                                ca.col, ca.row,
+                                ca.fgStyle, fgA[0], fgA[1], fgA[2],
+                                ca.bgStyle, bgA[0], bgA[1], bgA[2],
+                                cb.fgStyle, fgB[0], fgB[1], fgB[2],
+                                cb.bgStyle, bgB[0], bgB[1], bgB[2]);
+                    ++diffs;
+                }
             }
-            // Style ids are per-capture-palette indices — not directly comparable across
-            // two different captures. We only compare ch for now (spec: "cells differing
-            // in ch or style"). Style comparison across different palettes requires
-            // resolving to RGB, which needs full palette parsing (fromJson only reads
-            // header fields for now).
         }
     }
 

@@ -11,7 +11,8 @@ namespace m8 {
 namespace dev {
 
 void buildPalette(UiCapture& c) {
-    // Collect distinct RGB colors in c.palette and sort canonically (r, g, b)
+    // Collect distinct RGB colors, sort canonically (r, g, b), and remap
+    // all style ids so they index the sorted palette.
     std::vector<std::array<uint8_t, 3>> colors = c.palette;
 
     std::sort(colors.begin(), colors.end(), [](const std::array<uint8_t, 3>& a, const std::array<uint8_t, 3>& b) {
@@ -21,6 +22,31 @@ void buildPalette(UiCapture& c) {
     });
 
     colors.erase(std::unique(colors.begin(), colors.end()), colors.end());
+
+    // Build remap: old index → new index in the sorted, deduplicated palette.
+    std::vector<int> remap(c.palette.size());
+    for (size_t i = 0; i < c.palette.size(); ++i) {
+        auto it = std::lower_bound(colors.begin(), colors.end(), c.palette[i],
+            [](const std::array<uint8_t, 3>& a, const std::array<uint8_t, 3>& b) {
+                if (a[0] != b[0]) return a[0] < b[0];
+                if (a[1] != b[1]) return a[1] < b[1];
+                return a[2] < b[2];
+            });
+        remap[i] = static_cast<int>(it - colors.begin());
+    }
+
+    for (auto& cell : c.cells) {
+        if (cell.fgStyle >= 0 && cell.fgStyle < (int)remap.size())
+            cell.fgStyle = remap[cell.fgStyle];
+        if (cell.bgStyle >= 0 && cell.bgStyle < (int)remap.size())
+            cell.bgStyle = remap[cell.bgStyle];
+    }
+
+    for (auto& rect : c.rects) {
+        if (rect.style >= 0 && rect.style < (int)remap.size())
+            rect.style = remap[rect.style];
+    }
+
     c.palette = std::move(colors);
 }
 
@@ -156,6 +182,46 @@ bool fromJson(const std::string& text, UiCapture& out, std::string& err) {
     out.pitchY = findKeyInt("pitch_y");
     out.settled = findKeyBool("settled");
     out.themeId = findKeyString("theme_id");
+
+    // Parse palette array
+    {
+        size_t pb = text.find("\"palette\":");
+        if (pb != std::string::npos) {
+            size_t arrStart = text.find('[', pb);
+            if (arrStart != std::string::npos) {
+                // Find matching ']' accounting for nested brackets.
+                int depth = 0;
+                size_t arrEnd = arrStart;
+                for (size_t i = arrStart; i < text.size(); ++i) {
+                    if (text[i] == '[') ++depth;
+                    else if (text[i] == ']') { --depth; if (depth == 0) { arrEnd = i; break; } }
+                }
+                std::string arr = text.substr(arrStart + 1, arrEnd - arrStart - 1);
+                size_t pos = 0;
+                while (pos < arr.size()) {
+                    size_t objStart = arr.find('[', pos);
+                    if (objStart == std::string::npos) break;
+                    size_t objEnd = arr.find(']', objStart);
+                    if (objEnd == std::string::npos) break;
+                    std::string triple = arr.substr(objStart + 1, objEnd - objStart - 1);
+
+                    // Parse three comma-separated integers.
+                    std::array<uint8_t, 3> rgb = {0, 0, 0};
+                    size_t cp = 0;
+                    for (int ch = 0; ch < 3; ++ch) {
+                        size_t nb = triple.find_first_of("0123456789", cp);
+                        if (nb == std::string::npos) break;
+                        size_t ne = triple.find_first_of(",}", nb);
+                        int val = std::stoi(triple.substr(nb));
+                        rgb[ch] = static_cast<uint8_t>(std::clamp(val, 0, 255));
+                        cp = (ne != std::string::npos) ? ne + 1 : triple.size();
+                    }
+                    out.palette.push_back(rgb);
+                    pos = objEnd + 1;
+                }
+            }
+        }
+    }
 
     // Parse cells array
     {
