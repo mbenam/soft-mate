@@ -16,6 +16,7 @@
 #include "m8/ScreenModel.h"
 #include "m8/DeviceScriptRunner.h"
 #include "m8/Semantic.h"
+#include "m8/UiCapture.h"
 #include <fstream>
 
 using namespace m8::dev;
@@ -824,6 +825,20 @@ TEST_CASE("semanticState extraction and toJson", "[m8_device]") {
     CHECK(json.find("\"screen\":") != std::string::npos);
     CHECK(json.find("\"is_modal\": false") != std::string::npos);
     CHECK(json.find("\"rows\":") != std::string::npos);
+}
+
+TEST_CASE("captureFromGrid col/row at non-symmetric pixel position", "[hwdecode]") {
+    // Regression: UiCapture.cpp used to read cells keyed (y,x) as (x,y),
+    // swapping col and row. A glyph at x=80,y=10 must produce col=10,row=1
+    // (not col=1,row=10). This position is not diagonally symmetric, so a
+    // swap would fail the assertions.
+    ScreenGrid grid;
+    grid.handleFrame(makeCharFrame('A', 80, 10, 255, 255, 255, 0, 0, 0));
+    auto cap = captureFromGrid(grid, true, "TEST");
+
+    REQUIRE(cap.cells.size() == 1);
+    CHECK(cap.cells[0].col == 10);   // 80 / pitchX(8)
+    CHECK(cap.cells[0].row == 1);    // 10 / pitchY(10)
 }
 
 TEST_CASE("ScreenGrid printJson emits highlights array", "[m8_device]") {

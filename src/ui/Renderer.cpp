@@ -471,11 +471,15 @@ void Renderer::writeUiCapture(const std::string& path, const std::string& screen
     };
 
     // ---- Build cells list ------------------------------------------------
+    // Skip blank cells to match device convention: the device only emits
+    // cells that received a draw-char frame (character or colored background).
+    // A cell is blank when ch is space AND bg is the default (0x00000000).
     struct CapCell { int col, row; char ch; int fg, bg; };
     std::vector<CapCell> cells;
     for (int y = 0; y < kGridH; ++y) {
         for (int x = 0; x < kGridW; ++x) {
             const VirtualCell& vc = m_vram[y][x];
+            if (vc.ch == ' ' && vc.bg == 0x00000000) continue;
             int fg = addColor(vc.color);
             int bg = addColor(vc.bg);
             cells.push_back({x, y, vc.ch, fg, bg});

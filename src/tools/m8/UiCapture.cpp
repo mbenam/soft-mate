@@ -45,10 +45,12 @@ UiCapture captureFromGrid(const ScreenGrid& grid, bool settled,
         return static_cast<int>(cap.palette.size() - 1);
     };
 
+    // ScreenGrid::cells is keyed (y, x) — that ordering is surprising
+    // and is what caused the original col/row swap bug (UI-1).
     for (const auto& [pos, cell] : grid.cells) {
         UiCell uc;
-        uc.col = pos.first / cap.pitchX;
-        uc.row = pos.second / cap.pitchY;
+        uc.col = pos.second / cap.pitchX;  // pos.second is x
+        uc.row = pos.first  / cap.pitchY;  // pos.first  is y
         uc.ch = static_cast<char>(cell.ch);
         uc.fgStyle = addColor({cell.fg[0], cell.fg[1], cell.fg[2]});
         uc.bgStyle = addColor({cell.bg[0], cell.bg[1], cell.bg[2]});

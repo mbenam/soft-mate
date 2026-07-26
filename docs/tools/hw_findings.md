@@ -310,6 +310,31 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
   - `--verify-record` hash mismatch check fired as expected during X2 verification on tampered `out_spec.json`, returning exit code 1.
   - `--verify-record` file missing check fired as expected during X3 verification on quarantined `v2` artifacts, returning exit code 1.
 
+---
+
+## UI-1 — UiCapture col/row swap bug
+
+- **Bug:** `captureFromGrid()` in `src/tools/m8/UiCapture.cpp` read
+  `ScreenGrid::cells` (keyed `(y, x)`) as if the key were `(x, y)`.
+  Two lines:
+  ```
+  uc.col = pos.first / cap.pitchX;   // pos.first is Y, not X
+  uc.row = pos.second / cap.pitchY;  // pos.second is X, not Y
+  ```
+  This swapped the axes and divided each by the other axis's pitch.
+- **Symptom:** Captured text reads vertically down columns instead of
+  horizontally. Distinct source columns collide onto the same stored index
+  (e.g. x=0 and x=8 both map to col=0 when y is a multiple of 10).
+- **Fix:** Corrected to `pos.second / pitchX` for col and `pos.first / pitchY`
+  for row. Added a comment noting the surprising `(y, x)` key order.
+- **Regression test:** `captureFromGrid col/row at non-symmetric pixel position`
+  in `test_device_decode.cpp` — asserts col=10, row=1 for a glyph at x=80,y=10.
+  Fails with old code (col=1, row=8), passes with fix.
+- **Corpus impact:** All 79 files in `tests/ui/golden/device/` were written by
+  the broken code and are irrecoverable (many-to-one collision on column index).
+  Moved to `tests/ui/golden/device_broken/`. Re-capture required.
+- **Date:** 2026-07-26
+
 
 
 
