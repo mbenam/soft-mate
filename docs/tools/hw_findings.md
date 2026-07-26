@@ -536,163 +536,43 @@ screens render the same content.
 - **Date:** 2026-07-26 (rewritten: pitch ruled out, re-measured from matched song)
 
 
-## UI-4 — RES→OTT label revert, mixer FX parameter discovery, load-path gap, column offset
+## UI-4 — MIXER parity: deferred items
 
-### UI-4a — Reverted RES→OTT label change (commit 2b9af5c)
+MIXER parity is intentionally parked. The screen is the most irregular in
+the app — level bars are sub-character geometry, the sends block has its own
+column spacing, and its FX block may contain parameters the clone does not
+model. Nothing on it repeats, so every fix is a one-off. The remaining items
+below are deferred by decision, not open bugs.
 
-Commit 2b9af5c renamed the static label at row 22 from "RES" to "OTT" while
-leaving the field wired to CursorId::DJF_RES, whose value resolver returns
-mx.djf_res. The screen displayed "OTT" above the DJ filter's resonance value,
-and editing that field changed DJF resonance. The label and the parameter
-behind it no longer agreed, which is worse than the mismatch it was trying
-to fix.
+### What is correct (good enough)
 
-The same commit deleted DJF_TYP from the CursorId enum, the static text, the
-interactive fields, the nav map, and two handlers in MixerScreen.cpp. But
-ParamID::MIX_DJF_TYP and MixerState::djf_typ still exist in the engine, so
-that parameter became unreachable from the UI.
+- Track-number column and send labels (MX, DE, RE) render at the right
+  positions relative to their own block.
+- Track volume hex values, output volume, tempo, and project name load and
+  display correctly.
+- The OTT/RES/TYP label revert (§UI-4a history) was undone; labels match
+  their parameters.
 
-**Action taken:** Both changes reverted by hand (not git revert). "RES"
-restored at row 22, "TYP" restored at row 23, DJF_TYP restored to enum,
-interactive fields, nav map, and MixerScreen.cpp handlers. Build confirmed.
-The open question remains: the device shows "OTT" where the clone shows
-"RES/TYP", and it is not yet known whether OTT is a parameter the clone
-does not model at all.
+### Deferred items
 
-- **Date:** 2026-07-26
+| Item | What | Why deferred |
+|------|------|-------------|
+| §UI-3a | Background/separator fills (535 bg-only cell gap) | MIXER-specific bars; no other screen needs this geometry. Will revisit via video capture. |
+| §UI-3b | Vertical row offsets (element-by-element, not uniform) | Root cause unknown; pitch ruled out three times. Re-measure after fills land. |
+| §UI-4a | RES vs OTT label (device shows OTT) | May be a parameter the clone does not model. Needs device FX enumeration first. |
+| §UI-4b | Device mixer FX parameter list | BLOCKED — needs hardware. |
+| §UI-4c | mix_vol field (compile-time default, never loaded) | No .m8s source for this field; value is always the default. Low impact. |
+| §UI-4d | Sends column spacing (3-col device vs 4-col clone) | MIXER-specific layout; no other screen has this structure. |
+| §UI-4e | Stereo analog_input lost on save | Engine has no right-channel fields; library discards right-channel bytes. Accepted. |
 
-### UI-4b — Device mixer FX parameter list (BLOCKED)
+### Approach for deferred items
 
-`m8_nav` is not available on this machine. The device's actual mixer FX
-parameter list cannot be determined without hardware access. The task is
-BLOCKED until a device is attached.
+The intended approach is video capture of the device during playback rather
+than static screen diffs. Static diffs cannot capture dynamic behavior (level
+bars moving, cursor highlights), and MIXER is the screen where this matters
+most. The grid screens (SONG, CHAIN, PHRASE, TABLE) are all variations on
+one structure — a grid of hex values with a row-number gutter and a cursor
+highlight — and will be tackled first.
 
-- **Date:** 2026-07-26 (blocked — no device)
-
-### UI-4c — MixerState fields not loaded from .m8s
-
-The device and clone agree on tempo and track volumes when loading
-PROBE_SELFTEST, but MIX value (device E0, clone DC) and DE send
-(device FF, clone 00) differ. The clone's MIX_VOL placeholder is
-literally "DC", which is the compile-time default.
-
-**Root cause:** `convertSongToEngine()` in `src/io/SongIO.cpp:304-314`
-populates 12 of 21 MixerState fields from the .m8s file. The remaining
-9 fields retain their in-class defaults (Engine.h:237-251):
-
-| Field | Default | Loaded from .m8s? |
-|-------|---------|-------------------|
-| in_vol | 0x00 | No |
-| in_cho | 0x00 | No |
-| in_del | 0x00 | No |
-| in_rev | 0x00 | No |
-| usb_vol | 0x00 | No |
-| usb_cho | 0x00 | No |
-| usb_del | 0x00 | No |
-| usb_rev | 0x00 | No |
-| mix_vol | 0xDC | No |
-
-The m8-files-cxx library's `MixerSettings` struct (third_party/m8-files-cxx/src/types.hpp:94-104)
-**does** parse `analog_input` and `usb_input` (each containing volume,
-chorus, delay, reverb). The data is present in the parsed Song object but
-`convertSongToEngine()` never reads it. These fields are also not
-round-tripped on save (`convertEngineToSong`).
-
-**Not fixed in this task.** This is its own piece of work — adding nine
-field transfers to `convertSongToEngine()` plus the save counterpart.
-
-- **Date:** 2026-07-26
-
-### UI-4d — Column offset is not uniform
-
-The clone labels at col 23 vs device at col 24 was reported as a known
-gap. Measuring every identifiable glyph run in the device capture
-(tests/ui/golden/device/MIXER.json) against the clone layout
-(MixerScreenLayout.h) reveals three distinct patterns:
-
-**Pattern 1 — Left side + middle FX (cols 0–27): constant +1.**
-Title, OUTPUT VOL, all track volume hex values, MIX/LIM/DJF/RES
-labels, their values, EQ, INPUT, USB — device is 1 column right of
-clone.
-
-**Pattern 2 — Track numbers (col 34): constant 0.**
-All eight "N ---" entries are at col 34 on both sides. Anchored to
-the right edge of the 40-column grid.
-
-**Pattern 3 — Sends MX/DE/RE: inconsistent spacing.**
-Device uses 3-col spacing (cols 1, 4, 7); clone uses 4-col spacing
-(cols 0, 4, 8). This gives deltas of +1, 0, −1 respectively — a
-different internal layout, not a uniform offset.
-
-| Element | Device col | Clone col | Delta |
-|---------|-----------|-----------|-------|
-| MIXER title | 1 | 0 | +1 |
-| OUTPUT VOL | 1 | 0 | +1 |
-| Track 1 vol (E0) | 1 | 0 | +1 |
-| Track 8 vol (E0) | 22 | 21 | +1 |
-| MIX label | 24 | 23 | +1 |
-| MIX value | 28 | 27 | +1 |
-| LIM label | 24 | 23 | +1 |
-| DJF label | 24 | 23 | +1 |
-| OTT/RES label | 24 | 23 | +1 |
-| Track 1 --- | 34 | 34 | 0 |
-| Track 8 --- | 34 | 34 | 0 |
-| MX (sends) | 1 | 0 | +1 |
-| DE (sends) | 4 | 4 | 0 |
-| RE (sends) | 7 | 8 | −1 |
-| INPUT | 13 | 12 | +1 |
-| USB | 19 | 18 | +1 |
-
-**Conclusion:** The offset is not a constant. A uniform +1 correction
-would fix most elements but break DE (already aligned) and RE (would
-shift to −2). The sends section has genuinely different spacing between
-device and clone, which needs its own investigation.
-
-### Sends spacing detail
-
-The sends block (MX, DE, RE labels on the device's row 18 / clone's
-row 20) has different inter-label spacing:
-
-| Label | Device col | Clone col | Delta | Device spacing | Clone spacing |
-|-------|-----------|-----------|-------|----------------|---------------|
-| MX    | 1         | 0         | +1    | —              | —             |
-| DE    | 4         | 4         | 0     | 3 (4−1)        | 4 (4−0)       |
-| RE    | 7         | 8         | −1    | 3 (7−4)        | 4 (8−4)       |
-
-Device uses uniform 3-column spacing (1, 4, 7).
-Clone uses uniform 4-column spacing (0, 4, 8).
-The mismatch is internal to the sends block — DE aligns by coincidence,
-while MX is +1 and RE is −1. This is not a shift that a single
-constant offset would correct.
-
-- **Date:** 2026-07-26
-
-### UI-4e — Stereo analog_input lost on save (known limitation)
-
-`convertEngineToSong()` in `src/io/SongIO.cpp:568-574` always writes
-`analog_input` as a mono `InputMixerSettings` (single variant alternative).
-The read path (`convertSongToEngine`, lines 316-330) handles both mono and
-stereo variants, taking the left/mono channel for the engine fields.
-
-**Operation that loses data:** Loading a song with stereo analog input
-(a_vol1 ≠ 0xFF), then saving it via `saveSong()` or `saveNewSong()`.
-
-**What is lost:** The right-channel analog input settings. After save,
-`a_vol1` becomes 0xFF (mono sentinel), and the right-channel
-volume/chorus/delay/reverb bytes become 0xFF (the sentinel written by
-`MixerSettings::write()`).
-
-**Why not fixed:** The engine's `MixerState` has no right-channel analog
-input fields — only `in_vol`/`in_cho`/`in_del`/`in_rev` (left/mono). The
-library's read path also discards right-channel bytes and constructs the
-right channel from left-channel values (types.cpp:198), mirroring a quirk
-in the Rust reference implementation. So the right-channel data is never
-used by either the engine or the library. Fixing the write path would
-require adding right-channel fields to `MixerState` and using them in the
-audio path, which is out of scope.
-
-**Test coverage:** IO-2 and IO-3 in `test_persistence.cpp` verify the
-read-path behavior. The write-path limitation is accepted, not tested.
-
-- **Date:** 2026-07-26
+- **Date:** 2026-07-26 (rewritten from open-bug list to deferred list)
 
