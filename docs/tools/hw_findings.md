@@ -536,4 +536,117 @@ screens render the same content.
 - **Date:** 2026-07-26 (rewritten: pitch ruled out, re-measured from matched song)
 
 
+## UI-4 — RES→OTT label revert, mixer FX parameter discovery, load-path gap, column offset
+
+### UI-4a — Reverted RES→OTT label change (commit 2b9af5c)
+
+Commit 2b9af5c renamed the static label at row 22 from "RES" to "OTT" while
+leaving the field wired to CursorId::DJF_RES, whose value resolver returns
+mx.djf_res. The screen displayed "OTT" above the DJ filter's resonance value,
+and editing that field changed DJF resonance. The label and the parameter
+behind it no longer agreed, which is worse than the mismatch it was trying
+to fix.
+
+The same commit deleted DJF_TYP from the CursorId enum, the static text, the
+interactive fields, the nav map, and two handlers in MixerScreen.cpp. But
+ParamID::MIX_DJF_TYP and MixerState::djf_typ still exist in the engine, so
+that parameter became unreachable from the UI.
+
+**Action taken:** Both changes reverted by hand (not git revert). "RES"
+restored at row 22, "TYP" restored at row 23, DJF_TYP restored to enum,
+interactive fields, nav map, and MixerScreen.cpp handlers. Build confirmed.
+The open question remains: the device shows "OTT" where the clone shows
+"RES/TYP", and it is not yet known whether OTT is a parameter the clone
+does not model at all.
+
+- **Date:** 2026-07-26
+
+### UI-4b — Device mixer FX parameter list (BLOCKED)
+
+`m8_nav` is not available on this machine. The device's actual mixer FX
+parameter list cannot be determined without hardware access. The task is
+BLOCKED until a device is attached.
+
+- **Date:** 2026-07-26 (blocked — no device)
+
+### UI-4c — MixerState fields not loaded from .m8s
+
+The device and clone agree on tempo and track volumes when loading
+PROBE_SELFTEST, but MIX value (device E0, clone DC) and DE send
+(device FF, clone 00) differ. The clone's MIX_VOL placeholder is
+literally "DC", which is the compile-time default.
+
+**Root cause:** `convertSongToEngine()` in `src/io/SongIO.cpp:304-314`
+populates 12 of 21 MixerState fields from the .m8s file. The remaining
+9 fields retain their in-class defaults (Engine.h:237-251):
+
+| Field | Default | Loaded from .m8s? |
+|-------|---------|-------------------|
+| in_vol | 0x00 | No |
+| in_cho | 0x00 | No |
+| in_del | 0x00 | No |
+| in_rev | 0x00 | No |
+| usb_vol | 0x00 | No |
+| usb_cho | 0x00 | No |
+| usb_del | 0x00 | No |
+| usb_rev | 0x00 | No |
+| mix_vol | 0xDC | No |
+
+The m8-files-cxx library's `MixerSettings` struct (third_party/m8-files-cxx/src/types.hpp:94-104)
+**does** parse `analog_input` and `usb_input` (each containing volume,
+chorus, delay, reverb). The data is present in the parsed Song object but
+`convertSongToEngine()` never reads it. These fields are also not
+round-tripped on save (`convertEngineToSong`).
+
+**Not fixed in this task.** This is its own piece of work — adding nine
+field transfers to `convertSongToEngine()` plus the save counterpart.
+
+- **Date:** 2026-07-26
+
+### UI-4d — Column offset is not uniform
+
+The clone labels at col 23 vs device at col 24 was reported as a known
+gap. Measuring every identifiable glyph run in the device capture
+(tests/ui/golden/device/MIXER.json) against the clone layout
+(MixerScreenLayout.h) reveals three distinct patterns:
+
+**Pattern 1 — Left side + middle FX (cols 0–27): constant +1.**
+Title, OUTPUT VOL, all track volume hex values, MIX/LIM/DJF/RES
+labels, their values, EQ, INPUT, USB — device is 1 column right of
+clone.
+
+**Pattern 2 — Track numbers (col 34): constant 0.**
+All eight "N ---" entries are at col 34 on both sides. Anchored to
+the right edge of the 40-column grid.
+
+**Pattern 3 — Sends MX/DE/RE: inconsistent spacing.**
+Device uses 3-col spacing (cols 1, 4, 7); clone uses 4-col spacing
+(cols 0, 4, 8). This gives deltas of +1, 0, −1 respectively — a
+different internal layout, not a uniform offset.
+
+| Element | Device col | Clone col | Delta |
+|---------|-----------|-----------|-------|
+| MIXER title | 1 | 0 | +1 |
+| OUTPUT VOL | 1 | 0 | +1 |
+| Track 1 vol (E0) | 1 | 0 | +1 |
+| Track 8 vol (E0) | 22 | 21 | +1 |
+| MIX label | 24 | 23 | +1 |
+| MIX value | 28 | 27 | +1 |
+| LIM label | 24 | 23 | +1 |
+| DJF label | 24 | 23 | +1 |
+| OTT/RES label | 24 | 23 | +1 |
+| Track 1 --- | 34 | 34 | 0 |
+| Track 8 --- | 34 | 34 | 0 |
+| MX (sends) | 1 | 0 | +1 |
+| DE (sends) | 4 | 4 | 0 |
+| RE (sends) | 7 | 8 | −1 |
+| INPUT | 13 | 12 | +1 |
+| USB | 19 | 18 | +1 |
+
+**Conclusion:** The offset is not a constant. A uniform +1 correction
+would fix most elements but break DE (already aligned) and RE (would
+shift to −2). The sends section has genuinely different spacing between
+device and clone, which needs its own investigation.
+
+- **Date:** 2026-07-26
 

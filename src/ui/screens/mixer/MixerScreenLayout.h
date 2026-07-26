@@ -16,7 +16,7 @@ enum class CursorId : uint8_t {
     MST_CHO, MST_DEL, MST_REV,
     IN_VOL, IN_CHO, IN_DEL, IN_REV,
     USB_VOL, USB_CHO, USB_DEL, USB_REV,
-    MIX_VOL, LIM_VAL, DJF_FREQ, DJF_RES,
+    MIX_VOL, LIM_VAL, DJF_FREQ, DJF_RES, DJF_TYP,
 };
 
 // TRK_VOL_0..TRK_VOL_7 are contiguous in the enum, so the track index can be
@@ -64,7 +64,8 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
         {"MIX", 23, 19, "LABEL_DIM", "", "static", false, 0},
         {"LIM", 23, 20, "LABEL_DIM", "", "static", false, 0},
         {"DJF", 23, 21, "LABEL_DIM", "", "static", false, 0},
-        {"OTT", 23, 22, "LABEL_DIM", "", "static", false, 0}
+        {"RES", 23, 22, "LABEL_DIM", "", "static", false, 0},
+        {"TYP", 23, 23, "LABEL_DIM", "", "static", false, 0}
     };
 }
 
@@ -92,7 +93,8 @@ inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetMixerInteractiv
         {C::MIX_VOL, { {"DC", 27, 19, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::LIM_VAL, { {"40", 27, 20, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::DJF_FREQ, { {"80", 27, 21, "VALUE", "LABEL_LITE", "value", true, 0} }},
-        {C::DJF_RES, { {"80", 27, 22, "VALUE", "LABEL_LITE", "value", true, 0} }}
+        {C::DJF_RES, { {"80", 27, 22, "VALUE", "LABEL_LITE", "value", true, 0} }},
+        {C::DJF_TYP, { {"00", 27, 23, "VALUE", "LABEL_LITE", "value", true, 0} }}
     };
 
     // Tracks 1-8 (0-7 indexed)
@@ -132,7 +134,8 @@ inline std::unordered_map<CursorId, NavNode<CursorId>> GetMixerNavMap() {
         {C::MIX_VOL,   {/*U*/C::TRK_VOL_7,  /*D*/C::LIM_VAL,   /*L*/C::USB_VOL,   /*R*/C::NONE}},
         {C::LIM_VAL,   {/*U*/C::MIX_VOL,    /*D*/C::DJF_FREQ,  /*L*/C::USB_CHO,   /*R*/C::NONE}},
         {C::DJF_FREQ,  {/*U*/C::LIM_VAL,    /*D*/C::DJF_RES,   /*L*/C::USB_DEL,   /*R*/C::NONE}},
-        {C::DJF_RES,   {/*U*/C::DJF_FREQ,   /*D*/C::NONE,      /*L*/C::USB_REV,   /*R*/C::NONE}}
+        {C::DJF_RES,   {/*U*/C::DJF_FREQ,   /*D*/C::DJF_TYP,   /*L*/C::USB_REV,   /*R*/C::NONE}},
+        {C::DJF_TYP,   {/*U*/C::DJF_RES,    /*D*/C::NONE,      /*L*/C::USB_REV,   /*R*/C::NONE}}
     };
 }
 

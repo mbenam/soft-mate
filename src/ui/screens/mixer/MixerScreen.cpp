@@ -40,6 +40,7 @@ static int ResolveMixerValue(CursorId fieldId, const engine::MixerState& mx) {
     if (fieldId == C::LIM_VAL) return mx.lim_val;
     if (fieldId == C::DJF_FREQ) return mx.djf_freq;
     if (fieldId == C::DJF_RES) return mx.djf_res;
+    if (fieldId == C::DJF_TYP) return mx.djf_typ;
     return 0;
 }
 
@@ -165,6 +166,7 @@ void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
         else if (cursor_id == C::LIM_VAL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_LIM_VAL, std::clamp<int>((int)mx.lim_val + step, 0, 255));
         else if (cursor_id == C::DJF_FREQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_FREQ, std::clamp<int>((int)mx.djf_freq + step, 0, 255));
         else if (cursor_id == C::DJF_RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_RES, std::clamp<int>((int)mx.djf_res + step, 0, 255));
+        else if (cursor_id == C::DJF_TYP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_TYP, std::clamp<int>((int)mx.djf_typ + step, 0, 255));
     }
 }
 
