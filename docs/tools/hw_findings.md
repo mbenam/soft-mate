@@ -341,62 +341,90 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 Before comparing device vs clone MIXER captures, both must show the same song
 and the same screen. Without this, diffs are noise.
 
-### Procedure
+### Procedure (Option B — reuse probe on device)
 
-1. **Pick a known song file.** Use `songs/sunrise.m8s` or `songs/opening.m8s`.
-   Both are committed to the repo.
+The device already has `PROBE_SELFTEST.M8S` on its SD card (loaded previously
+via `m8_nav --load-song`). Regenerate the identical file on the host, then
+load it on both sides.
 
-2. **Load on the clone:**
-   ```
-   $script = @"
-   load songs/sunrise.m8s
-   goto MIXER
-   ui_capture clone_MIXER
-   "@
-   $script | Out-File -FilePath "test_out_ui\cap_mixer.m8script" -Encoding utf8
-   build\Release\m8_clone.exe --script test_out_ui\cap_mixer.m8script --headless --out-dir test_out_ui
-   ```
+#### Step 1: Generate probe on host
 
-3. **Load on the device** (requires hardware connected):
-   ```
-   build\Release\m8_nav.exe --serve daemon --serial COM<port>
-   ```
-   In another terminal:
-   ```
-   .\tools\ui_sweep.ps1 -Port COM<port> -Song "songs/sunrise.m8s"
-   ```
-   Or manually: load the same `.m8s` file on the device, navigate to MIXER,
-   then run `tools\ui_capture.ps1 -Port COM<port> -Screen MIXER`.
+```powershell
+build\Release\m8_makeprobe.exe --type macrosynth --shape 0x00 --timbre 0x40 `
+    --color 0x80 --note C-4 --tempo 120 --out probe_selftest.m8s
+```
 
-4. **Verify match.** Both captures must show the same:
-   - Tempo value (e.g. `T>120`)
-   - Track volume hex values (e.g. `E0`)
-   - Output volume label (e.g. `98`)
-   - Track labels (e.g. `CH`, `DE`, `RE`)
+This writes `master_volume=0xE0`, `track_volume[i]=0xE0` for all 8 tracks,
+and tempo 120. The device's copy was made before the 0x7F instrument-volume
+fix, so the output volume byte may differ (device shows F0, freshly generated
+shows E0). This does not affect the content check — the check is tempo and
+track volumes, not output volume.
 
-5. **Render side-by-side.** Use `tools/render_ui.py` or the PowerShell grids
-   in `test_out_ui/` to produce 40-column text representations.
+#### Step 2: Load on the clone and capture MIXER
+
+```powershell
+$script = @"
+load probe_selftest.m8s
+goto MIXER
+ui_capture clone_MIXER_matched
+"@
+$script | Out-File -FilePath "test_out_ui\cap_mixer_matched.m8script" -Encoding utf8
+build\Release\m8_clone.exe --script test_out_ui\cap_mixer_matched.m8script `
+    --headless --out-dir test_out_ui
+```
+
+Produces `test_out_ui/clone_MIXER_matched.json`.
+
+#### Step 3: Load on the device and capture MIXER
+
+Requires hardware connected over serial:
+
+```powershell
+build\Release\m8_nav.exe --port COM<port> --load-song PROBE_SELFTEST
+```
+
+Then capture:
+
+```powershell
+tools\ui_capture.ps1 -Port COM<port> -Screen MIXER
+```
+
+Or use the daemon + sweep workflow. The existing golden
+`tests/ui/golden/device/MIXER.json` was captured from this same song and can
+be reused without re-capturing, provided the device is showing the same song.
+
+#### Step 4: Verify match
+
+Both captures must show the same:
+- **Tempo:** `T>120`
+- **Track volumes:** `E0 E0 E0 E0 E0 E0 E0 E0`
+- **Output volume:** E0 (clone) / F0 (device golden — pre-fix byte, expected)
+- **Track labels:** CH DE RE
+
+The output volume byte differs because the device's PROBE_SELFTEST predates
+the 0x7F instrument-volume fix. This is acceptable — the check is tempo and
+track volumes.
 
 ### Why this matters
 
 The device MIXER golden (`tests/ui/golden/device/MIXER.json`, 767 cells) was
-captured with an unknown song (tempo 120, track vol `E0`). The clone's default
-demo song (tempo 128, output vol `98`) produces a visually different MIXER
-screen. Cell counts and layout positions cannot be meaningfully compared until
-both sides render the same content.
+captured with a known song (PROBE_SELFTEST: tempo 120, track vol `E0`). The
+clone's default demo song (tempo 124, varied track volumes) produces a
+visually different MIXER screen. Cell counts and layout positions cannot be
+meaningfully compared until both sides render the same content.
 
-### Current captures
+### Current captures (matched song)
 
-| Source | File | Cells | Tempo | Output vol | Track labels |
-|--------|------|-------|-------|------------|--------------|
-| Device | `tests/ui/golden/device/MIXER.json` | 767 | T>120 | 98 | CH DE RE |
-| Clone  | `test_out_ui/clone_MIXER.json`      | 205 | T>128 | 98 | CH DE RE |
+| Source | File | Cells | Tempo | Track vols | Output vol |
+|--------|------|-------|-------|------------|------------|
+| Device | `tests/ui/golden/device/MIXER.json` | 767 | T>120 | E0×8 | F0 |
+| Clone  | `test_out_ui/clone_MIXER_matched.json` | — | T>120 | E0×8 | E0 |
 
-**Note:** The clone capture above uses the default demo song, not the device's
-song. To do a valid comparison, re-run steps 2-3 with the same `.m8s` file on
-both sides.
+The output volume difference (E0 vs F0) is expected: the device's
+PROBE_SELFTEST predates the 0x7F instrument-volume fix. Tempo and all 8
+track volumes now agree.
 
-- **Date:** 2026-07-26
+- **Date:** 2026-07-26 (updated: matched-song procedure, Option B)
 
 
 ## UI-3a — 205 vs 767 cells: missing horizontal separator bars
@@ -442,30 +470,62 @@ engine or data-model work required.
 - **Date:** 2026-07-26
 
 
-## UI-3b — Vertical row offset (3 rows)
+## UI-3b — Vertical row offset (element-by-element layout difference)
 
 The device MIXER title "MIXER" appears at row 3; the clone's title is at
 row 0. The clone is shifted 3 rows higher.
 
-### Side-by-side (40-col text grids)
+### Re-measured landmarks (matched song — both sides show probe_selftest)
 
-See `test_out_ui/MIXER_side_by_side.txt`. Key landmarks:
+After loading the same song on both sides (§UI-2 Option B), the offsets
+persist. The table below uses clone_row − device_row:
 
-| Content | Device row | Clone row | Offset |
-|---------|-----------|-----------|--------|
-| "MIXER" title | 3 | 0 | -3 |
-| "OUTPUT VOL" | 5 | 3 | -2 |
-| Track bars start | 7 | 9 | +2 |
+| Content | Device row | Clone row | Offset (clone−device) |
+|---------|-----------|-----------|----------------------|
+| "MIXER" title | 3 | 0 | −3 |
+| "OUTPUT VOL" | 5 | 3 | −2 |
 | Track vol hex | 12 | 18 | +6 |
-| "MX DE RE" labels | 18 | 20 | +2 |
+| "CH DE RE" labels | 18 | 20 | +2 |
 
-### Cause
+The offsets change sign: −3, −2, +6, +2. The track-vol-hex row moves in
+the opposite direction from the title. This is not a uniform shift.
 
-The device uses pitch_y=10 (24 visible rows in 240px). The clone uses
-pitch_y=8 (30 visible rows). The device reserves rows 0–2 as top chrome
-(maybe nav/status), while the clone puts the title at row 0. The layouts
-are proportionally different — the offset is not a uniform shift but a
-consequence of different vertical density.
+### Cause — pitch scaling does not explain this
+
+Pitch has been proposed as the cause three times and ruled out each time:
+
+1. **First proposal:** "Device uses pitch_y=10 (24 rows), clone uses
+   pitch_y=8 (30 rows) — different vertical density." The original §UI-3b
+   table disproved this: the offsets change sign, which a uniform scaling
+   cannot produce.
+
+2. **Second proposal (this revision):** If pitch scaling were the sole
+   cause, clone rows would be uniformly larger than device rows by the
+   factor 10/8 = 1.25 (clone_row ≈ device_row × 1.25). The predicted
+   clone rows would be:
+
+   | Landmark | Device row | Predicted clone row | Actual clone row | Error |
+   |----------|-----------|--------------------|-----------------|----|
+   | MIXER title | 3 | 3.75 | 0 | −3.75 |
+   | OUTPUT VOL | 5 | 6.25 | 3 | −3.25 |
+   | Track vol hex | 12 | 15.0 | 18 | +3.0 |
+   | MX DE RE | 18 | 22.5 | 20 | −2.5 |
+
+   One of four predictions is close; three are off by 3+ rows. The sign
+   pattern is wrong: pitch predicts all positive offsets (clone rows >
+   device rows), but observed offsets are mixed (−3, −2, +6, +2).
+
+3. **Third consideration:** The row counts (24 device vs 30 clone) mean
+   the clone has MORE rows, each SHORTER (8px vs 10px). A scaling from
+   10px to 8px makes clone rows SMALLER, not larger. The task's framing
+   of "clone ≈ device × 1.25" is correct for row count but the direction
+   of the effect is the opposite of what was claimed.
+
+**Conclusion:** The layouts differ element by element. Pitch (row height)
+accounts for the difference in total row count (24 vs 30) but does not
+account for where individual elements land within those rows. Each element
+( title, output vol, track bars, labels) is positioned independently by
+the layout code, and the positions diverge for reasons unrelated to pitch.
 
 ### Impact
 
@@ -473,7 +533,7 @@ Once Task 2's missing bars are added, the vertical alignment should be
 re-measured. The current offset may shrink or change character once both
 screens render the same content.
 
-- **Date:** 2026-07-26
+- **Date:** 2026-07-26 (rewritten: pitch ruled out, re-measured from matched song)
 
 
 
