@@ -79,7 +79,9 @@ static m8::Song buildProbeSong(
     float tempo,
     const std::string& samplePath = "",
     int tableTick = 0xFF,
-    int slice = 0)
+    int slice = 0,
+    int modAmount = 0xFF,
+    int modHold = 0xFF)
 {
     m8::Song song;
 
@@ -187,9 +189,9 @@ static m8::Song buildProbeSong(
         // of sustained peak volume, guaranteeing a steady tone over the full capture window.
         m8::AHDEnv ahd;
         ahd.dest = 1;           // VOLUME
-        ahd.amount = 0xFF;      // full positive
+        ahd.amount = static_cast<uint8_t>(modAmount);
         ahd.attack = 0x01;      // fast attack
-        ahd.hold = 0xFF;        // max hold (~10.6s at 120 BPM)
+        ahd.hold = static_cast<uint8_t>(modHold);
         ahd.decay = 0x80;       // long decay
         sp.mods[0] = ahd;
 
@@ -564,6 +566,8 @@ int main(int argc, char** argv) {
     float tempo = 120.0f;
     int tableTick = 0xFF;  // 0xFF = table disabled (default, matches prior behavior)
     int slice = 0;         // sampler-only: 0=off, 1=FILE, 2..0x80 = N equal divisions
+    int modAmt = 0xFF;
+    int modHold = 0xFF;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -580,6 +584,8 @@ int main(int argc, char** argv) {
         else if (a == "--timbre")      timbre = num();
         else if (a == "--color")       color = num();
         else if (a == "--volume")      volume = num();
+        else if (a == "--mod-amt")     modAmt = num();
+        else if (a == "--mod-hold")    modHold = num();
         else if (a == "--filter-type") filterType = num();
         else if (a == "--filter-cutoff") filterCutoff = num();
         else if (a == "--filter-res")  filterRes = num();
@@ -709,7 +715,7 @@ int main(int argc, char** argv) {
 
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
-                               tableTick, slice);
+                               tableTick, slice, modAmt, modHold);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume)) {

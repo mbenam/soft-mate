@@ -104,6 +104,53 @@ struct SerialPort {
 
     ~SerialPort() { close(); }
 };
+
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
+#include <functiondiscoverykeys_devpkey.h>
+
+static void ensureM8WindowsInputVolume100() {
+    CoInitialize(nullptr);
+    IMMDeviceEnumerator* enumerator = nullptr;
+    HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&enumerator);
+    if (FAILED(hr) || !enumerator) return;
+
+    IMMDeviceCollection* collection = nullptr;
+    hr = enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection);
+    if (SUCCEEDED(hr) && collection) {
+        UINT count = 0;
+        collection->GetCount(&count);
+        for (UINT i = 0; i < count; ++i) {
+            IMMDevice* dev = nullptr;
+            if (SUCCEEDED(collection->Item(i, &dev)) && dev) {
+                IPropertyStore* props = nullptr;
+                if (SUCCEEDED(dev->OpenPropertyStore(STGM_READ, &props)) && props) {
+                    PROPVARIANT varName;
+                    PropVariantInit(&varName);
+                    if (SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &varName)) && varName.vt == VT_LPWSTR && varName.pwszVal) {
+                        if (std::wcsstr(varName.pwszVal, L"M8") != nullptr) {
+                            IAudioEndpointVolume* epv = nullptr;
+                            if (SUCCEEDED(dev->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, (void**)&epv)) && epv) {
+                                float curLevel = 0.0f;
+                                epv->GetMasterVolumeLevelScalar(&curLevel);
+                                if (curLevel < 0.99f) {
+                                    std::printf("Windows input volume for M8 was %.1f%%; setting to 100%%\n", curLevel * 100.0f);
+                                    epv->SetMasterVolumeLevelScalar(1.0f, nullptr);
+                                }
+                                epv->Release();
+                            }
+                        }
+                    }
+                    PropVariantClear(&varName);
+                    props->Release();
+                }
+                dev->Release();
+            }
+        }
+        collection->Release();
+    }
+    enumerator->Release();
+}
 #else
 // POSIX stub (not the primary platform)
 struct SerialPort {
@@ -560,6 +607,10 @@ int main(int argc, char** argv) {
     SerialPort serial;
     if (!serial.open(port.c_str())) return 1;
     std::printf("serial: %s opened\n", port.c_str());
+
+#ifdef _WIN32
+    ensureM8WindowsInputVolume100();
+#endif
 
     // Enable display
     serialEnable(serial);
