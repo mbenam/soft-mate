@@ -49,6 +49,16 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
         {"DE", 9, 22, "LABEL_DIM", "", "static", false, 0},
         {"RE", 9, 23, "LABEL_DIM", "", "static", false, 0},
 
+        // Track numbers (right column)
+        {"1 ---", 34, 7, "LABEL_DIM", "", "static", false, 0},
+        {"2 ---", 34, 8, "LABEL_DIM", "", "static", false, 0},
+        {"3 ---", 34, 9, "LABEL_DIM", "", "static", false, 0},
+        {"4 ---", 34, 10, "LABEL_DIM", "", "static", false, 0},
+        {"5 ---", 34, 11, "LABEL_DIM", "", "static", false, 0},
+        {"6 ---", 34, 12, "LABEL_DIM", "", "static", false, 0},
+        {"7 ---", 34, 13, "LABEL_DIM", "", "static", false, 0},
+        {"8 ---", 34, 14, "LABEL_DIM", "", "static", false, 0},
+
         // Master FX
         {"EQ", 27, 18, "LABEL_LITE", "", "static", false, 0},
         {"MIX", 23, 19, "LABEL_DIM", "", "static", false, 0},
