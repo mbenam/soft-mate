@@ -648,5 +648,22 @@ would fix most elements but break DE (already aligned) and RE (would
 shift to −2). The sends section has genuinely different spacing between
 device and clone, which needs its own investigation.
 
+### Sends spacing detail
+
+The sends block (MX, DE, RE labels on the device's row 18 / clone's
+row 20) has different inter-label spacing:
+
+| Label | Device col | Clone col | Delta | Device spacing | Clone spacing |
+|-------|-----------|-----------|-------|----------------|---------------|
+| MX    | 1         | 0         | +1    | —              | —             |
+| DE    | 4         | 4         | 0     | 3 (4−1)        | 4 (4−0)       |
+| RE    | 7         | 8         | −1    | 3 (7−4)        | 4 (8−4)       |
+
+Device uses uniform 3-column spacing (1, 4, 7).
+Clone uses uniform 4-column spacing (0, 4, 8).
+The mismatch is internal to the sends block — DE aligns by coincidence,
+while MX is +1 and RE is −1. This is not a shift that a single
+constant offset would correct.
+
 - **Date:** 2026-07-26
 
