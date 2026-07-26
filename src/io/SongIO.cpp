@@ -313,6 +313,28 @@ static void convertSongToEngine(const m8::Song& song,
     state.mixer.djf_res = song.mixer_settings.dj_peak;
     state.mixer.djf_typ = song.mixer_settings.dj_filter_type;
 
+    // Analog input (mono or stereo — engine takes left/mono channel)
+    std::visit([&](auto& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, m8::InputMixerSettings>) {
+            state.mixer.in_vol = arg.volume;
+            state.mixer.in_cho = arg.chorus;
+            state.mixer.in_del = arg.delay;
+            state.mixer.in_rev = arg.reverb;
+        } else {
+            state.mixer.in_vol = arg.first.volume;
+            state.mixer.in_cho = arg.first.chorus;
+            state.mixer.in_del = arg.first.delay;
+            state.mixer.in_rev = arg.first.reverb;
+        }
+    }, song.mixer_settings.analog_input);
+
+    // USB input
+    state.mixer.usb_vol = song.mixer_settings.usb_input.volume;
+    state.mixer.usb_cho = song.mixer_settings.usb_input.chorus;
+    state.mixer.usb_del = song.mixer_settings.usb_input.delay;
+    state.mixer.usb_rev = song.mixer_settings.usb_input.reverb;
+
     // Effects
     auto& fx = state.effects;
     fx.cho_mod_depth = song.effects_settings.chorus_mod_depth;
@@ -542,6 +564,22 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     song.mixer_settings.dj_filter = state.mixer.djf_freq;
     song.mixer_settings.dj_peak = state.mixer.djf_res;
     song.mixer_settings.dj_filter_type = state.mixer.djf_typ;
+
+    // Analog input — write as mono (single InputMixerSettings, right vol = 0xFF)
+    song.mixer_settings.analog_input = m8::InputMixerSettings{
+        static_cast<uint8_t>(state.mixer.in_vol),
+        static_cast<uint8_t>(state.mixer.in_cho),
+        static_cast<uint8_t>(state.mixer.in_del),
+        static_cast<uint8_t>(state.mixer.in_rev)
+    };
+
+    // USB input
+    song.mixer_settings.usb_input = m8::InputMixerSettings{
+        static_cast<uint8_t>(state.mixer.usb_vol),
+        static_cast<uint8_t>(state.mixer.usb_cho),
+        static_cast<uint8_t>(state.mixer.usb_del),
+        static_cast<uint8_t>(state.mixer.usb_rev)
+    };
 
     // Effects
     auto& fx = song.effects_settings;
