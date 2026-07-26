@@ -229,6 +229,10 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 
 ## V2 — Unsaturated Amplitude Parity with Headroom
 
+> **UNVERIFIED.** The supporting records for this section failed `--verify-record`
+> (see `tests/fixtures/measurements/unverified/README.md`). The numbers below are
+> not evidence and must not be cited. Superseded by §X5 / §X6 when those are run.
+
 - **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
 - **Headroom Settings:** Instrument volume = `0x40` (64), Mod 0 amount = `0x80` (128). Peak target band: 0.3 – 0.7.
 - **Measurement Record Provenance:** `tests/fixtures/measurements/v2/*.record.json` (reproducible via `tests/fixtures/measurements/v2/run_v2.ps1`).
@@ -247,6 +251,10 @@ Comparison of amplitude envelope stability across capture window for `ahd.hold =
 ---
 
 ## V3 — Fine-Grained Unsaturated Envelope Measurement
+
+> **UNVERIFIED.** The supporting records for this section failed `--verify-record`
+> (see `tests/fixtures/measurements/unverified/README.md`). The numbers below are
+> not evidence and must not be cited. Superseded by §X5 / §X6 when those are run.
 
 - **Environment:** M8 headless hardware on `COM4`, firmware 6.5.2.
 - **Settings:** Unsaturated headroom (`volume = 0x40`), fine-grained 50 ms RMS buckets (40 buckets across 2.0s capture window).

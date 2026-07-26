@@ -78,7 +78,7 @@ BLOCKED, and explain your reasoning in the findings file.
 [x] X1  Restore the content-hash check in main_analyze.cpp
 [x] X2  Add --verify-record to both analysis tools
 [x] X3  Run verification against the existing records
-[ ] X4  Quarantine failed artifacts and mark findings unverified
+[x] X4  Quarantine failed artifacts and mark findings unverified
 [ ] X5  [HW] Re-capture and re-run the V2 amplitude comparison
 [ ] X6  [HW] Re-capture and re-run the V3 envelope measurement
 [ ] X7  [HW] Settle the hold comparison or mark it untested
