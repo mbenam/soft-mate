@@ -36,3 +36,4 @@
 | `archive/M8_PROBE_AUTHORING_SPEC.md` | plan | complete-archived | Probe authoring spec (see `docs/tools/m8_makeprobe.md`) |
 | `archive/M8_UI_HARNESS_SPEC.md` | plan | complete-archived | UI test harness spec (see `tests/test_ui_scripts.cpp`) |
 | `archive/TESTING.MD` | plan | complete-archived | Early test guidelines (superseded-by-ARCHITECTURE.md) |
+| `docs/ui_screen_spec.md` | reference | active | UI screen ground rules: 40x30 grid, what captures are and aren't for, out-of-scope items. Read before screen work|
