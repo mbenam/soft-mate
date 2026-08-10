@@ -195,7 +195,8 @@ void RenderInstrumentScreen(Renderer& renderer,
 void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                             engine::EngineState& uiEngineState, int currentInstIndex,
                             CursorId& cursor_id, CommandSink& commandSink,
-                            ViewManager& viewManager) {
+                            ViewManager& viewManager, bool& browserForSongLoad,
+                            ::FileBrowser& fileBrowser) {
     using C = CursorId;
     bool isMac = (uiEngineState.instruments[currentInstIndex].type == m8::engine::InstType::INST_MACROSYN);
     auto navMap = isMac ? GetMacrosynNavMap() : GetSamplerNavMap();
@@ -250,6 +251,9 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
             }
         } else if (event.key.key == SDLK_RETURN) {
             if (cursor_id == C::SAMPLE_LOAD || cursor_id == C::CMD_LOAD) {
+                browserForSongLoad = false;
+                fileBrowser.init("Samples", ".wav");
+                fileBrowser.setTitle("LOAD SAMPLE");
                 viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
             }
         }
@@ -260,7 +264,7 @@ void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
                                   ::FileBrowser& fileBrowser, ViewManager& viewManager) {
     if (cursor_id == CursorId::SAMPLE_LOAD || cursor_id == CursorId::CMD_LOAD) {
         browserForSongLoad = false;
-        fileBrowser.init("Samples", ".WAV");
+        fileBrowser.init("Samples", ".wav");
         fileBrowser.setTitle("LOAD SAMPLE");
         viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
     }

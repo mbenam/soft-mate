@@ -478,32 +478,34 @@ int main(int argc, char* argv[]) {
                         arrowPressedDuringEdit = false;
                     }
                 } else {
-                    // FILE_BROWSER modal: handle escape/select before navigation
+                    // FILE_BROWSER modal: handle input
                     if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
-                        if (event.key.key == SDLK_LEFT || event.key.key == SDLK_ESCAPE) {
-                            viewManager.popModal();
-                            continue;
-                        }
-                        std::string path = fileBrowser.handleInput(event, editHeld);
-                        if (!path.empty()) {
-                            if (browserForSongLoad) {
-                                loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
-                                                   uiEngineState, currentSongPath,
-                                                   currentLoadResult, missingSamplesMsg);
-                            } else {
-                                m8::engine::SampleData buf;
-                                if (FileBrowser::loadWavFile(path, buf)) {
-                                    std::strncpy(buf.path, path.c_str(), 127);
-                                    buf.path[127] = '\0';
-                                    EngineCommand cmd;
-                                    cmd.type = CommandType::LOAD_SAMPLE;
-                                    cmd.targetId = currentInstIndex;
-                                    cmd.u.sample = buf;
-                                    if (!commandSink.send(cmd)) {
-                                        FileBrowser::freeWavFile(buf);
+                        auto result = fileBrowser.handleInput(event, editHeld);
+                        if (result == FileBrowser::Result::SELECTED) {
+                            std::string path = fileBrowser.getSelectedPath();
+                            if (!path.empty()) {
+                                if (browserForSongLoad) {
+                                    bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+                                                                     uiEngineState, currentSongPath,
+                                                                     currentLoadResult, missingSamplesMsg);
+                                    if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
+                                } else {
+                                    m8::engine::SampleData buf;
+                                    if (FileBrowser::loadWavFile(path, buf)) {
+                                        std::strncpy(buf.path, path.c_str(), 127);
+                                        buf.path[127] = '\0';
+                                        EngineCommand cmd;
+                                        cmd.type = CommandType::LOAD_SAMPLE;
+                                        cmd.targetId = currentInstIndex;
+                                        cmd.u.sample = buf;
+                                        if (!commandSink.send(cmd)) {
+                                            FileBrowser::freeWavFile(buf);
+                                        }
                                     }
                                 }
+                                viewManager.popModal();
                             }
+                        } else if (result == FileBrowser::Result::CANCELLED) {
                             viewManager.popModal();
                         }
                         continue;
@@ -532,14 +534,6 @@ int main(int argc, char* argv[]) {
                         }
                         
                         continue;
-                    // NOTE: a second FILE_BROWSER branch used to exist here as an
-                    // `else if` after `handleNavigation(...)`. It was unreachable:
-                    // the block above unconditionally `continue`s whenever the
-                    // current view is FILE_BROWSER, and `ViewManager::handleNavigation`
-                    // returns false without side effects while a modal is active
-                    // (ViewManager.cpp:43) -- so getCurrentView() can never become
-                    // FILE_BROWSER between here and where that branch used to be
-                    // checked. Confirmed dead, removed (CODE_CLEANUP_SPEC.md #2).
                     } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
                         m8::ui::phrase::HandlePhraseInput(event, editHeld, arrowPressedDuringEdit,
                                                           uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
@@ -552,7 +546,8 @@ int main(int argc, char* argv[]) {
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
                     m8::ui::instrument::HandleInstrumentInput(event, editHeld, arrowPressedDuringEdit,
                                                               uiEngineState, currentInstIndex, active_cursor,
-                                                              commandSink, viewManager);
+                                                              commandSink, viewManager, browserForSongLoad,
+                                                              fileBrowser);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
                     m8::ui::table::HandleTableInput(event, editHeld, table_cursor_x, table_cursor_y);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
@@ -600,9 +595,8 @@ int main(int argc, char* argv[]) {
                             cmd.targetId = currentPhrase; cmd.col = songCol; cmd.row = cursorRow; cmd.value = 1;
                         }
                     }
-                    commandSink.send(cmd);
+                    commandRing.push(cmd);
                 } else if (event.key.key == SDLK_F1) {
-                    // TEMPORARY debug hook — to be replaced by --script mode (Task 1/2)
                     auto viewTypeToStr = [](m8::ui::ViewType v) -> const char* {
                         switch (v) {
                             case m8::ui::ViewType::SONG: return "SONG";
@@ -651,27 +645,33 @@ int main(int argc, char* argv[]) {
                             SDL_Event simEvent;
                             simEvent.type = SDL_EVENT_KEY_DOWN;
                             simEvent.key.key = SDLK_RIGHT;
-                            std::string path = fileBrowser.handleInput(simEvent, false);
-                            if (!path.empty()) {
-                                if (browserForSongLoad) {
-                                    loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
-                                                       uiEngineState, currentSongPath,
-                                                       currentLoadResult, missingSamplesMsg);
-                                } else {
-                                    // Load WAV sample
-                                    m8::engine::SampleData buf;
-                                    if (FileBrowser::loadWavFile(path, buf)) {
-                                        std::strncpy(buf.path, path.c_str(), 127);
-                                        buf.path[127] = '\0';
-                                        EngineCommand cmd;
-                                        cmd.type = CommandType::LOAD_SAMPLE;
-                                        cmd.targetId = currentInstIndex;
-                                        cmd.u.sample = buf;
-                                        if (!commandSink.send(cmd)) {
-                                            FileBrowser::freeWavFile(buf);
+                            auto result = fileBrowser.handleInput(simEvent, false);
+                            if (result == FileBrowser::Result::SELECTED) {
+                                std::string path = fileBrowser.getSelectedPath();
+                                if (!path.empty()) {
+                                    if (browserForSongLoad) {
+                                        bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+                                                                         uiEngineState, currentSongPath,
+                                                                         currentLoadResult, missingSamplesMsg);
+                                        if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
+                                    } else {
+                                        // Load WAV sample
+                                        m8::engine::SampleData buf;
+                                        if (FileBrowser::loadWavFile(path, buf)) {
+                                            std::strncpy(buf.path, path.c_str(), 127);
+                                            buf.path[127] = '\0';
+                                            EngineCommand cmd;
+                                            cmd.type = CommandType::LOAD_SAMPLE;
+                                            cmd.targetId = currentInstIndex;
+                                            cmd.u.sample = buf;
+                                            if (!commandSink.send(cmd)) {
+                                                FileBrowser::freeWavFile(buf);
+                                            }
                                         }
                                     }
+                                    viewManager.popModal();
                                 }
+                            } else if (result == FileBrowser::Result::CANCELLED) {
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {

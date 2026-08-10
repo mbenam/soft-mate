@@ -23,11 +23,11 @@ void RenderInstrumentScreen(Renderer& renderer,
 void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                             engine::EngineState& uiEngineState, int currentInstIndex,
                             CursorId& cursor_id, CommandSink& commandSink,
-                            ViewManager& viewManager);
+                            ViewManager& viewManager, bool& browserForSongLoad,
+                            ::FileBrowser& fileBrowser);
 
 // X-release: opens the file browser for SAMPLE_LOAD/CMD_LOAD (filtered to
-// .WAV, unlike the ENTER path which doesn't set a filter) when no arrow was
-// pressed during the edit hold.
+// .WAV) when no arrow was pressed during the edit hold.
 void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
                                   ::FileBrowser& fileBrowser, ViewManager& viewManager);
 

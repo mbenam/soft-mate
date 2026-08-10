@@ -117,6 +117,20 @@ void RenderProjectScreen(Renderer& renderer,
     }
 }
 
+static std::string GetSongInitialDir(const std::string& currentSongPath) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!currentSongPath.empty()) {
+        fs::path p(currentSongPath);
+        if (p.has_parent_path() && fs::is_directory(p.parent_path(), ec)) {
+            return p.parent_path().string();
+        }
+    }
+    if (fs::is_directory("songs", ec)) return "songs";
+    if (fs::is_directory("Songs", ec)) return "Songs";
+    return ".";
+}
+
 void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                          engine::EngineState& uiEngineState, CursorId& cursor_id,
                          CommandSink& commandSink, ProjectActionState& actions) {
@@ -152,7 +166,8 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
     if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
         if (cursor_id == C::PROJ_LOAD) {
             actions.browserForSongLoad = true;
-            actions.fileBrowser.init(".", ".M8S");
+            std::string startDir = GetSongInitialDir(actions.currentSongPath);
+            actions.fileBrowser.init(startDir, ".m8s");
             actions.fileBrowser.setTitle("LOAD SONG");
             actions.viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
         } else if (cursor_id == C::PROJ_SAVE) {
@@ -182,7 +197,8 @@ void HandleProjectEditRelease(CursorId cursor_id, engine::EngineState& uiEngineS
     using C = CursorId;
     if (cursor_id == C::PROJ_LOAD) {
         actions.browserForSongLoad = true;
-        actions.fileBrowser.init(".", ".M8S");
+        std::string startDir = GetSongInitialDir(actions.currentSongPath);
+        actions.fileBrowser.init(startDir, ".m8s");
         actions.fileBrowser.setTitle("LOAD SONG");
         actions.viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
     } else if (cursor_id == C::PROJ_SAVE) {

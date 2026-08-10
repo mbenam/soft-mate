@@ -229,11 +229,14 @@ add_executable(m8_tests
     tests/test_tables.cpp
     tests/test_device_decode.cpp
     tests/test_ui_fuzz.cpp
+    tests/test_file_browser.cpp
+    src/ui/FileBrowser.cpp
+    src/ui/Renderer.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )
 
-target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine m8_device)
+target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine m8_device SDL3::SDL3)
 target_include_directories(m8_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(m8_tests PRIVATE THIRD_PARTY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
