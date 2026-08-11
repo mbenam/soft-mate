@@ -66,7 +66,7 @@ void RenderChainScreen(Renderer& renderer,
                 int r = layout_row - 3 + view_offset; // layout row 3 is index 0
                 if (r >= 0 && r < 256) {
                     std::stringstream ss; 
-                    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << r;
+                    ss << std::hex << std::uppercase << r;
                     textToDraw = ss.str();
                 }
                 

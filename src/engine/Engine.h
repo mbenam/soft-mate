@@ -314,6 +314,11 @@ struct EngineState {
     }
 };
 
+struct LoadedSongData {
+    Sequencer sequencer;
+    EngineState state;
+};
+
 } // namespace engine
 namespace test { class OfflineHost; }
 namespace engine {

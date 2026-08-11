@@ -38,6 +38,7 @@ inline std::vector<UI_GridCell> GetDynamicTextDefaults() {
         {"9", 0, 12, "LABEL_DIM", "", "dynamic_text", false, 0},
         {"A", 0, 13, "LABEL_DIM", "", "dynamic_text", false, 0},
         {"B", 0, 14, "LABEL_DIM", "", "dynamic_text", false, 0},
+        {"C", 0, 15, "LABEL_DIM", "", "dynamic_text", false, 0},
         {"D", 0, 16, "LABEL_DIM", "", "dynamic_text", false, 0},
         {"E", 0, 17, "LABEL_DIM", "", "dynamic_text", false, 0},
         {"F", 0, 18, "LABEL_DIM", "", "dynamic_text", false, 0}

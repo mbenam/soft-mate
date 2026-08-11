@@ -21,6 +21,12 @@ struct EngineStateUpdater {
         switch (cmd.paramId) {
             case ParamID::BPM_INT: state.bpm = std::clamp((int)cmd.value, 20, 400); break;
             case ParamID::BPM_FRAC: state.bpm_frac = std::clamp((int)cmd.value, 0, 99); break;
+            case ParamID::PROJ_NAME:
+                if (cmd.targetId >= 0 && cmd.targetId < 12) {
+                    state.project.name[cmd.targetId] = static_cast<char>(cmd.value);
+                    state.project.name[12] = '\0';
+                }
+                break;
 
             // Mixer
             case ParamID::MIX_OUT_VOL: mx.out_vol = cmd.value; break;

@@ -27,6 +27,14 @@ static std::string ToHex(int value) {
     return ss.str();
 }
 
+static bool IsBlankName(const char* name) {
+    if (!name || name[0] == '\0') return true;
+    for (int i = 0; i < 12 && name[i] != '\0'; ++i) {
+        if (name[i] != ' ' && name[i] != '-') return false;
+    }
+    return true;
+}
+
 static std::string ResolveProjectValue(CursorId fieldId, const engine::EngineState& state) {
     const engine::ProjectSettings& proj = state.project;
     using C = CursorId;
@@ -44,7 +52,13 @@ static std::string ResolveProjectValue(CursorId fieldId, const engine::EngineSta
     if (fieldId == C::SCALE) return ToHex(proj.scale);
     if (fieldId == C::LIVE_QUANTIZE) return ToHex(proj.live_quantize);
 
-    if (fieldId == C::NAME) return proj.name;
+    if (fieldId == C::NAME) {
+        std::string s = proj.name;
+        if (IsBlankName(proj.name)) s = "------------";
+        while (s.length() < 12) s += '-';
+        if (s.length() > 12) s = s.substr(0, 12);
+        return s;
+    }
 
     // Action Fields
     if (fieldId == C::MIDI_SETTINGS) return "SETTINGS";
@@ -66,7 +80,8 @@ static std::string ResolveProjectValue(CursorId fieldId, const engine::EngineSta
 
 void RenderProjectScreen(Renderer& renderer,
                          const engine::EngineState& engState,
-                         CursorId active_cursor_id) {
+                         CursorId active_cursor_id,
+                         int nameCharIndex) {
 
     static std::vector<UI_GridCell> staticText = GetProjectStaticText();
     static std::vector<UI_GridCell> dynamicText = GetProjectDynamicTextDefaults();
@@ -86,6 +101,8 @@ void RenderProjectScreen(Renderer& renderer,
         renderer.drawString(textToDraw, cell.col, cell.row, GetColorFromString(cell.normal_color));
     }
 
+    bool isBlinkOn = ((SDL_GetTicks() / 250) % 2 == 0);
+
     // 3. Render Interactive Fields
     for (const auto& [fieldId, components] : interactiveFields) {
         bool isActive = (fieldId == active_cursor_id);
@@ -96,6 +113,14 @@ void RenderProjectScreen(Renderer& renderer,
 
             std::string drawText = (comp.role == "value" || comp.role == "accent") ? liveText : comp.text;
             
+            // Draw dimmed dashes for blank song name when not active
+            if (fieldId == CursorId::NAME && comp.role == "value" && IsBlankName(engState.project.name)) {
+                drawText = "------------";
+                if (!isActive) {
+                    color = GetColorFromString("LABEL_DIM");
+                }
+            }
+
             // Draw logic for accented contextual text (e.g. "DEFAULT", "C CHROMATIC")
             if (comp.role == "accent") {
                 if (fieldId == CursorId::GROOVE && engState.project.groove == 0) drawText = "DEFAULT";
@@ -111,7 +136,14 @@ void RenderProjectScreen(Renderer& renderer,
 
             // Draw cyan bounding box on active values
             if (isActive && comp.has_cursor_box && comp.role == "value") {
-                renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                if (fieldId == CursorId::NAME) {
+                    if (isBlinkOn) {
+                        int clampedIdx = std::clamp(nameCharIndex, 0, 11);
+                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, {0, 255, 255, 255});
+                    }
+                } else {
+                    renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                }
             }
         }
     }
@@ -133,7 +165,7 @@ static std::string GetSongInitialDir(const std::string& currentSongPath) {
 
 void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                          engine::EngineState& uiEngineState, CursorId& cursor_id,
-                         CommandSink& commandSink, ProjectActionState& actions) {
+                         int& nameCharIndex, CommandSink& commandSink, ProjectActionState& actions) {
     using C = CursorId;
     auto navMap = GetProjectNavMap();
     if (event.key.key == SDLK_DOWN) {
@@ -145,11 +177,19 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
             cursor_id = navMap[cursor_id].up;
         }
     } else if (event.key.key == SDLK_RIGHT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+        if (cursor_id == C::NAME && !editHeld) {
+            if (nameCharIndex < 11) {
+                nameCharIndex++;
+            }
+        } else if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
             cursor_id = navMap[cursor_id].right;
         }
     } else if (event.key.key == SDLK_LEFT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+        if (cursor_id == C::NAME && !editHeld) {
+            if (nameCharIndex > 0) {
+                nameCharIndex--;
+            }
+        } else if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
             cursor_id = navMap[cursor_id].left;
         }
     }
@@ -183,6 +223,9 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
                 if (!ok) actions.missingSamplesMsg = "SAVE FAILED: " + err;
                 else actions.missingSamplesMsg = "SAVED: " + actions.currentSongPath;
             }
+        } else if (cursor_id == C::PROJ_NEW) {
+            actions.confirmDialog.init("LOSE CHANGES TO CURRENT SONG?", 0);
+            actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
         } else if (cursor_id == C::SAMPLE_ROOT) {
             actions.textInputActive = true;
             actions.textInputBuffer = getSampleRoot();
@@ -192,8 +235,11 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
     }
 }
 
-void HandleProjectEditRelease(CursorId cursor_id, engine::EngineState& uiEngineState,
+void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
+                               engine::EngineState& uiEngineState, CommandSink& commandSink,
                                ProjectActionState& actions) {
+    (void)nameCharIndex;
+    (void)commandSink;
     using C = CursorId;
     if (cursor_id == C::PROJ_LOAD) {
         actions.browserForSongLoad = true;
@@ -209,14 +255,13 @@ void HandleProjectEditRelease(CursorId cursor_id, engine::EngineState& uiEngineS
             SDL_StartTextInput(SDL_GetKeyboardFocus());
         } else {
             std::string err;
-            // NOTE: matches the original -- X-release save only reports failure,
-            // not success (the KEY_DOWN/ENTER path sets a "SAVED: ..." message on
-            // success; this path historically did not). Preserved as-is (mechanical
-            // move, CODE_CLEANUP_SPEC.md #1) rather than "fixed" into something new.
             bool ok = m8::io::saveSong(actions.currentSongPath, actions.currentLoadResult,
                                        actions.uiSequencer, uiEngineState, err);
             if (!ok) actions.missingSamplesMsg = "SAVE FAILED: " + err;
         }
+    } else if (cursor_id == C::PROJ_NEW) {
+        actions.confirmDialog.init("LOSE CHANGES TO CURRENT SONG?", 0);
+        actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
     } else if (cursor_id == C::SAMPLE_ROOT) {
         actions.textInputActive = true;
         actions.textInputBuffer = getSampleRoot();

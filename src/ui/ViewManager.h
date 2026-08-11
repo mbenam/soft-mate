@@ -9,7 +9,7 @@ namespace ui {
 enum class ViewType {
     SONG, CHAIN, PHRASE, INSTRUMENT, TABLE,
     PROJECT, GROOVE, MIXER, INST_MOD, EFFECTS,
-    SCALE, INST_POOL, FILE_BROWSER, NONE
+    SCALE, INST_POOL, FILE_BROWSER, CONFIRMATION, CHAR_PICKER, NONE
 };
 
 class ViewManager {
@@ -19,6 +19,7 @@ public:
     ViewType getCurrentView() const;
     int getCol() const { return m_x; }
     int getRow() const { return m_y; }
+    void setCoords(int x, int y) { m_x = x; m_y = y; }
 
     // Intercepts Shift + D-Pad. Returns true if it consumed the event.
     bool handleNavigation(const SDL_Event& event, bool shiftHeld);

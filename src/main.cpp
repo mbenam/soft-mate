@@ -3,6 +3,8 @@
 #include "ui/ViewManager.h"
 #include "engine/Engine.h"
 #include "ui/FileBrowser.h"
+#include "ui/ConfirmationDialog.h"
+#include "ui/CharPicker.h"
 #include "ui/ScriptRunner.h"
 #include "io/SongIO.h"
 #include <ui/screens/song/SongScreen.h>
@@ -96,6 +98,37 @@ void DrawBracket(Renderer& renderer, int cx, int y, int cw, SDL_Color color) {
 
 // Legacy InstCursorPos removed, navigation is now handled by NavNode map in InstrumentSamplerLayout.h
 
+// Resets sequencer and engine state to a clean slate (Project > New).
+static void resetNewSong(CommandRing<EngineCommand, 1024>& commandRing,
+                         m8::engine::Sequencer& uiSequencer,
+                         m8::engine::EngineState& uiEngineState,
+                         std::string& currentSongPath,
+                         m8::io::LoadResult& currentLoadResult,
+                         std::string& missingSamplesMsg) {
+    EngineCommand stopCmd{};
+    stopCmd.type = CommandType::PLAY_STOP;
+    commandRing.push(stopCmd);
+
+    uiSequencer = m8::engine::Sequencer();
+    uiEngineState = m8::engine::EngineState();
+    // Blank name on NEW song as requested
+    setName(uiEngineState.project.name, "");
+
+    currentSongPath.clear();
+    currentLoadResult = m8::io::LoadResult{};
+    currentLoadResult.ok = true;
+    missingSamplesMsg.clear();
+
+    auto* data = new m8::engine::LoadedSongData{ uiSequencer, uiEngineState };
+
+    EngineCommand loadCmd{};
+    loadCmd.type = CommandType::LOAD_SONG;
+    loadCmd.u.song.data = data;
+    if (!commandRing.push(loadCmd)) {
+        delete data;
+    }
+}
+
 // Loads a song from `path` into the engine + UI mirrors: PLAY_STOP, pack a
 // [Sequencer][EngineState] buffer, push LOAD_SONG, update uiSequencer/
 // uiEngineState/currentSongPath/currentLoadResult, and set missingSamplesMsg
@@ -121,14 +154,14 @@ static bool loadSongIntoEngine(const std::string& path, const std::string& sampl
     stopCmd.type = CommandType::PLAY_STOP;
     commandRing.push(stopCmd);
 
-    auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-    *reinterpret_cast<Sequencer*>(buf) = result.sequencer;
-    *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = result.state;
+    auto* data = new m8::engine::LoadedSongData{ result.sequencer, result.state };
 
     EngineCommand loadCmd{};
     loadCmd.type = CommandType::LOAD_SONG;
-    loadCmd.u.song.data = buf;
-    commandRing.push(loadCmd);
+    loadCmd.u.song.data = data;
+    if (!commandRing.push(loadCmd)) {
+        delete data;
+    }
 
     uiSequencer = result.sequencer;
     uiEngineState = result.state;
@@ -254,6 +287,7 @@ int main(int argc, char* argv[]) {
     
     m8::ui::instrument::CursorId active_cursor = m8::ui::instrument::CursorId::TYPE;
     m8::ui::project::CursorId project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
+    int nameCharIndex = 0;
     m8::ui::mods::CursorId active_cursor_mod = m8::ui::mods::CursorId::MOD_TYPE_0;
     m8::ui::mixer::CursorId active_cursor_mixer = m8::ui::mixer::CursorId::TRK_VOL_0;
     m8::ui::effects::CursorId active_cursor_effects = m8::ui::effects::CursorId::CHO_EQ;
@@ -341,6 +375,8 @@ int main(int argc, char* argv[]) {
     // Song data is now initialized by the Engine's Sequencer.
     FileBrowser fileBrowser;
     fileBrowser.init("Samples");
+    m8::ui::ConfirmationDialog confirmDialog;
+    m8::ui::CharPicker charPicker;
 
     // Song persistence state
     m8::io::LoadResult currentLoadResult;
@@ -352,6 +388,8 @@ int main(int argc, char* argv[]) {
     std::string textInputPrompt;
     std::string missingSamplesMsg;     // non-empty = show missing samples overlay
     int missingSamplesScroll = 0;
+    std::string songStatusMsg;
+    uint64_t songStatusExpireTime = 0;
 
     SDL_Color colorBg = {0, 0, 0, 255};
     SDL_Color colorRed = {255, 60, 60, 255};
@@ -476,8 +514,47 @@ int main(int argc, char* argv[]) {
                     if (!editHeld) {
                         editHeld = true;
                         arrowPressedDuringEdit = false;
+                        if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
+                            project_cursor_id == m8::ui::project::CursorId::NAME) {
+                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.project.name)) ? uiEngineState.project.name[nameCharIndex] : '1';
+                            charPicker.init(curChar);
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        }
                     }
                 } else {
+                    // CHAR_PICKER modal: handle input
+                    if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+                        charPicker.handleInput(event);
+                        arrowPressedDuringEdit = true;
+                        continue;
+                    }
+
+                    // CONFIRMATION modal: handle input
+                    if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
+                        auto result = confirmDialog.handleInput(event, editHeld);
+                        if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
+                            resetNewSong(commandRing, uiSequencer, uiEngineState, currentSongPath,
+                                         currentLoadResult, missingSamplesMsg);
+                            cursorRow = 0; cursorCol = 0;
+                            songRow = 0; songCol = 0;
+                            chainRow = 0; chainCol = 0;
+                            currentPhrase = 0; currentChain = 0; currentInstIndex = 0;
+                            table_cursor_x = 0; table_cursor_y = 0;
+                            currentGrooveIndex = 0; groove_cursor_y = 0;
+                            currentScaleIndex = 0;
+                            pool_cursor_x = 0; pool_cursor_y = 0;
+                            project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
+                            nameCharIndex = 0;
+                            viewManager.setCoords(0, 0);
+                            viewManager.popModal();
+                            songStatusMsg = "NEW SONG CREATED";
+                            songStatusExpireTime = SDL_GetTicks() + 5000;
+                        } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
+                            viewManager.popModal();
+                        }
+                        continue;
+                    }
+
                     // FILE_BROWSER modal: handle input
                     if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                         auto result = fileBrowser.handleInput(event, editHeld);
@@ -557,10 +634,10 @@ int main(int argc, char* argv[]) {
                     m8::ui::project::ProjectActionState projActions{
                         browserForSongLoad, fileBrowser, viewManager, textInputActive,
                         textInputBuffer, textInputPrompt, currentSongPath, currentLoadResult,
-                        uiSequencer, missingSamplesMsg
+                        uiSequencer, missingSamplesMsg, confirmDialog, charPicker, nameCharIndex
                     };
                     m8::ui::project::HandleProjectInput(event, editHeld, arrowPressedDuringEdit,
-                                                        uiEngineState, project_cursor_id, commandSink, projActions);
+                                                        uiEngineState, project_cursor_id, nameCharIndex, commandSink, projActions);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
                     m8::ui::groove::HandleGrooveInput(event, editHeld, arrowPressedDuringEdit,
                                                       grooves[currentGrooveIndex], currentGrooveIndex,
@@ -612,6 +689,7 @@ int main(int argc, char* argv[]) {
                             case m8::ui::ViewType::SCALE: return "SCALE";
                             case m8::ui::ViewType::INST_POOL: return "POOL";
                             case m8::ui::ViewType::FILE_BROWSER: return "BROWSER";
+                            case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                             default: return "NONE";
                         }
                     };
@@ -625,6 +703,23 @@ int main(int argc, char* argv[]) {
                     shiftHeld = false;
                 } else if (event.key.key == SDLK_X) {
                     editHeld = false;
+                    if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+                        if (charPicker.isRandomSelected()) {
+                            std::string randName = m8::ui::CharPicker::generateRandomName();
+                            for (int i = 0; i < 12; ++i) {
+                                char c = (i < (int)randName.size()) ? randName[i] : '-';
+                                m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, c, i);
+                            }
+                        } else if (charPicker.isModeToggleSelected()) {
+                            charPicker.toggleLayout();
+                        } else {
+                            char chosen = charPicker.getSelectedChar();
+                            m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, chosen, nameCharIndex);
+                            nameCharIndex = (nameCharIndex + 1) % 12;
+                        }
+                        viewManager.popModal();
+                        continue;
+                    }
                     if (!arrowPressedDuringEdit) {
                         if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
                             m8::ui::phrase::HandlePhraseEditRelease(uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
@@ -638,9 +733,34 @@ int main(int argc, char* argv[]) {
                             m8::ui::project::ProjectActionState projActions{
                                 browserForSongLoad, fileBrowser, viewManager, textInputActive,
                                 textInputBuffer, textInputPrompt, currentSongPath, currentLoadResult,
-                                uiSequencer, missingSamplesMsg
+                                uiSequencer, missingSamplesMsg, confirmDialog, charPicker, nameCharIndex
                             };
-                            m8::ui::project::HandleProjectEditRelease(project_cursor_id, uiEngineState, projActions);
+                            m8::ui::project::HandleProjectEditRelease(project_cursor_id, nameCharIndex, uiEngineState, commandSink, projActions);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
+                            SDL_Event simEvent;
+                            simEvent.type = SDL_EVENT_KEY_DOWN;
+                            simEvent.key.key = SDLK_RETURN;
+                            auto result = confirmDialog.handleInput(simEvent, false);
+                            if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
+                                resetNewSong(commandRing, uiSequencer, uiEngineState, currentSongPath,
+                                             currentLoadResult, missingSamplesMsg);
+                                cursorRow = 0; cursorCol = 0;
+                                songRow = 0; songCol = 0;
+                                chainRow = 0; chainCol = 0;
+                                currentPhrase = 0; currentChain = 0; currentInstIndex = 0;
+                                table_cursor_x = 0; table_cursor_y = 0;
+                                currentGrooveIndex = 0; groove_cursor_y = 0;
+                                currentScaleIndex = 0;
+                                pool_cursor_x = 0; pool_cursor_y = 0;
+                                project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
+                                nameCharIndex = 0;
+                                viewManager.setCoords(0, 0);
+                                viewManager.popModal();
+                                songStatusMsg = "NEW SONG CREATED";
+                                songStatusExpireTime = SDL_GetTicks() + 5000;
+                            } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
+                                viewManager.popModal();
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                             SDL_Event simEvent;
                             simEvent.type = SDL_EVENT_KEY_DOWN;
@@ -705,7 +825,7 @@ int main(int argc, char* argv[]) {
         // Drain song GC ring
         void* songGcPtr = nullptr;
         while (engine.getSongGcRing().pop(songGcPtr)) {
-            delete[] static_cast<uint8_t*>(songGcPtr);
+            delete static_cast<m8::engine::LoadedSongData*>(songGcPtr);
         }
 
         renderer.clear(colorBg);
@@ -716,6 +836,13 @@ int main(int argc, char* argv[]) {
             m8::ui::chain::RenderChainScreen(renderer, uiSequencer, uiEngineState, playheads, currentChain, chainCol, chainRow, isPlaying);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
             m8::ui::song::RenderSongScreen(renderer, uiSequencer, uiEngineState, playheads, songCol, songRow, isPlaying);
+            if (!songStatusMsg.empty()) {
+                if (SDL_GetTicks() < songStatusExpireTime) {
+                    renderer.drawString(songStatusMsg, 0, 20, colorWhite);
+                } else {
+                    songStatusMsg.clear();
+                }
+            }
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
             m8::ui::instrument::RenderInstrumentScreen(renderer, uiEngineState, currentInstIndex, active_cursor);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
@@ -723,7 +850,7 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
             m8::ui::mods::RenderModScreen(renderer, uiEngineState, currentInstIndex, active_cursor_mod);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
-            m8::ui::project::RenderProjectScreen(renderer, uiEngineState, project_cursor_id);
+            m8::ui::project::RenderProjectScreen(renderer, uiEngineState, project_cursor_id, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
             m8::ui::groove::RenderGrooveScreen(renderer, uiEngineState, uiSequencer.grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
@@ -736,6 +863,10 @@ int main(int argc, char* argv[]) {
             m8::ui::effects::RenderEffectsScreen(renderer, uiEngineState, active_cursor_effects);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
             fileBrowser.update(renderer, colorWhite, colorCyan, colorRed);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
+            confirmDialog.render(renderer, colorRed, colorWhite, colorCyan);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+            charPicker.render(renderer, colorWhite, colorCyan, colorCyan);
         } else {
             renderer.drawString("NOT IMPLEMENTED", 10, 10, colorWhite);
         }
@@ -827,6 +958,8 @@ int main(int argc, char* argv[]) {
                         case m8::ui::ViewType::SCALE: return "SCALE";
                         case m8::ui::ViewType::INST_POOL: return "INSTRUMENT POOL";
                         case m8::ui::ViewType::FILE_BROWSER: return "FILE BROWSER";
+                        case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
+                        case m8::ui::ViewType::CHAR_PICKER: return "CHAR PICKER";
                         default: return "UNKNOWN";
                     }
                 };

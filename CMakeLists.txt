@@ -95,6 +95,8 @@ add_executable(m8_clone
     src/ui/Renderer.cpp
     src/ui/ViewManager.cpp
     src/ui/FileBrowser.cpp
+    src/ui/ConfirmationDialog.cpp
+    src/ui/CharPicker.cpp
     src/ui/ScriptRunner.cpp
     src/ui/screens/song/SongScreen.cpp
     src/ui/screens/chain/ChainScreen.cpp
@@ -230,7 +232,11 @@ add_executable(m8_tests
     tests/test_device_decode.cpp
     tests/test_ui_fuzz.cpp
     tests/test_file_browser.cpp
+    tests/test_confirmation_dialog.cpp
+    tests/test_char_picker.cpp
     src/ui/FileBrowser.cpp
+    src/ui/ConfirmationDialog.cpp
+    src/ui/CharPicker.cpp
     src/ui/Renderer.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp

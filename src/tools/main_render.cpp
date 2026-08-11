@@ -161,13 +161,13 @@ static void setupEngine(Engine& engine, CommandRing<EngineCommand, 1024>& ring,
     if (loadedSong && loadedSong->ok) {
         // Push combined payload via LOAD_SONG
         const auto& lr = loadedSong->loadResult;
-        auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-        *reinterpret_cast<Sequencer*>(buf) = lr.sequencer;
-        *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = lr.state;
+        auto* data = new LoadedSongData{ lr.sequencer, lr.state };
         EngineCommand cmd{};
         cmd.type = CommandType::LOAD_SONG;
-        cmd.u.song.data = buf;
-        ring.push(cmd);
+        cmd.u.song.data = data;
+        if (!ring.push(cmd)) {
+            delete data;
+        }
 
         // Push LOAD_SAMPLE for each decoded sample
         for (const auto& ds : loadedSong->samples) {
@@ -286,6 +286,12 @@ static Render renderOnce(double seconds, int mode, int targetId, int track, int 
 
         done += n;
     }
+
+    void* songGcPtr = nullptr;
+    while (engine.getSongGcRing().pop(songGcPtr)) {
+        delete static_cast<LoadedSongData*>(songGcPtr);
+    }
+
     return r;
 }
 

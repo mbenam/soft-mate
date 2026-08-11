@@ -30,7 +30,7 @@ struct SongPayload {
 
 enum class ParamID {
     // Project
-    BPM_INT, BPM_FRAC,
+    BPM_INT, BPM_FRAC, PROJ_NAME,
     
     // Mixer
     MIX_OUT_VOL, MIX_TRK_VOL, MIX_CHO_VOL, MIX_DEL_VOL, MIX_REV_VOL,

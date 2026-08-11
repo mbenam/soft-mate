@@ -6,6 +6,8 @@
 #include "../../ViewManager.h"
 #include "../../FileBrowser.h"
 #include "../../../io/SongIO.h"
+#include "../../ConfirmationDialog.h"
+#include "../../CharPicker.h"
 #include "ProjectScreenLayout.h"
 #include <string>
 #include <SDL3/SDL.h>
@@ -19,11 +21,12 @@ const std::string& getSampleRoot();
 
 void RenderProjectScreen(Renderer& renderer,
                          const engine::EngineState& engState,
-                         CursorId active_cursor_id);
+                         CursorId active_cursor_id,
+                         int nameCharIndex = 0);
 
-// Cross-cutting state the PROJECT screen's LOAD/SAVE/SAMPLE ROOT actions
+// Cross-cutting state the PROJECT screen's LOAD/SAVE/NEW/SAMPLE ROOT actions
 // touch, beyond the screen's own cursor -- bundled since main.cpp already
-// owned all of it and passing 9 separate references is unreadable.
+// owned all of it and passing separate references is unreadable.
 struct ProjectActionState {
     bool& browserForSongLoad;
     ::FileBrowser& fileBrowser;
@@ -35,16 +38,20 @@ struct ProjectActionState {
     m8::io::LoadResult& currentLoadResult;
     m8::engine::Sequencer& uiSequencer;
     std::string& missingSamplesMsg;
+    ConfirmationDialog& confirmDialog;
+    CharPicker& charPicker;
+    int& nameCharIndex;
 };
 
 // Arrow-key navigation/edit + ENTER action (SDL_EVENT_KEY_DOWN dispatch).
 void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                          engine::EngineState& uiEngineState, CursorId& cursor_id,
-                         CommandSink& commandSink, ProjectActionState& actions);
+                         int& nameCharIndex, CommandSink& commandSink, ProjectActionState& actions);
 
 // X-release action (same LOAD/SAVE/SAMPLE ROOT dispatch as ENTER) when no
 // arrow was pressed during the edit hold.
-void HandleProjectEditRelease(CursorId cursor_id, engine::EngineState& uiEngineState,
+void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
+                               engine::EngineState& uiEngineState, CommandSink& commandSink,
                                ProjectActionState& actions);
 
 } // namespace project

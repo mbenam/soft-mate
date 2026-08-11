@@ -136,21 +136,19 @@ void Engine::processCommands() {
             if (cmd.targetId >= 0 && cmd.targetId < Sequencer::NUM_GROOVES && cmd.row >= 0 && cmd.row < 16)
                 m_sequencer.grooves[cmd.targetId].steps[cmd.row] = cmd.value;
         } else if (cmd.type == CommandType::LOAD_SONG) {
-            auto* base = static_cast<uint8_t*>(cmd.u.song.data);
-            if (base) {
-                auto* seq = reinterpret_cast<Sequencer*>(base);
-                auto* st  = reinterpret_cast<EngineState*>(base + sizeof(Sequencer));
-                std::memcpy(&m_sequencer, seq, sizeof(Sequencer));
+            auto* data = static_cast<LoadedSongData*>(cmd.u.song.data);
+            if (data) {
+                m_sequencer = data->sequencer;
                 // Copy instruments, mixer, effects, project — not play state
                 for (int i = 0; i < 128; ++i)
-                    m_state.instruments[i] = st->instruments[i];
-                m_state.mixer     = st->mixer;
-                m_state.effects   = st->effects;
-                m_state.project   = st->project;
-                m_state.bpm       = st->bpm;
-                m_state.bpm_frac  = st->bpm_frac;
+                    m_state.instruments[i] = data->state.instruments[i];
+                m_state.mixer     = data->state.mixer;
+                m_state.effects   = data->state.effects;
+                m_state.project   = data->state.project;
+                m_state.bpm       = data->state.bpm;
+                m_state.bpm_frac  = data->state.bpm_frac;
                 for (int i = 0; i < 16; ++i)
-                    m_state.scales[i] = st->scales[i];
+                    m_state.scales[i] = data->state.scales[i];
                 // Reset effects DSP state so the new song starts clean — without
                 // this, chorus/delay/reverb buffers and DC blockers carry audio
                 // from whatever was previously loaded (e.g. the demo song), causing
@@ -164,7 +162,7 @@ void Engine::processCommands() {
                 m_dcMixL = 0.0f; m_dcMixR = 0.0f;
                 m_smoothChoFreq = 0.0f; m_smoothChoDepth = 0.0f;
                 m_smoothDelL = 0.0f; m_smoothDelR = 0.0f;
-                m_songGcRing.push(cmd.u.song.data);
+                m_songGcRing.push(data);
                 for (int i = 0; i < 8; ++i) {
                     m_voices[i].resetOscillator();
                     m_tableState[i] = {};
