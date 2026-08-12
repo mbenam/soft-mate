@@ -590,3 +590,26 @@ TEST_CASE("ProjectScreen: LIVE_QUANTIZE rendering displays CHAIN LEN for 00 and 
     REQUIRE(row6_FF.find("FF") != std::string::npos);
     REQUIRE(row6_FF.find("STEPS") != std::string::npos);
 }
+
+TEST_CASE("ProjectScreen: INST POOL entry jumps to the INST POOL view", "[project_inst_pool]") {
+    TestProjectContext ctx;
+    ctx.cursorId = CursorId::INST_POOL;
+    ctx.viewManager.setCoords(0, 0);
+    REQUIRE(ctx.viewManager.getCurrentView() == ViewType::SONG);
+
+    SECTION("ENTER jumps to INST POOL (view coords 3,2)") {
+        ctx.sendKeyDown(SDLK_RETURN, false);
+        REQUIRE(ctx.viewManager.getCurrentView() == ViewType::INST_POOL);
+        REQUIRE(ctx.viewManager.getCol() == 3);
+        REQUIRE(ctx.viewManager.getRow() == 2);
+    }
+
+    SECTION("X-release (no arrows) jumps to INST POOL") {
+        auto actions = ctx.getActions();
+        HandleProjectEditRelease(ctx.cursorId, ctx.nameCharIndex, ctx.engineState,
+                                 ctx.commandSink, actions);
+        REQUIRE(ctx.viewManager.getCurrentView() == ViewType::INST_POOL);
+        REQUIRE(ctx.viewManager.getCol() == 3);
+        REQUIRE(ctx.viewManager.getRow() == 2);
+    }
+}
