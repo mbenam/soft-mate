@@ -233,7 +233,7 @@ void Engine::tickTrack(int t) {
 
     if (m_state.playTick[t] == 0) {
         int phIdx = m_state.currentPhrase;
-        int transpose = 0;
+        int transpose = m_state.project.transpose;
         uint8_t chainId = CHAIN_EMPTY;
         
         if (m_state.playMode == PlayMode::SONG) {
@@ -274,7 +274,7 @@ void Engine::tickTrack(int t) {
             
             if (ph != PHRASE_EMPTY && chainId != CHAIN_EMPTY) {
                 phIdx = ph;
-                transpose = m_sequencer.chains[chainId][m_state.playChainRow[t]].tsp;
+                transpose = m_sequencer.chains[chainId][m_state.playChainRow[t]].tsp + m_state.project.transpose;
             }
         }
         

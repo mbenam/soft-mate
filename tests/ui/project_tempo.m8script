@@ -1,0 +1,52 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Check baseline whole tempo (Sunrise defaults to 128.00)
+assert_field TEMPO 128.00 < >
+
+# 1. Adjust whole tempo by 10s with X+UP and X+DOWN
+key X+UP
+assert_field TEMPO 138.00 < >
+
+key X+UP
+assert_field TEMPO 148.00 < >
+
+key X+DOWN
+assert_field TEMPO 138.00 < >
+
+key X+DOWN
+assert_field TEMPO 128.00 < >
+
+# 2. Adjust whole tempo by 1 with X+RIGHT and X+LEFT
+key X+RIGHT
+assert_field TEMPO 129.00 < >
+
+key X+LEFT
+assert_field TEMPO 128.00 < >
+
+# 3. Move to decimal portion (TEMPO_DEC)
+key RIGHT
+key X+UP
+assert_field TEMPO 128.10 < >
+
+key X+UP
+assert_field TEMPO 128.20 < >
+
+key X+DOWN
+assert_field TEMPO 128.10 < >
+
+key X+DOWN
+assert_field TEMPO 128.00 < >
+
+# 4. Move to tempo nudge (< >)
+key RIGHT
+# Key X+RIGHT nudges up, and returns on release
+key X+RIGHT
+assert_field TEMPO 128.00 < >
+
+# Key X+LEFT nudges down, and returns on release
+key X+LEFT
+assert_field TEMPO 128.00 < >
+
+assert_no_overlap
+assert_no_error

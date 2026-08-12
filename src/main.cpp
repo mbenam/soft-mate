@@ -591,6 +591,11 @@ int main(int argc, char* argv[]) {
                     auto oldView = viewManager.getCurrentView();
                     if (viewManager.handleNavigation(event, shiftHeld)) {
                         auto newView = viewManager.getCurrentView();
+                        if (oldView == m8::ui::ViewType::PROJECT && newView != m8::ui::ViewType::PROJECT) {
+                            SDL_Event dummy{};
+                            dummy.key.key = SDLK_X;
+                            m8::ui::project::HandleProjectKeyUp(dummy, uiEngineState, project_cursor_id, commandSink);
+                        }
                         if (oldView == m8::ui::ViewType::INST_POOL && newView == m8::ui::ViewType::INSTRUMENT) {
                             currentInstIndex = pool_cursor_y;
                         }
@@ -699,6 +704,9 @@ int main(int argc, char* argv[]) {
                 }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
+                if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
+                    m8::ui::project::HandleProjectKeyUp(event, uiEngineState, project_cursor_id, commandSink);
+                }
                 if (event.key.key == SDLK_LSHIFT) {
                     shiftHeld = false;
                 } else if (event.key.key == SDLK_X) {

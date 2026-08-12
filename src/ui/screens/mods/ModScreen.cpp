@@ -19,7 +19,7 @@ static SDL_Color GetColorFromString(const std::string& colorName) {
 
 static std::string ToHex(int value) {
     std::stringstream ss;
-    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << value;
+    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(value) & 0xFF);
     return ss.str();
 }
 

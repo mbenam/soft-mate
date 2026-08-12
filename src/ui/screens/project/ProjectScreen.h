@@ -48,11 +48,18 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
                          engine::EngineState& uiEngineState, CursorId& cursor_id,
                          int& nameCharIndex, CommandSink& commandSink, ProjectActionState& actions);
 
+// Key release handler (e.g. for tempo nudge reset).
+void HandleProjectKeyUp(const SDL_Event& event, engine::EngineState& uiEngineState,
+                        CursorId cursor_id, CommandSink& commandSink);
+
 // X-release action (same LOAD/SAVE/SAMPLE ROOT dispatch as ENTER) when no
 // arrow was pressed during the edit hold.
 void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
                                engine::EngineState& uiEngineState, CommandSink& commandSink,
                                ProjectActionState& actions);
+
+void setTransposeNoticeUntil(uint64_t ticks);
+uint64_t getTransposeNoticeUntil();
 
 } // namespace project
 } // namespace ui

@@ -234,10 +234,13 @@ add_executable(m8_tests
     tests/test_file_browser.cpp
     tests/test_confirmation_dialog.cpp
     tests/test_char_picker.cpp
+    tests/test_project_screen.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp
     src/ui/Renderer.cpp
+    src/ui/ViewManager.cpp
+    src/ui/screens/project/ProjectScreen.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

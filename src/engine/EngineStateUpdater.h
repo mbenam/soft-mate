@@ -27,6 +27,12 @@ struct EngineStateUpdater {
                     state.project.name[12] = '\0';
                 }
                 break;
+            case ParamID::PROJ_TRANSPOSE:
+                state.project.transpose = static_cast<int8_t>(cmd.value);
+                break;
+            case ParamID::PROJ_GROOVE:
+                state.project.groove = std::clamp((int)cmd.value, 0, 31);
+                break;
 
             // Mixer
             case ParamID::MIX_OUT_VOL: mx.out_vol = cmd.value; break;

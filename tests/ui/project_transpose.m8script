@@ -1,0 +1,29 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Move cursor to TRANSPOSE (row 3)
+key DOWN
+assert_field TRANSPOSE 00
+
+# Hold X and press UP (+12) -> 0C (decimal 12)
+key X+UP
+assert_field TRANSPOSE 0C
+assert_screen row 28 contains "GLOBAL TRANSPOSE: 12"
+
+# Hold X and press RIGHT (+1) -> 0D (decimal 13)
+key X+RIGHT
+assert_field TRANSPOSE 0D
+assert_screen row 28 contains "GLOBAL TRANSPOSE: 13"
+
+# Hold X and press DOWN (-12) -> 01 (decimal 1)
+key X+DOWN
+assert_field TRANSPOSE 01
+assert_screen row 28 contains "GLOBAL TRANSPOSE: 1"
+
+# Hold X and press LEFT (-1) -> 00 (decimal 0)
+key X+LEFT
+assert_field TRANSPOSE 00
+assert_screen row 28 contains "GLOBAL TRANSPOSE: 0"
+
+assert_no_overlap
+assert_no_error
