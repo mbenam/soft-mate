@@ -68,6 +68,7 @@ set_target_properties(kissfft PROPERTIES LINKER_LANGUAGE C)
 
 add_library(m8_engine STATIC
     src/engine/Sequencer.cpp
+    src/engine/SongCleanup.cpp
     src/engine/Engine.cpp
     src/engine/SynthVoice.cpp
     src/engine/SamplePool.cpp
@@ -242,6 +243,7 @@ add_executable(m8_tests
     tests/test_scale_screen.cpp
     tests/test_render_screen.cpp
     tests/test_bundle_export.cpp
+    tests/test_clear_phrases.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp

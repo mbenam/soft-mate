@@ -31,6 +31,7 @@
 #include "ui/screens/render/RenderScreenLayout.h"
 #include "io/RenderAudio.h"
 #include "io/BundleExport.h"
+#include "engine/SongCleanup.h"
 #include <string>
 #include <cstring>
 #include <memory>
@@ -612,6 +613,32 @@ int main(int argc, char* argv[]) {
                                 songStatusMsg = "BUNDLE FAILED: " + bundleRes.errorMsg;
                             }
                             songStatusExpireTime = SDL_GetTicks() + 5000;
+                        } else if (confirmDialog.getActionTag() == 2) {
+                            // CLEAR UNUSED PHRASES / CHAINS
+                            uiSequencer.clearUnusedPhrasesAndChains();
+                            auto* data = new m8::engine::LoadedSongData{ uiSequencer, uiEngineState };
+                            EngineCommand loadCmd{};
+                            loadCmd.type = CommandType::LOAD_SONG;
+                            loadCmd.u.song.data = data;
+                            if (!commandRing.push(loadCmd)) {
+                                delete data;
+                            }
+                            viewManager.popModal();
+                            songStatusMsg = "PHRASES/CHAINS CLEANED";
+                            songStatusExpireTime = SDL_GetTicks() + 4000;
+                        } else if (confirmDialog.getActionTag() == 3) {
+                            // CLEAR UNUSED INSTRUMENTS / TABLES / EQS
+                            m8::engine::ClearUnusedInstrumentsAndTables(uiSequencer, uiEngineState);
+                            auto* data = new m8::engine::LoadedSongData{ uiSequencer, uiEngineState };
+                            EngineCommand loadCmd{};
+                            loadCmd.type = CommandType::LOAD_SONG;
+                            loadCmd.u.song.data = data;
+                            if (!commandRing.push(loadCmd)) {
+                                delete data;
+                            }
+                            viewManager.popModal();
+                            songStatusMsg = "INST/TABLES CLEANED";
+                            songStatusExpireTime = SDL_GetTicks() + 4000;
                         }
                     } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
                         viewManager.popModal();

@@ -318,6 +318,12 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
         } else if (cursor_id == C::EXPORT_BUNDLE) {
             actions.confirmDialog.init("CREATE DIRECTORY OF SONG AND\nSAMPLES? A PRE-EXISTING BUNDLE\nMAY BE OVERWRITTEN", 0, 1);
             actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+        } else if (cursor_id == C::CLEAR_PHRASES) {
+            actions.confirmDialog.init("CLEAR UNUSED PHRASES/CHAINS\nAND REMOVE DUPLICATES?", 0, 2);
+            actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+        } else if (cursor_id == C::CLEAR_INST) {
+            actions.confirmDialog.init("CLEAR UNUSED INST/TABLES/EQS AND\nREMOVE DUPLICATES?", 0, 3);
+            actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
         } else if (cursor_id == C::SAMPLE_ROOT) {
             actions.textInputActive = true;
             actions.textInputBuffer = getSampleRoot();
@@ -398,6 +404,12 @@ void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
         actions.viewManager.pushModal(m8::ui::ViewType::RENDER);
     } else if (cursor_id == C::EXPORT_BUNDLE) {
         actions.confirmDialog.init("CREATE DIRECTORY OF SONG AND\nSAMPLES? A PRE-EXISTING BUNDLE\nMAY BE OVERWRITTEN", 0, 1);
+        actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+    } else if (cursor_id == C::CLEAR_PHRASES) {
+        actions.confirmDialog.init("CLEAR UNUSED PHRASES/CHAINS\nAND REMOVE DUPLICATES?", 0, 2);
+        actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+    } else if (cursor_id == C::CLEAR_INST) {
+        actions.confirmDialog.init("CLEAR UNUSED INST/TABLES/EQS AND\nREMOVE DUPLICATES?", 0, 3);
         actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
     } else if (cursor_id == C::SAMPLE_ROOT) {
         actions.textInputActive = true;

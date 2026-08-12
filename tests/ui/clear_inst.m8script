@@ -1,0 +1,44 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Move down to CLEAR UNUSED INST/TBL
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RIGHT
+
+assert_screen row 13 contains "CLEAR UNUSED"
+assert_screen row 13 contains "INST/TBL"
+
+# Press X (Edit) to trigger confirmation modal
+key X
+
+# Check modal prompt lines
+assert_screen contains "CLEAR UNUSED INST/TABLES/EQS AND"
+assert_screen contains "REMOVE DUPLICATES?"
+assert_screen contains "OK"
+assert_screen contains "CANCEL"
+
+# Navigate between OK and CANCEL
+key RIGHT
+key LEFT
+
+# Press Z (Option) to CANCEL and return to Project screen
+key Z
+assert_screen contains "PROJECT"
+assert_screen row 13 contains "INST/TBL"
+
+# Open modal again and confirm with OK
+key X
+assert_screen contains "CLEAR UNUSED INST/TABLES/EQS AND"
+key X
+
+# Verify cleaned status
+assert_screen contains "PROJECT"
+assert_screen contains "INST/TABLES CLEANED"

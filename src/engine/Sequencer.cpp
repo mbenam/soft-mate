@@ -1,4 +1,5 @@
 #include "Sequencer.h"
+#include "SongCleanup.h"
 #include <cmath>
 #include <cstring>
 
@@ -15,6 +16,10 @@ Sequencer::Sequencer() {
 
 void Sequencer::clear() {
     *this = Sequencer();
+}
+
+Sequencer::ClearPhrasesResult Sequencer::clearUnusedPhrasesAndChains() {
+    return ClearUnusedPhrasesAndChains(*this);
 }
 
 // ---------------------------------------------------------------------------

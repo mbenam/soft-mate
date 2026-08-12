@@ -1,0 +1,43 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Move down to CLEAR UNUSED PHRASES
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+assert_screen row 13 contains "CLEAR UNUSED"
+assert_screen row 13 contains "PHRASES"
+
+# Press X (Edit) to trigger confirmation modal
+key X
+
+# Check modal prompt lines
+assert_screen contains "CLEAR UNUSED PHRASES/CHAINS"
+assert_screen contains "AND REMOVE DUPLICATES?"
+assert_screen contains "OK"
+assert_screen contains "CANCEL"
+
+# Navigate between OK and CANCEL
+key RIGHT
+key LEFT
+
+# Press Z (Option) to CANCEL and return to Project screen
+key Z
+assert_screen contains "PROJECT"
+assert_screen row 13 contains "PHRASES"
+
+# Open modal again and confirm with OK
+key X
+assert_screen contains "CLEAR UNUSED PHRASES/CHAINS"
+key X
+
+# Verify cleaned status
+assert_screen contains "PROJECT"
+assert_screen contains "PHRASES/CHAINS CLEANED"

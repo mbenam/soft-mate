@@ -29,6 +29,15 @@ public:
     void loadDemoSong();
     void clear();
 
+    struct ClearPhrasesResult {
+        int clearedPhrases = 0;
+        int deduplicatedPhrases = 0;
+        int clearedChains = 0;
+        int deduplicatedChains = 0;
+    };
+
+    ClearPhrasesResult clearUnusedPhrasesAndChains();
+
     // Track state arrays
     Step      phrases[NUM_PHRASES][ROWS];
     ChainStep chains [NUM_CHAINS ][ROWS];
