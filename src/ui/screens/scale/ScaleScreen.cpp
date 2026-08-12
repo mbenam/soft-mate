@@ -21,21 +21,36 @@ static std::string ResolveScaleValue(CursorId fieldId, const engine::Scale& scal
         const char* notes[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
         return notes[scale.key % 12];
     }
-    if (fieldId == C::TUNE) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%06.2f", scale.tune);
+    if (fieldId == C::TUNE_INT) {
+        int intPart = static_cast<int>(scale.tune);
+        return std::to_string(intPart);
+    }
+    if (fieldId == C::TUNE_DEC) {
+        int intPart = static_cast<int>(scale.tune);
+        int fracPart = static_cast<int>(std::round((scale.tune - intPart) * 100.0f));
+        if (fracPart < 0) fracPart = 0;
+        if (fracPart > 99) fracPart = 99;
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%02d", fracPart);
         return std::string(buf);
     }
-    if (fieldId == C::NAME) return scale.name;
+    if (fieldId == C::NAME) {
+        std::string s = scale.name;
+        if (s.empty()) s = "----------------";
+        while (s.length() < 16) s += '-';
+        if (s.length() > 16) s = s.substr(0, 16);
+        return s;
+    }
     if (fieldId == C::CMD_LOAD) return "LOAD";
     if (fieldId == C::CMD_SAVE) return "SAVE";
 
     if (IsNoteEnCursor(fieldId)) {
         int idx = NoteEnIndexOf(fieldId);
-        return scale.notes[idx].enable ? "ON" : "OFF";
+        return scale.notes[idx].enable ? "ON" : "--";
     }
     if (IsNoteOffsetCursor(fieldId)) {
         int idx = NoteOffsetIndexOf(fieldId);
+        if (!scale.notes[idx].enable) return "--.--";
         char buf[16];
         snprintf(buf, sizeof(buf), "%05.2f", scale.notes[idx].offset);
         return std::string(buf);
@@ -46,7 +61,8 @@ static std::string ResolveScaleValue(CursorId fieldId, const engine::Scale& scal
 void RenderScaleScreen(Renderer& renderer,
                        const engine::EngineState& engState,
                        int currentScaleIndex,
-                       CursorId active_cursor_id) {
+                       CursorId active_cursor_id,
+                       int nameCharIndex) {
 
     static std::vector<UI_GridCell> staticText = GetScaleStaticText();
     static std::vector<UI_GridCell> dynamicText = GetScaleDynamicTextDefaults();
@@ -63,7 +79,7 @@ void RenderScaleScreen(Renderer& renderer,
     for (const auto& cell : dynamicText) {
         std::string textToDraw = cell.text;
         
-        if (cell.text == "00" && cell.col == 7) {
+        if (cell.text == "00" && cell.col == 6) {
             std::stringstream ss;
             ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << currentScaleIndex;
             textToDraw = ss.str();
@@ -74,7 +90,17 @@ void RenderScaleScreen(Renderer& renderer,
         renderer.drawString(textToDraw, cell.col, cell.row, GetColorFromString(cell.normal_color));
     }
 
-    // 3. Render Interactive Fields
+    // 3. Draw Dynamic Note Labels at Col 0 (rotating from currentScale.key)
+    const char* noteNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    for (int i = 0; i < 12; i++) {
+        int noteIdx = (currentScale.key + i) % 12;
+        std::string noteName = noteNames[noteIdx];
+        while (noteName.length() < 2) noteName += ' ';
+        SDL_Color color = currentScale.notes[i].enable ? GetColorFromString("VALUE") : GetColorFromString("LABEL_DIM");
+        renderer.drawString(noteName, 0, i + 4, color);
+    }
+
+    // 4. Render Interactive Fields
     for (const auto& [fieldId, components] : interactiveFields) {
         bool isActive = (fieldId == active_cursor_id);
         std::string liveText = ResolveScaleValue(fieldId, currentScale);
@@ -83,11 +109,28 @@ void RenderScaleScreen(Renderer& renderer,
             SDL_Color color = GetColorFromString(isActive ? comp.selected_color : comp.normal_color);
             std::string drawText = (comp.role == "value") ? liveText : comp.text;
 
+            // Dim disabled note offset and enable fields when not active
+            if (!isActive) {
+                if (IsNoteEnCursor(fieldId) && !currentScale.notes[NoteEnIndexOf(fieldId)].enable) {
+                    color = GetColorFromString("LABEL_DIM");
+                } else if (IsNoteOffsetCursor(fieldId) && !currentScale.notes[NoteOffsetIndexOf(fieldId)].enable) {
+                    color = GetColorFromString("LABEL_DIM");
+                }
+            }
+
             renderer.drawString(drawText, comp.col, comp.row, color);
 
             // Draw cyan bounding box on active values
             if (isActive && comp.has_cursor_box && comp.role == "value") {
-                renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                if (fieldId == CursorId::NAME) {
+                    bool isBlinkOn = ((SDL_GetTicks() / 500) % 2) == 0;
+                    if (isBlinkOn) {
+                        int clampedIdx = std::clamp(nameCharIndex, 0, 15);
+                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, {0, 255, 255, 255});
+                    }
+                } else {
+                    renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                }
             }
         }
     }
@@ -95,7 +138,8 @@ void RenderScaleScreen(Renderer& renderer,
 
 void HandleScaleInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                        engine::EngineState& uiEngineState, int currentScaleIndex,
-                       CursorId& cursor_id, CommandSink& commandSink) {
+                       CursorId& cursor_id, int& nameCharIndex, CommandSink& commandSink,
+                       ScaleActionState* actionState) {
     using C = CursorId;
     auto navMap = GetScaleNavMap();
     if (event.key.key == SDLK_DOWN) {
@@ -107,29 +151,128 @@ void HandleScaleInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
             cursor_id = navMap[cursor_id].up;
         }
     } else if (event.key.key == SDLK_RIGHT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+        if (cursor_id == C::NAME && !editHeld) {
+            if (nameCharIndex < 15) {
+                nameCharIndex++;
+            }
+        } else if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
             cursor_id = navMap[cursor_id].right;
         }
     } else if (event.key.key == SDLK_LEFT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+        if (cursor_id == C::NAME && !editHeld) {
+            if (nameCharIndex > 0) {
+                nameCharIndex--;
+            }
+        } else if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
             cursor_id = navMap[cursor_id].left;
+        }
+    } else if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
+        if (actionState) {
+            if (cursor_id == C::CMD_LOAD) {
+                actionState->scaleBrowserMode = ScaleBrowserMode::LOAD;
+                actionState->fileBrowser.init("Scales", ".m8n", FileBrowser::Mode::FILES);
+                actionState->fileBrowser.setTitle("LOAD SCALE");
+                actionState->viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+            } else if (cursor_id == C::CMD_SAVE) {
+                actionState->scaleBrowserMode = ScaleBrowserMode::SAVE_DIR;
+                actionState->fileBrowser.init("Scales", ".m8n", FileBrowser::Mode::DIRECTORY);
+                actionState->fileBrowser.setTitle("SELECT SAVE DIRECTORY");
+                actionState->viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+            }
         }
     }
 
-    if (editHeld && (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-        arrowPressedDuringEdit = true;
-        int step = (event.key.key == SDLK_RIGHT) ? 1 : -1;
-        const auto& scale = uiEngineState.scales[currentScaleIndex];
+    if (editHeld) {
+        if (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT) {
+            arrowPressedDuringEdit = true;
+            int step = (event.key.key == SDLK_RIGHT) ? 1 : -1;
+            const auto& scale = uiEngineState.scales[currentScaleIndex];
 
-        if (cursor_id == C::KEY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_KEY, (scale.key + step + 12) % 12, currentScaleIndex);
-        else if (cursor_id == C::TUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, scale.tune + step);
-        else if (IsNoteEnCursor(cursor_id)) {
-            int idx = NoteEnIndexOf(cursor_id);
-            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, !scale.notes[idx].enable, currentScaleIndex, idx);
-        } else if (IsNoteOffsetCursor(cursor_id)) {
-            int idx = NoteOffsetIndexOf(cursor_id);
-            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, idx, scale.notes[idx].offset + step);
+            if (cursor_id == C::KEY) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_KEY, (scale.key + step + 12) % 12, currentScaleIndex);
+            } else if (cursor_id == C::TUNE_INT) {
+                int intPart = static_cast<int>(scale.tune);
+                int fracPart = static_cast<int>(std::round((scale.tune - intPart) * 100.0f));
+                if (fracPart < 0) fracPart = 0;
+                if (fracPart > 99) fracPart = 99;
+                int newInt = std::clamp(intPart + step, 0, 999);
+                float newTune = newInt + (fracPart / 100.0f);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, newTune);
+            } else if (cursor_id == C::TUNE_DEC) {
+                int intPart = static_cast<int>(scale.tune);
+                int fracPart = static_cast<int>(std::round((scale.tune - intPart) * 100.0f));
+                if (fracPart < 0) fracPart = 0;
+                if (fracPart > 99) fracPart = 99;
+                int newFrac = std::clamp(fracPart + step, 0, 99);
+                float newTune = intPart + (newFrac / 100.0f);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, newTune);
+            } else if (IsNoteEnCursor(cursor_id)) {
+                int idx = NoteEnIndexOf(cursor_id);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, !scale.notes[idx].enable, currentScaleIndex, idx);
+            } else if (IsNoteOffsetCursor(cursor_id)) {
+                int idx = NoteOffsetIndexOf(cursor_id);
+                float newOffset = std::clamp(scale.notes[idx].offset + step * 0.01f, -24.0f, 24.0f);
+                if (!scale.notes[idx].enable) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, 1, currentScaleIndex, idx);
+                }
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, idx, newOffset);
+            }
+        } else if (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN) {
+            arrowPressedDuringEdit = true;
+            int step10 = (event.key.key == SDLK_UP) ? 10 : -10;
+            int step1 = (event.key.key == SDLK_UP) ? 1 : -1;
+            const auto& scale = uiEngineState.scales[currentScaleIndex];
+
+            if (cursor_id == C::KEY) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_KEY, (scale.key + step1 + 12) % 12, currentScaleIndex);
+            } else if (cursor_id == C::TUNE_INT) {
+                int intPart = static_cast<int>(scale.tune);
+                int fracPart = static_cast<int>(std::round((scale.tune - intPart) * 100.0f));
+                if (fracPart < 0) fracPart = 0;
+                if (fracPart > 99) fracPart = 99;
+                int newInt = std::clamp(intPart + step10, 0, 999);
+                float newTune = newInt + (fracPart / 100.0f);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, newTune);
+            } else if (cursor_id == C::TUNE_DEC) {
+                int intPart = static_cast<int>(scale.tune);
+                int fracPart = static_cast<int>(std::round((scale.tune - intPart) * 100.0f));
+                if (fracPart < 0) fracPart = 0;
+                if (fracPart > 99) fracPart = 99;
+                int newFrac = std::clamp(fracPart + step10, 0, 99);
+                float newTune = intPart + (newFrac / 100.0f);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, newTune);
+            } else if (IsNoteEnCursor(cursor_id)) {
+                int idx = NoteEnIndexOf(cursor_id);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, !scale.notes[idx].enable, currentScaleIndex, idx);
+            } else if (IsNoteOffsetCursor(cursor_id)) {
+                int idx = NoteOffsetIndexOf(cursor_id);
+                float newOffset = std::clamp(scale.notes[idx].offset + step1 * 1.00f, -24.0f, 24.0f);
+                if (!scale.notes[idx].enable) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, 1, currentScaleIndex, idx);
+                }
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, idx, newOffset);
+            }
         }
+    }
+}
+
+void HandleScaleEditRelease(CursorId cursor_id, int currentScaleIndex,
+                            engine::EngineState& uiEngineState, CommandSink& commandSink,
+                            ScaleActionState& actionState) {
+    (void)currentScaleIndex;
+    (void)uiEngineState;
+    (void)commandSink;
+    using C = CursorId;
+    if (cursor_id == C::CMD_LOAD) {
+        actionState.scaleBrowserMode = ScaleBrowserMode::LOAD;
+        actionState.fileBrowser.init("Scales", ".m8n", FileBrowser::Mode::FILES);
+        actionState.fileBrowser.setTitle("LOAD SCALE");
+        actionState.viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+    } else if (cursor_id == C::CMD_SAVE) {
+        actionState.scaleBrowserMode = ScaleBrowserMode::SAVE_DIR;
+        actionState.fileBrowser.init("Scales", ".m8n", FileBrowser::Mode::DIRECTORY);
+        actionState.fileBrowser.setTitle("SELECT SAVE DIRECTORY");
+        actionState.viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
     }
 }
 

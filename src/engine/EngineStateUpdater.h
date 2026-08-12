@@ -33,6 +33,12 @@ struct EngineStateUpdater {
             case ParamID::PROJ_GROOVE:
                 state.project.groove = std::clamp((int)cmd.value, 0, 31);
                 break;
+            case ParamID::PROJ_SCALE:
+                state.project.scale = std::clamp((int)cmd.value, 0, 255);
+                break;
+            case ParamID::PROJ_LIVE_QUANTIZE:
+                state.project.live_quantize = std::clamp((int)cmd.value, 0, 255);
+                break;
 
             // Mixer
             case ParamID::MIX_OUT_VOL: mx.out_vol = cmd.value; break;
@@ -214,7 +220,8 @@ struct EngineStateUpdater {
             case ParamID::SCALE_KEY:
             case ParamID::SCALE_TUNE:
             case ParamID::SCALE_NOTE_EN:
-            case ParamID::SCALE_NOTE_OFFSET: {
+            case ParamID::SCALE_NOTE_OFFSET:
+            case ParamID::SCALE_NAME: {
                 if (cmd.targetId < 0 || cmd.targetId >= 16) break;
                 auto& scale = state.scales[cmd.targetId];
                 switch (cmd.paramId) {
@@ -225,6 +232,12 @@ struct EngineStateUpdater {
                         break;
                     case ParamID::SCALE_NOTE_OFFSET:
                         if (cmd.row >= 0 && cmd.row < 12) scale.notes[cmd.row].offset = cmd.fValue;
+                        break;
+                    case ParamID::SCALE_NAME:
+                        if (cmd.row >= 0 && cmd.row < 16) {
+                            scale.name[cmd.row] = static_cast<char>(cmd.value);
+                            scale.name[16] = '\0';
+                        }
                         break;
                     default: break;
                 }

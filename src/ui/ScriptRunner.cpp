@@ -68,10 +68,16 @@ SDL_Keycode ScriptRunner::parseButton(const std::string& name) {
         {"DOWN",  SDLK_DOWN},
         {"LEFT",  SDLK_LEFT},
         {"RIGHT", SDLK_RIGHT},
-        {"X",     SDLK_X},
-        {"Z",     SDLK_Z},
-        {"SHIFT", SDLK_LSHIFT},
-        {"SPACE", SDLK_SPACE},
+        {"X",      SDLK_X},
+        {"Z",      SDLK_Z},
+        {"OPT",    SDLK_Z},
+        {"OPTION", SDLK_Z},
+        {"SHIFT",  SDLK_LSHIFT},
+        {"SPACE",  SDLK_SPACE},
+        {"ESC",    SDLK_ESCAPE},
+        {"ESCAPE", SDLK_ESCAPE},
+        {"RETURN", SDLK_RETURN},
+        {"ENTER",  SDLK_RETURN},
     };
     for (auto& m : table) {
         if (name == m.name) return m.key;

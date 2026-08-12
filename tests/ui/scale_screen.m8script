@@ -1,0 +1,92 @@
+goto SCALE
+assert_screen contains "SCALE"
+
+# Verify initial default state (Key = C)
+assert_field KEY C
+assert_screen row 2 contains "KEY    C"
+assert_screen row 3 contains "EN OFFSET"
+assert_screen row 4 contains "C"
+assert_screen row 5 contains "ON"
+
+# Change Key from C to E (+4 semitones)
+key X+RIGHT
+key X+RIGHT
+assert_field KEY D
+key X+RIGHT
+key X+RIGHT
+assert_field KEY E
+assert_screen row 2 contains "KEY    E"
+
+# Verify that note rows rotated to start with E, F...
+assert_screen row 4 contains "E"
+assert_screen row 5 contains "F"
+assert_screen row 7 contains "G"
+
+# Navigate down to interval 0 (E) and toggle EN
+key DOWN
+key X+RIGHT
+assert_screen row 4 contains "--  --.--"
+
+# Toggle EN back ON
+key X+RIGHT
+assert_screen row 4 contains "ON"
+assert_screen row 4 contains "00.00"
+
+# Navigate down through all 12 note rows to reach TUNE_INT
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+# We are on TUNE_INT (440)
+assert_screen row 16 contains "TUNE   440.00"
+# Step whole part by 10s with X+UP
+key X+UP
+assert_screen row 16 contains "TUNE   450.00"
+# Step whole part by 1s with X+RIGHT
+key X+RIGHT
+assert_screen row 16 contains "TUNE   451.00"
+
+# Move to TUNE_DEC (00)
+key RIGHT
+# Step fractional part by 10s with X+UP
+key X+UP
+assert_screen row 16 contains "TUNE   451.10"
+# Step fractional part by 1s with X+RIGHT
+key X+RIGHT
+assert_screen row 16 contains "TUNE   451.11"
+
+# Move down to NAME
+key DOWN
+assert_screen row 17 contains "NAME   CHROMATIC-------"
+
+# Move down to LOAD
+key DOWN
+assert_screen row 18 contains "LOAD"
+assert_screen row 18 contains "SAVE"
+
+# Trigger LOAD SCALE modal
+key X
+assert_screen row 1 contains "LOAD SCALE"
+key OPT
+assert_screen row 0 contains "SCALE"
+
+# Move to SAVE and trigger SELECT SAVE DIRECTORY modal
+key RIGHT
+key X
+assert_screen row 1 contains "SELECT SAVE DIRECTORY"
+assert_screen row 3 contains "SAVE TO /SCALES"
+assert_screen contains "(CREATE DIRECTORY)"
+key OPTION
+assert_screen row 0 contains "SCALE"
+
+assert_no_overlap
+assert_no_error

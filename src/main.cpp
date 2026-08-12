@@ -7,6 +7,7 @@
 #include "ui/CharPicker.h"
 #include "ui/ScriptRunner.h"
 #include "io/SongIO.h"
+#include "io/ScaleIO.h"
 #include <ui/screens/song/SongScreen.h>
 #include "ui/screens/chain/ChainScreen.h"
 #include "ui/screens/phrase/PhraseScreen.h"
@@ -383,6 +384,8 @@ int main(int argc, char* argv[]) {
     std::string currentSongPath;
     std::string sampleRoot = "Samples";
     bool browserForSongLoad = false;  // true = browser filters .m8s for song load
+    m8::ui::scale::ScaleBrowserMode scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+    m8::io::ensureFactoryScales("Scales");
     bool textInputActive = false;
     std::string textInputBuffer;
     std::string textInputPrompt;
@@ -390,6 +393,49 @@ int main(int argc, char* argv[]) {
     int missingSamplesScroll = 0;
     std::string songStatusMsg;
     uint64_t songStatusExpireTime = 0;
+
+    auto handleFileBrowserSelection = [&](const std::string& path) {
+        if (scaleBrowserMode == m8::ui::scale::ScaleBrowserMode::LOAD) {
+            m8::engine::Scale loadedScale;
+            std::string err;
+            if (m8::io::loadScale(path, loadedScale, err)) {
+                uiEngineState.scales[currentScaleIndex] = loadedScale;
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_KEY, loadedScale.key, currentScaleIndex);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_TUNE, 0, currentScaleIndex, 0, loadedScale.tune);
+                for (int i = 0; i < 16; ++i) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, loadedScale.name[i], currentScaleIndex, i);
+                }
+                for (int i = 0; i < 12; ++i) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_EN, loadedScale.notes[i].enable ? 1 : 0, currentScaleIndex, i);
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, i, loadedScale.notes[i].offset);
+                }
+            }
+            scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+        } else if (scaleBrowserMode == m8::ui::scale::ScaleBrowserMode::SAVE_DIR) {
+            std::string outPath, err;
+            m8::io::saveScale(path, uiEngineState.scales[currentScaleIndex], outPath, err);
+            scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+        } else if (browserForSongLoad) {
+            bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+                                             uiEngineState, currentSongPath,
+                                             currentLoadResult, missingSamplesMsg);
+            if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
+        } else {
+            m8::engine::SampleData buf;
+            if (FileBrowser::loadWavFile(path, buf)) {
+                std::strncpy(buf.path, path.c_str(), 127);
+                buf.path[127] = '\0';
+                EngineCommand cmd;
+                cmd.type = CommandType::LOAD_SAMPLE;
+                cmd.targetId = currentInstIndex;
+                cmd.u.sample = buf;
+                if (!commandSink.send(cmd)) {
+                    FileBrowser::freeWavFile(buf);
+                }
+            }
+        }
+        viewManager.popModal();
+    };
 
     SDL_Color colorBg = {0, 0, 0, 255};
     SDL_Color colorRed = {255, 60, 60, 255};
@@ -495,6 +541,13 @@ int main(int argc, char* argv[]) {
                     } else if (textInputPrompt == "SAMPLE ROOT:") {
                         sampleRoot = textInputBuffer;
                         m8::ui::project::setSampleRoot(sampleRoot);
+                    } else if (textInputPrompt == "NEW DIR:") {
+                        if (!textInputBuffer.empty()) {
+                            std::filesystem::path newDirPath = std::filesystem::path(fileBrowser.getCurrentDirectory()) / textInputBuffer;
+                            std::error_code ec;
+                            std::filesystem::create_directories(newDirPath, ec);
+                            fileBrowser.navigateTo(newDirPath);
+                        }
                     }
                     textInputActive = false;
                 } else if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_BACKSPACE) {
@@ -517,6 +570,11 @@ int main(int argc, char* argv[]) {
                         if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
                             project_cursor_id == m8::ui::project::CursorId::NAME) {
                             char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.project.name)) ? uiEngineState.project.name[nameCharIndex] : '1';
+                            charPicker.init(curChar);
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE &&
+                                   scale_cursor_id == m8::ui::scale::CursorId::NAME) {
+                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.scales[currentScaleIndex].name)) ? uiEngineState.scales[currentScaleIndex].name[nameCharIndex] : 'C';
                             charPicker.init(curChar);
                             viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
                         }
@@ -561,28 +619,15 @@ int main(int argc, char* argv[]) {
                         if (result == FileBrowser::Result::SELECTED) {
                             std::string path = fileBrowser.getSelectedPath();
                             if (!path.empty()) {
-                                if (browserForSongLoad) {
-                                    bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
-                                                                     uiEngineState, currentSongPath,
-                                                                     currentLoadResult, missingSamplesMsg);
-                                    if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
-                                } else {
-                                    m8::engine::SampleData buf;
-                                    if (FileBrowser::loadWavFile(path, buf)) {
-                                        std::strncpy(buf.path, path.c_str(), 127);
-                                        buf.path[127] = '\0';
-                                        EngineCommand cmd;
-                                        cmd.type = CommandType::LOAD_SAMPLE;
-                                        cmd.targetId = currentInstIndex;
-                                        cmd.u.sample = buf;
-                                        if (!commandSink.send(cmd)) {
-                                            FileBrowser::freeWavFile(buf);
-                                        }
-                                    }
-                                }
-                                viewManager.popModal();
+                                handleFileBrowserSelection(path);
                             }
+                        } else if (result == FileBrowser::Result::CREATE_DIR) {
+                            textInputActive = true;
+                            textInputBuffer.clear();
+                            textInputPrompt = "NEW DIR:";
+                            SDL_StartTextInput(SDL_GetKeyboardFocus());
                         } else if (result == FileBrowser::Result::CANCELLED) {
+                            scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
                             viewManager.popModal();
                         }
                         continue;
@@ -648,8 +693,11 @@ int main(int argc, char* argv[]) {
                                                       grooves[currentGrooveIndex], currentGrooveIndex,
                                                       groove_cursor_y, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
+                    m8::ui::scale::ScaleActionState scaleActions{
+                        fileBrowser, viewManager, scaleBrowserMode
+                    };
                     m8::ui::scale::HandleScaleInput(event, editHeld, arrowPressedDuringEdit,
-                                                    uiEngineState, currentScaleIndex, scale_cursor_id, commandSink);
+                                                    uiEngineState, currentScaleIndex, scale_cursor_id, nameCharIndex, commandSink, &scaleActions);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
                     m8::ui::inst_pool::HandleInstPoolInput(event, editHeld, arrowPressedDuringEdit,
                                                            uiEngineState, pool_cursor_x, pool_cursor_y, commandSink);
@@ -677,7 +725,7 @@ int main(int argc, char* argv[]) {
                             cmd.targetId = currentPhrase; cmd.col = songCol; cmd.row = cursorRow; cmd.value = 1;
                         }
                     }
-                    commandRing.push(cmd);
+                    commandSink.send(cmd);
                 } else if (event.key.key == SDLK_F1) {
                     auto viewTypeToStr = [](m8::ui::ViewType v) -> const char* {
                         switch (v) {
@@ -704,37 +752,70 @@ int main(int argc, char* argv[]) {
                 }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
-                if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
-                    m8::ui::project::HandleProjectKeyUp(event, uiEngineState, project_cursor_id, commandSink);
-                }
                 if (event.key.key == SDLK_LSHIFT) {
                     shiftHeld = false;
                 } else if (event.key.key == SDLK_X) {
-                    editHeld = false;
-                    if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
-                        if (charPicker.isRandomSelected()) {
-                            std::string randName = m8::ui::CharPicker::generateRandomName();
-                            for (int i = 0; i < 12; ++i) {
-                                char c = (i < (int)randName.size()) ? randName[i] : '-';
-                                m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, c, i);
+                    if (editHeld) {
+                        editHeld = false;
+                        if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
+                            project_cursor_id == m8::ui::project::CursorId::NAME) {
+                            if (charPicker.isRandomSelected()) {
+                                std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                for (size_t i = 0; i < rnd.size() && i < 12; ++i) {
+                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, rnd[i], 0, static_cast<int>(i));
+                                }
+                            } else {
+                                char picked = charPicker.getSelectedChar();
+                                if (picked != '\0') {
+                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, picked, 0, nameCharIndex);
+                                    nameCharIndex = (nameCharIndex + 1) % 12;
+                                }
                             }
-                        } else if (charPicker.isModeToggleSelected()) {
-                            charPicker.toggleLayout();
-                        } else {
-                            char chosen = charPicker.getSelectedChar();
-                            m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, chosen, nameCharIndex);
-                            nameCharIndex = (nameCharIndex + 1) % 12;
-                        }
-                        viewManager.popModal();
-                        continue;
-                    }
-                    if (!arrowPressedDuringEdit) {
-                        if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
-                            m8::ui::phrase::HandlePhraseEditRelease(uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAIN) {
-                            m8::ui::chain::HandleChainEditRelease(uiSequencer, currentChain, chainCol, chainRow, commandSink);
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
-                            m8::ui::song::HandleSongEditRelease(uiSequencer, songCol, songRow, commandSink);
+                            viewManager.popModal();
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE &&
+                                   scale_cursor_id == m8::ui::scale::CursorId::NAME) {
+                            if (charPicker.isRandomSelected()) {
+                                std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                for (size_t i = 0; i < rnd.size() && i < 16; ++i) {
+                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, rnd[i], currentScaleIndex, static_cast<int>(i));
+                                }
+                            } else {
+                                char picked = charPicker.getSelectedChar();
+                                if (picked != '\0') {
+                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, picked, currentScaleIndex, nameCharIndex);
+                                    nameCharIndex = (nameCharIndex + 1) % 16;
+                                }
+                            }
+                            viewManager.popModal();
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+                            if (viewManager.getBaseView() == m8::ui::ViewType::PROJECT) {
+                                if (charPicker.isRandomSelected()) {
+                                    std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                    for (size_t i = 0; i < rnd.size() && i < 12; ++i) {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, rnd[i], 0, static_cast<int>(i));
+                                    }
+                                } else {
+                                    char picked = charPicker.getSelectedChar();
+                                    if (picked != '\0') {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, picked, 0, nameCharIndex);
+                                        nameCharIndex = (nameCharIndex + 1) % 12;
+                                    }
+                                }
+                            } else if (viewManager.getBaseView() == m8::ui::ViewType::SCALE) {
+                                if (charPicker.isRandomSelected()) {
+                                    std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                    for (size_t i = 0; i < rnd.size() && i < 16; ++i) {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, rnd[i], currentScaleIndex, static_cast<int>(i));
+                                    }
+                                } else {
+                                    char picked = charPicker.getSelectedChar();
+                                    if (picked != '\0') {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, picked, currentScaleIndex, nameCharIndex);
+                                        nameCharIndex = (nameCharIndex + 1) % 16;
+                                    }
+                                }
+                            }
+                            viewManager.popModal();
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
                             m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
@@ -747,20 +828,21 @@ int main(int argc, char* argv[]) {
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
                             SDL_Event simEvent;
                             simEvent.type = SDL_EVENT_KEY_DOWN;
-                            simEvent.key.key = SDLK_RETURN;
+                            simEvent.key.key = SDLK_RIGHT;
                             auto result = confirmDialog.handleInput(simEvent, false);
                             if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
-                                resetNewSong(commandRing, uiSequencer, uiEngineState, currentSongPath,
-                                             currentLoadResult, missingSamplesMsg);
-                                cursorRow = 0; cursorCol = 0;
+                                m8::io::LoadResult emptyResult;
+                                currentLoadResult = emptyResult;
+                                currentSongPath.clear();
+                                for (auto& row : song) {
+                                    for (auto& track : row.tracks) {
+                                        track = CHAIN_EMPTY;
+                                    }
+                                }
                                 songRow = 0; songCol = 0;
-                                chainRow = 0; chainCol = 0;
-                                currentPhrase = 0; currentChain = 0; currentInstIndex = 0;
-                                table_cursor_x = 0; table_cursor_y = 0;
-                                currentGrooveIndex = 0; groove_cursor_y = 0;
-                                currentScaleIndex = 0;
-                                pool_cursor_x = 0; pool_cursor_y = 0;
-                                project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
+                                currentChain = 0; chainRow = 0; chainCol = 0;
+                                currentPhrase = 0; cursorRow = 0; cursorCol = 0;
+                                currentInstIndex = 0;
                                 nameCharIndex = 0;
                                 viewManager.setCoords(0, 0);
                                 viewManager.popModal();
@@ -777,33 +859,36 @@ int main(int argc, char* argv[]) {
                             if (result == FileBrowser::Result::SELECTED) {
                                 std::string path = fileBrowser.getSelectedPath();
                                 if (!path.empty()) {
-                                    if (browserForSongLoad) {
-                                        bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
-                                                                         uiEngineState, currentSongPath,
-                                                                         currentLoadResult, missingSamplesMsg);
-                                        if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
-                                    } else {
-                                        // Load WAV sample
-                                        m8::engine::SampleData buf;
-                                        if (FileBrowser::loadWavFile(path, buf)) {
-                                            std::strncpy(buf.path, path.c_str(), 127);
-                                            buf.path[127] = '\0';
-                                            EngineCommand cmd;
-                                            cmd.type = CommandType::LOAD_SAMPLE;
-                                            cmd.targetId = currentInstIndex;
-                                            cmd.u.sample = buf;
-                                            if (!commandSink.send(cmd)) {
-                                                FileBrowser::freeWavFile(buf);
-                                            }
-                                        }
-                                    }
-                                    viewManager.popModal();
+                                    handleFileBrowserSelection(path);
                                 }
+                            } else if (result == FileBrowser::Result::CREATE_DIR) {
+                                textInputActive = true;
+                                textInputBuffer.clear();
+                                textInputPrompt = "NEW DIR:";
+                                SDL_StartTextInput(SDL_GetKeyboardFocus());
                             } else if (result == FileBrowser::Result::CANCELLED) {
+                                scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
                             m8::ui::groove::HandleGrooveEditRelease(grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y, commandSink);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
+                            m8::ui::scale::ScaleActionState scaleActions{
+                                fileBrowser, viewManager, scaleBrowserMode
+                            };
+                            m8::ui::scale::HandleScaleEditRelease(scale_cursor_id, currentScaleIndex, uiEngineState, commandSink, scaleActions);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::phrase::HandlePhraseEditRelease(uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
+                            }
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAIN) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::chain::HandleChainEditRelease(uiSequencer, currentChain, chainCol, chainRow, commandSink);
+                            }
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::song::HandleSongEditRelease(uiSequencer, songCol, songRow, commandSink);
+                            }
                         }
                     }
                 }
@@ -862,7 +947,7 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
             m8::ui::groove::RenderGrooveScreen(renderer, uiEngineState, uiSequencer.grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
-            m8::ui::scale::RenderScaleScreen(renderer, uiEngineState, currentScaleIndex, scale_cursor_id);
+            m8::ui::scale::RenderScaleScreen(renderer, uiEngineState, currentScaleIndex, scale_cursor_id, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
             m8::ui::inst_pool::RenderInstPoolScreen(renderer, uiEngineState, pool_cursor_x, pool_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::MIXER) {

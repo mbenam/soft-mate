@@ -8,8 +8,9 @@ namespace fs = std::filesystem;
 
 FileBrowser::FileBrowser() {}
 
-void FileBrowser::init(const std::string& startDir, const std::string& filter) {
+void FileBrowser::init(const std::string& startDir, const std::string& filter, Mode m) {
     filterExt = filter;
+    mode = m;
     selectedPath.clear();
 
     std::error_code ec;
@@ -54,46 +55,7 @@ void FileBrowser::scanDirectory(const std::string& selectTargetName) {
     selectedPath.clear();
     currentDirStr = currentDir.generic_string();
 
-    // Add parent directory entry if not at filesystem root
-    if (currentDir.has_parent_path() && currentDir != currentDir.parent_path()) {
-        entries.push_back({"/..", currentDir.parent_path().generic_string(), true});
-    }
-
-    std::vector<FileEntry> dirs;
-    std::vector<FileEntry> files;
     std::error_code ec;
-
-    try {
-        for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied, ec)) {
-            std::error_code statusEc;
-            if (entry.is_directory(statusEc)) {
-                std::string fname = entry.path().filename().generic_string();
-                dirs.push_back({"/" + fname, entry.path().generic_string(), true});
-            } else if (entry.is_regular_file(statusEc)) {
-                std::string ext = entry.path().extension().generic_string();
-                bool match = false;
-                if (filterExt.empty()) {
-                    match = true;
-                } else {
-                    std::string extUpper = ext;
-                    std::transform(extUpper.begin(), extUpper.end(), extUpper.begin(), ::toupper);
-                    std::string filtUpper = filterExt;
-                    std::transform(filtUpper.begin(), filtUpper.end(), filtUpper.begin(), ::toupper);
-                    if (!filtUpper.empty() && filtUpper.front() != '.') {
-                        filtUpper = "." + filtUpper;
-                    }
-                    if (extUpper == filtUpper) {
-                        match = true;
-                    }
-                }
-                if (match) {
-                    std::string fname = entry.path().filename().generic_string();
-                    files.push_back({fname, entry.path().generic_string(), false});
-                }
-            }
-        }
-    } catch (...) {}
-
     auto sortCaseInsensitive = [](const FileEntry& a, const FileEntry& b) {
         std::string sa = a.name;
         std::string sb = b.name;
@@ -101,17 +63,101 @@ void FileBrowser::scanDirectory(const std::string& selectTargetName) {
         std::transform(sb.begin(), sb.end(), sb.begin(), ::toupper);
         return sa < sb;
     };
-    std::sort(dirs.begin(), dirs.end(), sortCaseInsensitive);
-    std::sort(files.begin(), files.end(), sortCaseInsensitive);
 
-    entries.insert(entries.end(), dirs.begin(), dirs.end());
-    entries.insert(entries.end(), files.begin(), files.end());
+    if (mode == Mode::DIRECTORY) {
+        // Format relative display directory string e.g. "/SCALES" or "/SCALES/FACTORY"
+        std::string relPath = currentDirStr;
+        auto scalesPos = relPath.find("Scales");
+        if (scalesPos == std::string::npos) scalesPos = relPath.find("scales");
+        if (scalesPos != std::string::npos) {
+            relPath = "/" + relPath.substr(scalesPos);
+        } else {
+            relPath = "/" + currentDir.filename().generic_string();
+        }
+        std::transform(relPath.begin(), relPath.end(), relPath.begin(), ::toupper);
+
+        // 1. First entry: "SAVE TO <relPath>"
+        entries.push_back({"SAVE TO " + relPath, currentDir.generic_string(), false});
+
+        // 2. Parent directory
+        if (currentDir.has_parent_path() && currentDir != currentDir.parent_path()) {
+            entries.push_back({"/..", currentDir.parent_path().generic_string(), true});
+        }
+
+        // 3. Subdirectories
+        std::vector<FileEntry> dirs;
+        try {
+            for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied, ec)) {
+                std::error_code statusEc;
+                if (entry.is_directory(statusEc)) {
+                    std::string fname = entry.path().filename().generic_string();
+                    std::string fnameUpper = fname;
+                    std::transform(fnameUpper.begin(), fnameUpper.end(), fnameUpper.begin(), ::toupper);
+                    dirs.push_back({"/" + fnameUpper, entry.path().generic_string(), true});
+                }
+            }
+        } catch (...) {}
+        std::sort(dirs.begin(), dirs.end(), sortCaseInsensitive);
+        entries.insert(entries.end(), dirs.begin(), dirs.end());
+
+        // 4. Create directory entry
+        entries.push_back({"(CREATE DIRECTORY)", "", false});
+    } else {
+        // Add parent directory entry if not at filesystem root
+        if (currentDir.has_parent_path() && currentDir != currentDir.parent_path()) {
+            entries.push_back({"/..", currentDir.parent_path().generic_string(), true});
+        }
+
+        std::vector<FileEntry> dirs;
+        std::vector<FileEntry> files;
+
+        try {
+            for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied, ec)) {
+                std::error_code statusEc;
+                if (entry.is_directory(statusEc)) {
+                    std::string fname = entry.path().filename().generic_string();
+                    dirs.push_back({"/" + fname, entry.path().generic_string(), true});
+                } else if (entry.is_regular_file(statusEc)) {
+                    std::string ext = entry.path().extension().generic_string();
+                    bool match = false;
+                    if (filterExt.empty()) {
+                        match = true;
+                    } else {
+                        std::string extUpper = ext;
+                        std::transform(extUpper.begin(), extUpper.end(), extUpper.begin(), ::toupper);
+                        std::string filtUpper = filterExt;
+                        std::transform(filtUpper.begin(), filtUpper.end(), filtUpper.begin(), ::toupper);
+                        if (!filtUpper.empty() && filtUpper.front() != '.') {
+                            filtUpper = "." + filtUpper;
+                        }
+                        if (extUpper == filtUpper) {
+                            match = true;
+                        }
+                    }
+                    if (match) {
+                        std::string fname = entry.path().filename().generic_string();
+                        files.push_back({fname, entry.path().generic_string(), false});
+                    }
+                }
+            }
+        } catch (...) {}
+
+        std::sort(dirs.begin(), dirs.end(), sortCaseInsensitive);
+        std::sort(files.begin(), files.end(), sortCaseInsensitive);
+
+        entries.insert(entries.end(), dirs.begin(), dirs.end());
+        entries.insert(entries.end(), files.begin(), files.end());
+    }
 
     // If returning from a child folder, position cursor on that folder
     if (!selectTargetName.empty()) {
         std::string target = "/" + selectTargetName;
+        std::string targetUpper = target;
+        std::transform(targetUpper.begin(), targetUpper.end(), targetUpper.begin(), ::toupper);
         for (size_t i = 0; i < entries.size(); ++i) {
-            if (entries[i].name == target) {
+            std::string entryUpper = entries[i].name;
+            std::transform(entryUpper.begin(), entryUpper.end(), entryUpper.begin(), ::toupper);
+            if (entryUpper == targetUpper) {
                 cursorIndex = static_cast<int>(i);
                 if (cursorIndex >= 16) {
                     scrollOffset = cursorIndex - 15;
@@ -168,6 +214,13 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
     if (key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER || (key == SDLK_X && !editHeld)) {
         if (cursorIndex >= 0 && cursorIndex < (int)entries.size()) {
             const auto& entry = entries[cursorIndex];
+            if (entry.name.rfind("SAVE TO ", 0) == 0) {
+                selectedPath = entry.path;
+                return Result::SELECTED;
+            }
+            if (entry.name == "(CREATE DIRECTORY)") {
+                return Result::CREATE_DIR;
+            }
             if (entry.isDirectory) {
                 if (entry.name == "/..") {
                     navigateUp();
@@ -185,15 +238,19 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
 
     if (key == SDLK_LEFT) {
         // If we are inside a subfolder and have a parent entry, navigate up
-        if (!entries.empty() && entries[0].name == "/..") {
-            navigateUp();
-            return Result::NONE;
+        if (!entries.empty()) {
+            for (const auto& e : entries) {
+                if (e.name == "/..") {
+                    navigateUp();
+                    return Result::NONE;
+                }
+            }
         }
         // At root boundary -> cancel modal
         return Result::CANCELLED;
     }
 
-    if (key == SDLK_ESCAPE) {
+    if (key == SDLK_ESCAPE || key == SDLK_Z) {
         return Result::CANCELLED;
     }
 
@@ -201,17 +258,10 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
 }
 
 void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color colorCyan, SDL_Color colorRed) {
-    renderer.drawString(title, 2, 1, colorCyan);
-
-    // Format current directory string for display
-    std::string displayPath = currentDirStr;
-    if (displayPath.length() > 34) {
-        displayPath = "..." + displayPath.substr(displayPath.length() - 31);
-    }
-    renderer.drawString(displayPath, 2, 2, {140, 140, 140, 255});
+    renderer.drawString(title, 2, 1, colorRed);
 
     if (entries.empty()) {
-        renderer.drawString("(NO FILES)", 2, 4, {100, 100, 100, 255});
+        renderer.drawString("(NO FILES)", 2, 3, {100, 100, 100, 255});
         return;
     }
 
@@ -219,15 +269,27 @@ void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color col
         int entryIdx = scrollOffset + i;
         if (entryIdx >= (int)entries.size()) break;
 
-        int y = 4 + i;
+        int y = 3 + i;
         std::string name = entries[entryIdx].name;
         if (name.length() > 34) name = name.substr(0, 34);
 
-        if (entryIdx == cursorIndex) {
+        if (name.rfind("SAVE TO ", 0) == 0) {
+            if (entryIdx == cursorIndex) {
+                renderer.drawBracket(2, y, name.length(), colorCyan);
+            }
+            renderer.drawString(name, 2, y, colorCyan);
+        } else if (name == "(CREATE DIRECTORY)") {
+            if (entryIdx == cursorIndex) {
+                renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed);
+                renderer.drawString(name, 2, y, {255, 255, 255, 255});
+            } else {
+                renderer.drawString(name, 2, y, {140, 140, 140, 255});
+            }
+        } else if (entryIdx == cursorIndex) {
             renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed);
             renderer.drawString(name, 2, y, {255, 255, 255, 255});
         } else {
-            SDL_Color itemColor = entries[entryIdx].isDirectory ? colorCyan : colorWhite;
+            SDL_Color itemColor = entries[entryIdx].isDirectory ? colorWhite : colorWhite;
             renderer.drawString(name, 2, y, itemColor);
         }
     }

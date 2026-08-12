@@ -123,14 +123,19 @@ void RenderProjectScreen(Renderer& renderer,
                 }
             }
 
-            // Draw logic for accented contextual text (e.g. "DEFAULT", "C CHROMATIC")
+            // Draw logic for accented contextual text (e.g. "DEFAULT", " C", "A#1")
             if (comp.role == "accent") {
                 if (fieldId == CursorId::GROOVE) {
                     drawText = (engState.project.groove == 0) ? "DEFAULT" : "       ";
                 } else if (fieldId == CursorId::SCALE) {
-                    drawText = (engState.project.scale == 0) ? "C CHROMATIC" : "           ";
+                    static const char* kKeyNames[16] = {
+                        " C", "C#", " D", "D#", " E", " F", "F#", " G",
+                        "G#", " A", "A#1", " B", " C1", "C#1", " D1", "D#1"
+                    };
+                    uint8_t scaleByte = static_cast<uint8_t>(engState.project.scale);
+                    drawText = kKeyNames[scaleByte & 0x0F];
                 } else if (fieldId == CursorId::LIVE_QUANTIZE) {
-                    drawText = (engState.project.live_quantize == 0) ? "CHAIN LEN" : "         ";
+                    drawText = (engState.project.live_quantize == 0) ? "CHAIN LEN" : "STEPS    ";
                 } else {
                     drawText = "";
                 }
@@ -250,6 +255,12 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
                 g_transposeNoticeUntil = SDL_GetTicks() + 2500;
             } else if (cursor_id == C::GROOVE) {
                 uiEngineState.project.groove = std::clamp<int>(uiEngineState.project.groove + step, 0, 31);
+            } else if (cursor_id == C::SCALE) {
+                int nextVal = uiEngineState.project.scale + step;
+                uiEngineState.project.scale = (nextVal < 0) ? 255 : (nextVal > 255) ? 0 : nextVal;
+            } else if (cursor_id == C::LIVE_QUANTIZE) {
+                int nextVal = uiEngineState.project.live_quantize + step;
+                uiEngineState.project.live_quantize = (nextVal < 0) ? 255 : (nextVal > 255) ? 0 : nextVal;
             }
         } else if (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN) {
             arrowPressedDuringEdit = true;
@@ -267,6 +278,14 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
             } else if (cursor_id == C::GROOVE) {
                 int hexStep = (event.key.key == SDLK_UP) ? 16 : -16;
                 uiEngineState.project.groove = std::clamp<int>(uiEngineState.project.groove + hexStep, 0, 31);
+            } else if (cursor_id == C::SCALE) {
+                int hexStep = (event.key.key == SDLK_UP) ? 16 : -16;
+                int nextVal = uiEngineState.project.scale + hexStep;
+                uiEngineState.project.scale = (nextVal < 0) ? (nextVal + 256) : (nextVal > 255) ? (nextVal - 256) : nextVal;
+            } else if (cursor_id == C::LIVE_QUANTIZE) {
+                int hexStep = (event.key.key == SDLK_UP) ? 16 : -16;
+                int nextVal = uiEngineState.project.live_quantize + hexStep;
+                uiEngineState.project.live_quantize = (nextVal < 0) ? (nextVal + 256) : (nextVal > 255) ? (nextVal - 256) : nextVal;
             }
         }
     }
@@ -318,6 +337,12 @@ void HandleProjectKeyUp(const SDL_Event& event, engine::EngineState& uiEngineSta
     if (cursor_id == CursorId::GROOVE && event.key.key == SDLK_X) {
         PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_GROOVE, uiEngineState.project.groove);
     }
+    if (cursor_id == CursorId::SCALE && event.key.key == SDLK_X) {
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_SCALE, uiEngineState.project.scale);
+    }
+    if (cursor_id == CursorId::LIVE_QUANTIZE && event.key.key == SDLK_X) {
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_LIVE_QUANTIZE, uiEngineState.project.live_quantize);
+    }
 }
 
 void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
@@ -333,6 +358,12 @@ void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
     }
     if (cursor_id == CursorId::GROOVE) {
         PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_GROOVE, uiEngineState.project.groove);
+    }
+    if (cursor_id == CursorId::SCALE) {
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_SCALE, uiEngineState.project.scale);
+    }
+    if (cursor_id == CursorId::LIVE_QUANTIZE) {
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_LIVE_QUANTIZE, uiEngineState.project.live_quantize);
     }
     (void)nameCharIndex;
     (void)commandSink;

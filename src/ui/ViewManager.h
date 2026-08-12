@@ -17,6 +17,7 @@ public:
     ViewManager();
 
     ViewType getCurrentView() const;
+    ViewType getBaseView() const { return getViewAt(m_x, m_y); }
     int getCol() const { return m_x; }
     int getRow() const { return m_y; }
     void setCoords(int x, int y) { m_x = x; m_y = y; }

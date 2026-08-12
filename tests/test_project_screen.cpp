@@ -455,3 +455,138 @@ TEST_CASE("ProjectScreen: GROOVE rendering displays DEFAULT for 00 and hides acc
     REQUIRE(row4_1F.find("GROOVE        1F") != std::string::npos);
     REQUIRE(row4_1F.find("DEFAULT") == std::string::npos);
 }
+
+TEST_CASE("ProjectScreen: SCALE editing with 1s and 16s and delayed commit", "[project_scale]") {
+    TestProjectContext ctx;
+    ctx.cursorId = CursorId::SCALE;
+    ctx.engineState.project.scale = 0;
+
+    // Holding X and pressing RIGHT steps by 1: 00 -> 01
+    ctx.sendKeyDown(SDLK_RIGHT, true);
+    REQUIRE(ctx.engineState.project.scale == 1);
+
+    // No command pushed while editing
+    EngineCommand cmd;
+    REQUIRE(!ctx.commandRing.pop(cmd));
+
+    // Holding X and pressing UP steps by 16: 01 -> 17 (0x11)
+    ctx.sendKeyDown(SDLK_UP, true);
+    REQUIRE(ctx.engineState.project.scale == 17);
+
+    // Set scale to 0xAA (170)
+    ctx.engineState.project.scale = 0xAA;
+    ctx.sendKeyUp(SDLK_X);
+
+    // Releasing X pushes PROJ_SCALE command
+    REQUIRE(ctx.commandRing.pop(cmd));
+    REQUIRE(cmd.paramId == ParamID::PROJ_SCALE);
+    REQUIRE(cmd.value == 0xAA);
+}
+
+TEST_CASE("ProjectScreen: SCALE rendering displays key signature accents", "[project_scale]") {
+    Renderer renderer;
+    EngineState engState;
+
+    // When scale == 0: row 5 has "SCALE         00 C"
+    engState.project.scale = 0x00;
+    renderer.resetVram();
+    RenderProjectScreen(renderer, engState, CursorId::SCALE);
+    const auto& vram0 = renderer.getVram();
+    std::string row5_0;
+    for (int c = 0; c < 40; ++c) {
+        char ch = vram0[5][c].ch;
+        row5_0 += (ch ? ch : ' ');
+    }
+    REQUIRE(row5_0.find("SCALE") != std::string::npos);
+    REQUIRE(row5_0.find("00") != std::string::npos);
+    REQUIRE(row5_0.find(" C") != std::string::npos);
+
+    // When scale == 0xAA: row 5 has "SCALE         AA A#1"
+    engState.project.scale = 0xAA;
+    renderer.resetVram();
+    RenderProjectScreen(renderer, engState, CursorId::SCALE);
+    const auto& vramAA = renderer.getVram();
+    std::string row5_AA;
+    for (int c = 0; c < 40; ++c) {
+        char ch = vramAA[5][c].ch;
+        row5_AA += (ch ? ch : ' ');
+    }
+    REQUIRE(row5_AA.find("SCALE") != std::string::npos);
+    REQUIRE(row5_AA.find("AA") != std::string::npos);
+    REQUIRE(row5_AA.find("A#1") != std::string::npos);
+}
+
+TEST_CASE("ProjectScreen: LIVE_QUANTIZE editing with 1s and 16s and delayed commit", "[project_quantize]") {
+    TestProjectContext ctx;
+    ctx.cursorId = CursorId::LIVE_QUANTIZE;
+    ctx.engineState.project.live_quantize = 0;
+
+    // Holding X and pressing RIGHT steps by 1: 00 -> 01
+    ctx.sendKeyDown(SDLK_RIGHT, true);
+    REQUIRE(ctx.engineState.project.live_quantize == 1);
+
+    // No command pushed while editing
+    EngineCommand cmd;
+    REQUIRE(!ctx.commandRing.pop(cmd));
+
+    // Holding X and pressing UP steps by 16: 01 -> 17 (0x11)
+    ctx.sendKeyDown(SDLK_UP, true);
+    REQUIRE(ctx.engineState.project.live_quantize == 17);
+
+    // Set quantize to 0xFF (255)
+    ctx.engineState.project.live_quantize = 0xFF;
+    ctx.sendKeyUp(SDLK_X);
+
+    // Releasing X pushes PROJ_LIVE_QUANTIZE command
+    REQUIRE(ctx.commandRing.pop(cmd));
+    REQUIRE(cmd.paramId == ParamID::PROJ_LIVE_QUANTIZE);
+    REQUIRE(cmd.value == 0xFF);
+}
+
+TEST_CASE("ProjectScreen: LIVE_QUANTIZE rendering displays CHAIN LEN for 00 and STEPS for non-zero", "[project_quantize]") {
+    Renderer renderer;
+    EngineState engState;
+
+    // When live_quantize == 0: row 6 has "LIVE QUANTIZ  00CHAIN LEN"
+    engState.project.live_quantize = 0x00;
+    renderer.resetVram();
+    RenderProjectScreen(renderer, engState, CursorId::LIVE_QUANTIZE);
+    const auto& vram0 = renderer.getVram();
+    std::string row6_0;
+    for (int c = 0; c < 40; ++c) {
+        char ch = vram0[6][c].ch;
+        row6_0 += (ch ? ch : ' ');
+    }
+    REQUIRE(row6_0.find("LIVE QUANTIZ") != std::string::npos);
+    REQUIRE(row6_0.find("00") != std::string::npos);
+    REQUIRE(row6_0.find("CHAIN LEN") != std::string::npos);
+
+    // When live_quantize == 0x01: row 6 has "LIVE QUANTIZ  01STEPS" and NOT "CHAIN LEN"
+    engState.project.live_quantize = 0x01;
+    renderer.resetVram();
+    RenderProjectScreen(renderer, engState, CursorId::LIVE_QUANTIZE);
+    const auto& vram01 = renderer.getVram();
+    std::string row6_01;
+    for (int c = 0; c < 40; ++c) {
+        char ch = vram01[6][c].ch;
+        row6_01 += (ch ? ch : ' ');
+    }
+    REQUIRE(row6_01.find("LIVE QUANTIZ") != std::string::npos);
+    REQUIRE(row6_01.find("01") != std::string::npos);
+    REQUIRE(row6_01.find("STEPS") != std::string::npos);
+    REQUIRE(row6_01.find("CHAIN LEN") == std::string::npos);
+
+    // When live_quantize == 0xFF: row 6 has "LIVE QUANTIZ  FFSTEPS"
+    engState.project.live_quantize = 0xFF;
+    renderer.resetVram();
+    RenderProjectScreen(renderer, engState, CursorId::LIVE_QUANTIZE);
+    const auto& vramFF = renderer.getVram();
+    std::string row6_FF;
+    for (int c = 0; c < 40; ++c) {
+        char ch = vramFF[6][c].ch;
+        row6_FF += (ch ? ch : ' ');
+    }
+    REQUIRE(row6_FF.find("LIVE QUANTIZ") != std::string::npos);
+    REQUIRE(row6_FF.find("FF") != std::string::npos);
+    REQUIRE(row6_FF.find("STEPS") != std::string::npos);
+}

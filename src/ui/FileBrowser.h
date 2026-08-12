@@ -14,14 +14,20 @@ struct FileEntry {
 
 class FileBrowser {
 public:
+    enum class Mode {
+        FILES,
+        DIRECTORY
+    };
+
     enum class Result {
         NONE,        // Still browsing
-        SELECTED,    // A file was selected (getSelectedPath() returns the path)
+        SELECTED,    // A file (or save directory) was selected
+        CREATE_DIR,  // User selected "(CREATE DIRECTORY)"
         CANCELLED    // User cancelled (e.g. ESC, or LEFT at root directory)
     };
 
     FileBrowser();
-    void init(const std::string& startDir, const std::string& filterExtension = "");
+    void init(const std::string& startDir, const std::string& filterExtension = "", Mode mode = Mode::FILES);
     void update(Renderer& renderer, SDL_Color colorWhite, SDL_Color colorCyan, SDL_Color colorRed);
 
     // Handles keyboard navigation and selection events
@@ -32,6 +38,10 @@ public:
 
     // Title displayed at top of browser
     void setTitle(const std::string& t) { title = t; }
+
+    // Mode accessor/mutator
+    void setMode(Mode m) { mode = m; scanDirectory(); }
+    Mode getMode() const { return mode; }
 
     // Accessors for testing and UI state
     const std::string& getCurrentDirectory() const { return currentDirStr; }
@@ -51,10 +61,11 @@ private:
 
     std::filesystem::path currentDir;
     std::string currentDirStr;
-    std::string filterExt;  // e.g. ".m8s", ".wav", ".m8i" — empty = show all
+    std::string filterExt;  // e.g. ".m8s", ".wav", ".m8i", ".m8n" — empty = show all
     std::string title = "FILE BROWSER";
     std::string selectedPath;
     std::vector<FileEntry> entries;
+    Mode mode = Mode::FILES;
     int cursorIndex = 0;
     int scrollOffset = 0;
 };
