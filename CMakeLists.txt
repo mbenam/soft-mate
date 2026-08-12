@@ -74,6 +74,8 @@ add_library(m8_engine STATIC
     src/engine/SamplerEngine.cpp
     src/io/SongIO.cpp
     src/io/ScaleIO.cpp
+    src/io/RenderAudio.cpp
+    src/io/BundleExport.cpp
     src/analysis/AudioMetrics.cpp
     ${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source/Effects/reverbsc.cpp
     src/engine/braids/analog_oscillator.cc
@@ -107,6 +109,7 @@ add_executable(m8_clone
     src/ui/screens/project/ProjectScreen.cpp
     src/ui/screens/groove/GrooveScreen.cpp
     src/ui/screens/scale/ScaleScreen.cpp
+    src/ui/screens/render/RenderScreen.cpp
     src/ui/screens/mods/ModScreen.cpp
     src/ui/screens/inst_pool/InstPoolScreen.cpp
     src/ui/screens/mixer/MixerScreen.cpp
@@ -237,6 +240,8 @@ add_executable(m8_tests
     tests/test_char_picker.cpp
     tests/test_project_screen.cpp
     tests/test_scale_screen.cpp
+    tests/test_render_screen.cpp
+    tests/test_bundle_export.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp
@@ -244,6 +249,7 @@ add_executable(m8_tests
     src/ui/ViewManager.cpp
     src/ui/screens/project/ProjectScreen.cpp
     src/ui/screens/scale/ScaleScreen.cpp
+    src/ui/screens/render/RenderScreen.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

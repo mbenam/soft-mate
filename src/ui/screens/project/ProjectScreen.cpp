@@ -313,6 +313,11 @@ void HandleProjectInput(const SDL_Event& event, bool editHeld, bool& arrowPresse
         } else if (cursor_id == C::PROJ_NEW) {
             actions.confirmDialog.init("LOSE CHANGES TO CURRENT SONG?", 0);
             actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+        } else if (cursor_id == C::EXPORT_RENDER) {
+            actions.viewManager.pushModal(m8::ui::ViewType::RENDER);
+        } else if (cursor_id == C::EXPORT_BUNDLE) {
+            actions.confirmDialog.init("CREATE DIRECTORY OF SONG AND\nSAMPLES? A PRE-EXISTING BUNDLE\nMAY BE OVERWRITTEN", 0, 1);
+            actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
         } else if (cursor_id == C::SAMPLE_ROOT) {
             actions.textInputActive = true;
             actions.textInputBuffer = getSampleRoot();
@@ -388,6 +393,11 @@ void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
         }
     } else if (cursor_id == C::PROJ_NEW) {
         actions.confirmDialog.init("LOSE CHANGES TO CURRENT SONG?", 0);
+        actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
+    } else if (cursor_id == C::EXPORT_RENDER) {
+        actions.viewManager.pushModal(m8::ui::ViewType::RENDER);
+    } else if (cursor_id == C::EXPORT_BUNDLE) {
+        actions.confirmDialog.init("CREATE DIRECTORY OF SONG AND\nSAMPLES? A PRE-EXISTING BUNDLE\nMAY BE OVERWRITTEN", 0, 1);
         actions.viewManager.pushModal(m8::ui::ViewType::CONFIRMATION);
     } else if (cursor_id == C::SAMPLE_ROOT) {
         actions.textInputActive = true;

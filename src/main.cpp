@@ -27,6 +27,10 @@
 #include "ui/screens/mixer/MixerScreenLayout.h"
 #include "ui/screens/effects/EffectsScreen.h"
 #include "ui/screens/effects/EffectsScreenLayout.h"
+#include "ui/screens/render/RenderScreen.h"
+#include "ui/screens/render/RenderScreenLayout.h"
+#include "io/RenderAudio.h"
+#include "io/BundleExport.h"
 #include <string>
 #include <cstring>
 #include <memory>
@@ -378,6 +382,9 @@ int main(int argc, char* argv[]) {
     fileBrowser.init("Samples");
     m8::ui::ConfirmationDialog confirmDialog;
     m8::ui::CharPicker charPicker;
+    enum class CharPickerTarget { PROJECT, SCALE, RENDER };
+    CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
+    m8::ui::render::RenderScreenState renderScreenState;
 
     // Song persistence state
     m8::io::LoadResult currentLoadResult;
@@ -561,36 +568,22 @@ int main(int argc, char* argv[]) {
                     viewManager.popModal();
                 }
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
-                if (event.key.key == SDLK_LSHIFT) {
-                    shiftHeld = true;
-                } else if (event.key.key == SDLK_X) {
-                    if (!editHeld) {
-                        editHeld = true;
-                        arrowPressedDuringEdit = false;
-                        if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
-                            project_cursor_id == m8::ui::project::CursorId::NAME) {
-                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.project.name)) ? uiEngineState.project.name[nameCharIndex] : '1';
-                            charPicker.init(curChar);
-                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE &&
-                                   scale_cursor_id == m8::ui::scale::CursorId::NAME) {
-                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.scales[currentScaleIndex].name)) ? uiEngineState.scales[currentScaleIndex].name[nameCharIndex] : 'C';
-                            charPicker.init(curChar);
-                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
-                        }
-                    }
-                } else {
-                    // CHAR_PICKER modal: handle input
-                    if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
-                        charPicker.handleInput(event);
-                        arrowPressedDuringEdit = true;
+                // Modals take priority over base view edit actions
+                if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+                    if (event.key.key == SDLK_Z || event.key.key == SDLK_ESCAPE) {
+                        viewManager.popModal();
                         continue;
                     }
+                    charPicker.handleInput(event);
+                    arrowPressedDuringEdit = true;
+                    continue;
+                }
 
-                    // CONFIRMATION modal: handle input
-                    if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
-                        auto result = confirmDialog.handleInput(event, editHeld);
-                        if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
+                if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
+                    auto result = confirmDialog.handleInput(event, editHeld);
+                    if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
+                        if (confirmDialog.getActionTag() == 0) {
+                            // NEW SONG
                             resetNewSong(commandRing, uiSequencer, uiEngineState, currentSongPath,
                                          currentLoadResult, missingSamplesMsg);
                             cursorRow = 0; cursorCol = 0;
@@ -607,31 +600,71 @@ int main(int argc, char* argv[]) {
                             viewManager.popModal();
                             songStatusMsg = "NEW SONG CREATED";
                             songStatusExpireTime = SDL_GetTicks() + 5000;
-                        } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
+                        } else if (confirmDialog.getActionTag() == 1) {
+                            // EXPORT BUNDLE
+                            auto bundleRes = m8::io::ExportSongBundle(
+                                uiEngineState.project.name, currentSongPath, currentLoadResult,
+                                uiSequencer, uiEngineState, m8::ui::project::getSampleRoot(), "Bundles");
                             viewManager.popModal();
-                        }
-                        continue;
-                    }
-
-                    // FILE_BROWSER modal: handle input
-                    if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
-                        auto result = fileBrowser.handleInput(event, editHeld);
-                        if (result == FileBrowser::Result::SELECTED) {
-                            std::string path = fileBrowser.getSelectedPath();
-                            if (!path.empty()) {
-                                handleFileBrowserSelection(path);
+                            if (bundleRes.ok) {
+                                songStatusMsg = "BUNDLE CREATED: " + bundleRes.bundleDirectory;
+                            } else {
+                                songStatusMsg = "BUNDLE FAILED: " + bundleRes.errorMsg;
                             }
-                        } else if (result == FileBrowser::Result::CREATE_DIR) {
-                            textInputActive = true;
-                            textInputBuffer.clear();
-                            textInputPrompt = "NEW DIR:";
-                            SDL_StartTextInput(SDL_GetKeyboardFocus());
-                        } else if (result == FileBrowser::Result::CANCELLED) {
-                            scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
-                            viewManager.popModal();
+                            songStatusExpireTime = SDL_GetTicks() + 5000;
                         }
-                        continue;
+                    } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
+                        viewManager.popModal();
                     }
+                    continue;
+                }
+
+                if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
+                    auto result = fileBrowser.handleInput(event, editHeld);
+                    if (result == FileBrowser::Result::SELECTED) {
+                        std::string path = fileBrowser.getSelectedPath();
+                        if (!path.empty()) {
+                            handleFileBrowserSelection(path);
+                        }
+                    } else if (result == FileBrowser::Result::CREATE_DIR) {
+                        textInputActive = true;
+                        textInputBuffer.clear();
+                        textInputPrompt = "NEW DIR:";
+                        SDL_StartTextInput(SDL_GetKeyboardFocus());
+                    } else if (result == FileBrowser::Result::CANCELLED) {
+                        scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+                        viewManager.popModal();
+                    }
+                    continue;
+                }
+
+                if (event.key.key == SDLK_LSHIFT) {
+                    shiftHeld = true;
+                } else if (event.key.key == SDLK_X) {
+                    if (!editHeld) {
+                        editHeld = true;
+                        arrowPressedDuringEdit = false;
+                        if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
+                            project_cursor_id == m8::ui::project::CursorId::NAME) {
+                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.project.name)) ? uiEngineState.project.name[nameCharIndex] : '1';
+                            charPicker.init(curChar);
+                            charPickerTarget = CharPickerTarget::PROJECT;
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE &&
+                                   scale_cursor_id == m8::ui::scale::CursorId::NAME) {
+                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.scales[currentScaleIndex].name)) ? uiEngineState.scales[currentScaleIndex].name[nameCharIndex] : 'C';
+                            charPicker.init(curChar);
+                            charPickerTarget = CharPickerTarget::SCALE;
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER &&
+                                   renderScreenState.cursorId == m8::ui::render::CursorId::NAME) {
+                            char curChar = (renderScreenState.nameCharIndex < (int)std::strlen(renderScreenState.settings.name)) ? renderScreenState.settings.name[renderScreenState.nameCharIndex] : 'P';
+                            charPicker.init(curChar);
+                            charPickerTarget = CharPickerTarget::RENDER;
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        }
+                    }
+                } else {
 
                     auto oldView = viewManager.getCurrentView();
                     if (viewManager.handleNavigation(event, shiftHeld)) {
@@ -707,6 +740,10 @@ int main(int argc, char* argv[]) {
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::EFFECTS) {
                     m8::ui::effects::HandleEffectsInput(event, editHeld, arrowPressedDuringEdit,
                                                         uiEngineState, active_cursor_effects, commandSink);
+                } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER) {
+                    m8::ui::render::HandleRenderInput(event, editHeld, arrowPressedDuringEdit,
+                                                      renderScreenState, uiSequencer, uiEngineState,
+                                                      viewManager, charPicker);
                 }
 
                 if (event.key.key == SDLK_ESCAPE) {
@@ -741,6 +778,7 @@ int main(int argc, char* argv[]) {
                             case m8::ui::ViewType::EFFECTS: return "FX";
                             case m8::ui::ViewType::SCALE: return "SCALE";
                             case m8::ui::ViewType::INST_POOL: return "POOL";
+                            case m8::ui::ViewType::RENDER: return "RENDER";
                             case m8::ui::ViewType::FILE_BROWSER: return "BROWSER";
                             case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                             default: return "NONE";
@@ -757,51 +795,22 @@ int main(int argc, char* argv[]) {
                 } else if (event.key.key == SDLK_X) {
                     if (editHeld) {
                         editHeld = false;
-                        if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT &&
-                            project_cursor_id == m8::ui::project::CursorId::NAME) {
-                            if (charPicker.isRandomSelected()) {
-                                std::string rnd = m8::ui::CharPicker::generateRandomName();
-                                for (size_t i = 0; i < rnd.size() && i < 12; ++i) {
-                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, rnd[i], 0, static_cast<int>(i));
-                                }
-                            } else {
-                                char picked = charPicker.getSelectedChar();
-                                if (picked != '\0') {
-                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, picked, 0, nameCharIndex);
-                                    nameCharIndex = (nameCharIndex + 1) % 12;
-                                }
-                            }
-                            viewManager.popModal();
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE &&
-                                   scale_cursor_id == m8::ui::scale::CursorId::NAME) {
-                            if (charPicker.isRandomSelected()) {
-                                std::string rnd = m8::ui::CharPicker::generateRandomName();
-                                for (size_t i = 0; i < rnd.size() && i < 16; ++i) {
-                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, rnd[i], currentScaleIndex, static_cast<int>(i));
-                                }
-                            } else {
-                                char picked = charPicker.getSelectedChar();
-                                if (picked != '\0') {
-                                    m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, picked, currentScaleIndex, nameCharIndex);
-                                    nameCharIndex = (nameCharIndex + 1) % 16;
-                                }
-                            }
-                            viewManager.popModal();
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
-                            if (viewManager.getBaseView() == m8::ui::ViewType::PROJECT) {
+                        if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
+                            if (charPickerTarget == CharPickerTarget::RENDER) {
                                 if (charPicker.isRandomSelected()) {
                                     std::string rnd = m8::ui::CharPicker::generateRandomName();
-                                    for (size_t i = 0; i < rnd.size() && i < 12; ++i) {
-                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, rnd[i], 0, static_cast<int>(i));
-                                    }
+                                    std::strncpy(renderScreenState.settings.name, rnd.c_str(), sizeof(renderScreenState.settings.name) - 1);
                                 } else {
                                     char picked = charPicker.getSelectedChar();
                                     if (picked != '\0') {
-                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, picked, 0, nameCharIndex);
-                                        nameCharIndex = (nameCharIndex + 1) % 12;
+                                        if (renderScreenState.nameCharIndex >= 0 && renderScreenState.nameCharIndex < 12) {
+                                            renderScreenState.settings.name[renderScreenState.nameCharIndex] = picked;
+                                            renderScreenState.nameCharIndex = (renderScreenState.nameCharIndex + 1) % 12;
+                                        }
                                     }
                                 }
-                            } else if (viewManager.getBaseView() == m8::ui::ViewType::SCALE) {
+                                viewManager.popModal();
+                            } else if (charPickerTarget == CharPickerTarget::SCALE) {
                                 if (charPicker.isRandomSelected()) {
                                     std::string rnd = m8::ui::CharPicker::generateRandomName();
                                     for (size_t i = 0; i < rnd.size() && i < 16; ++i) {
@@ -814,8 +823,22 @@ int main(int argc, char* argv[]) {
                                         nameCharIndex = (nameCharIndex + 1) % 16;
                                     }
                                 }
+                                viewManager.popModal();
+                            } else { // CharPickerTarget::PROJECT
+                                if (charPicker.isRandomSelected()) {
+                                    std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                    for (size_t i = 0; i < rnd.size() && i < 12; ++i) {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, rnd[i], 0, static_cast<int>(i));
+                                    }
+                                } else {
+                                    char picked = charPicker.getSelectedChar();
+                                    if (picked != '\0') {
+                                        m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::PROJ_NAME, picked, 0, nameCharIndex);
+                                        nameCharIndex = (nameCharIndex + 1) % 12;
+                                    }
+                                }
+                                viewManager.popModal();
                             }
-                            viewManager.popModal();
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
                             m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
@@ -825,31 +848,9 @@ int main(int argc, char* argv[]) {
                                 uiSequencer, missingSamplesMsg, confirmDialog, charPicker, nameCharIndex
                             };
                             m8::ui::project::HandleProjectEditRelease(project_cursor_id, nameCharIndex, uiEngineState, commandSink, projActions);
-                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
-                            SDL_Event simEvent;
-                            simEvent.type = SDL_EVENT_KEY_DOWN;
-                            simEvent.key.key = SDLK_RIGHT;
-                            auto result = confirmDialog.handleInput(simEvent, false);
-                            if (result == m8::ui::ConfirmationDialog::Result::CONFIRMED) {
-                                m8::io::LoadResult emptyResult;
-                                currentLoadResult = emptyResult;
-                                currentSongPath.clear();
-                                for (auto& row : song) {
-                                    for (auto& track : row.tracks) {
-                                        track = CHAIN_EMPTY;
-                                    }
-                                }
-                                songRow = 0; songCol = 0;
-                                currentChain = 0; chainRow = 0; chainCol = 0;
-                                currentPhrase = 0; cursorRow = 0; cursorCol = 0;
-                                currentInstIndex = 0;
-                                nameCharIndex = 0;
-                                viewManager.setCoords(0, 0);
-                                viewManager.popModal();
-                                songStatusMsg = "NEW SONG CREATED";
-                                songStatusExpireTime = SDL_GetTicks() + 5000;
-                            } else if (result == m8::ui::ConfirmationDialog::Result::CANCELLED) {
-                                viewManager.popModal();
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::render::HandleRenderEditRelease(renderScreenState, uiSequencer, uiEngineState, viewManager, charPicker);
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                             SDL_Event simEvent;
@@ -929,13 +930,6 @@ int main(int argc, char* argv[]) {
             m8::ui::chain::RenderChainScreen(renderer, uiSequencer, uiEngineState, playheads, currentChain, chainCol, chainRow, isPlaying);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
             m8::ui::song::RenderSongScreen(renderer, uiSequencer, uiEngineState, playheads, songCol, songRow, isPlaying);
-            if (!songStatusMsg.empty()) {
-                if (SDL_GetTicks() < songStatusExpireTime) {
-                    renderer.drawString(songStatusMsg, 0, 20, colorWhite);
-                } else {
-                    songStatusMsg.clear();
-                }
-            }
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
             m8::ui::instrument::RenderInstrumentScreen(renderer, uiEngineState, currentInstIndex, active_cursor);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
@@ -954,6 +948,8 @@ int main(int argc, char* argv[]) {
             m8::ui::mixer::RenderMixerScreen(renderer, uiEngineState, active_cursor_mixer);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::EFFECTS) {
             m8::ui::effects::RenderEffectsScreen(renderer, uiEngineState, active_cursor_effects);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER) {
+            m8::ui::render::RenderRenderScreen(renderer, renderScreenState);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
             fileBrowser.update(renderer, colorWhite, colorCyan, colorRed);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
@@ -967,6 +963,15 @@ int main(int argc, char* argv[]) {
         // Legacy Shared Right side UI has been removed because it is now driven by JSON.
 
         viewManager.renderChrome(renderer, uiEngineState.bpm);
+
+        // Status message overlay (e.g. BUNDLE CREATED, NEW SONG CREATED)
+        if (!songStatusMsg.empty() && !textInputActive && missingSamplesMsg.empty()) {
+            if (SDL_GetTicks() < songStatusExpireTime) {
+                renderer.drawString(songStatusMsg, 0, 21, colorWhite);
+            } else {
+                songStatusMsg.clear();
+            }
+        }
 
         // Missing samples overlay
         if (!missingSamplesMsg.empty() && !textInputActive) {
@@ -1050,6 +1055,7 @@ int main(int argc, char* argv[]) {
                         case m8::ui::ViewType::EFFECTS: return "EFFECT SETTINGS";
                         case m8::ui::ViewType::SCALE: return "SCALE";
                         case m8::ui::ViewType::INST_POOL: return "INSTRUMENT POOL";
+                        case m8::ui::ViewType::RENDER: return "RENDER AUDIO";
                         case m8::ui::ViewType::FILE_BROWSER: return "FILE BROWSER";
                         case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                         case m8::ui::ViewType::CHAR_PICKER: return "CHAR PICKER";

@@ -32,15 +32,26 @@ ViewType ViewManager::getViewAt(int x, int y) const {
 }
 
 ViewType ViewManager::getCurrentView() const {
-    if (m_modalView != ViewType::NONE) return m_modalView;
+    if (!m_modalStack.empty()) return m_modalStack.back();
     return getViewAt(m_x, m_y);
 }
 
-void ViewManager::pushModal(ViewType view) { m_modalView = view; }
-void ViewManager::popModal() { m_modalView = ViewType::NONE; }
+void ViewManager::pushModal(ViewType view) {
+    m_modalStack.push_back(view);
+}
+
+void ViewManager::popModal() {
+    if (!m_modalStack.empty()) {
+        m_modalStack.pop_back();
+    }
+}
+
+void ViewManager::clearModals() {
+    m_modalStack.clear();
+}
 
 bool ViewManager::handleNavigation(const SDL_Event& event, bool shiftHeld) {
-    if (m_modalView != ViewType::NONE) return false;
+    if (!m_modalStack.empty()) return false;
 
     if (shiftHeld && event.type == SDL_EVENT_KEY_DOWN) {
         int targetX = m_x;
@@ -63,13 +74,13 @@ bool ViewManager::handleNavigation(const SDL_Event& event, bool shiftHeld) {
             m_x = targetX;
             m_y = targetY;
         }
-        return true; 
+        return true;
     }
     return false;
 }
 
 void ViewManager::renderChrome(Renderer& renderer, int bpm) {
-    if (m_modalView != ViewType::NONE) return;
+    if (!m_modalStack.empty()) return;
 
     SDL_Color dim = {100, 100, 100, 255};
     SDL_Color lite = {0, 255, 255, 255};

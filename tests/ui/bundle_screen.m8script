@@ -1,0 +1,46 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Move down to EXPORT/SHARE RENDER
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+assert_screen row 12 contains "RENDER"
+
+# Move right to BUNDLE
+key RIGHT
+assert_screen row 12 contains "BUNDLE"
+
+# Press X (Edit) to trigger BUNDLE confirmation modal
+key X
+
+# Check modal prompt lines
+assert_screen contains "CREATE DIRECTORY OF SONG AND"
+assert_screen contains "SAMPLES? A PRE-EXISTING BUNDLE"
+assert_screen contains "MAY BE OVERWRITTEN"
+assert_screen contains "OK"
+assert_screen contains "CANCEL"
+
+# Navigate between OK and CANCEL
+key RIGHT
+key LEFT
+
+# Press Z (Option) to CANCEL and return to Project screen
+key Z
+assert_screen contains "PROJECT"
+assert_screen row 12 contains "BUNDLE"
+
+# Open modal again and confirm with OK
+key X
+assert_screen contains "CREATE DIRECTORY OF SONG AND"
+key X
+
+# Verify bundle created status
+assert_screen contains "PROJECT"
+assert_screen contains "BUNDLE CREATED"

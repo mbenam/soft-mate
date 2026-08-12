@@ -1,0 +1,62 @@
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# Move down to EXPORT/SHARE RENDER
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+assert_screen row 12 contains "RENDER"
+
+# Press X (Edit) to enter RENDER AUDIO
+key X
+
+assert_screen row 0 contains "RENDER AUDIO"
+assert_screen row 2 contains "SONG ROW START"
+assert_screen row 3 contains "SONG ROW LAST"
+assert_screen row 4 contains "REPEAT SONG"
+assert_screen row 6 contains "1  2  3  4  5  6  7  8"
+assert_screen row 7 contains "TRACKS"
+assert_screen row 8 contains "MODFX"
+assert_screen row 9 contains "DELAY"
+assert_screen row 10 contains "REVERB"
+assert_screen row 11 contains "LIMITER"
+assert_screen row 12 contains "MIX EQ"
+assert_screen row 14 contains "MODE"
+assert_screen row 16 contains "NAME"
+assert_screen row 17 contains "MIXED"
+assert_screen row 17 contains "STEMS"
+
+# Move cursor down to NAME (START -> LAST -> REPEAT -> TRACKS -> MODFX -> DELAY -> REVERB -> LIMITER -> MIX EQ -> MODE -> NAME)
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+# Step name cursor right and left
+key RIGHT
+key RIGHT
+key LEFT
+key LEFT
+
+# Press X on NAME to trigger character picking and return to RENDER AUDIO
+key X
+assert_screen row 0 contains "RENDER AUDIO"
+assert_screen row 16 contains "NAME"
+
+# Press Option (Z) to return to Project screen
+key Z
+
+assert_screen row 0 contains "PROJECT"
+assert_screen row 12 contains "RENDER"
