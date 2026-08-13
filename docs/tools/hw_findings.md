@@ -662,3 +662,44 @@ trusted until it is re-captured.
 
 - **Date:** 2026-07-26
 
+
+
+## UI-5 — EQ: filter types, stereo modes, and where the mix EQ lives
+
+Three questions settled on a real M8 (firmware 6.5.0, COM3) on 2026-08-13, all
+without audio capture. Full write-up: `archive/EQ_SPEC.md`.
+
+**Seven filter types, not six.** Read by putting the cursor on an EQ band's TYPE
+field and cycling it with EDIT+RIGHT:
+
+```
+0 LOWCUT   1 LOWSHELF   2 BELL   3 BANDPASS   4 HI.SHELF   5 HI.CUT   6 ALLPASS
+```
+
+The vendored file library's `EqType` enum stops at 5 and its `eq_type()`
+accessor clamps anything higher to `Bell`, so an ALLPASS band read through it
+comes back mislabelled. The raw byte is preserved on write either way. MODE was
+read the same way and has five entries, matching the manual.
+
+**The main mix and effect EQs sit immediately after the instrument bank array.**
+Found by saving one project twice on the device, identical but for the mix EQ,
+and diffing: 17 bytes differ, 15 of them one 18-byte EQ block, the rest being
+the project name and a save counter. The offset is
+`Offsets::eq + instrument_eq_count * 18` — `0x1AF9E` on a 32-bank V4 file,
+`0x1B65E` on a 128-bank one — followed by four blocks: main mix, then ModFX,
+Delay and Reverb. Only the first is confirmed (it is the one that changed); the
+other three are inferred from their default roll-offs and the Effects screen's
+order.
+
+**Q maps logarithmically over 0-99.** Measured from the device's own response
+curve — a bell at 1 kHz, +12 dB, screenshotted at Q = 01, 10, 25, 50 and 99. At
+01 the curve is a flat +12 dB across the band; at 99 a narrow spike back to 0 dB
+by roughly 500 Hz and 2 kHz. That fits `Q = 10^((byte-50)/50)`, which puts the
+factory default of 50 on exactly Q 1.0.
+
+Incidental: this device saves **version 6.5.0**, and it decodes cleanly at the
+V4.1 offsets — the layout has been stable from 4.1 through 6.5. Its files carry
+32 bytes past the four EQ blocks that 4.x files do not; we do not parse them,
+and they survive a save because `BinaryWriter` only ever grows its buffer.
+
+- **Date:** 2026-08-13

@@ -123,6 +123,23 @@ longer written on save (which also stops discarding a stereo analog input's righ
 Tests: `[mixer]` (5 cases). *The LIM/DJF/OTT curves are reference approximations, not
 hardware-verified* — see `MIXER_SPEC.md` §8.
 
+### EQ (`archive/EQ_SPEC.md`, 2026-08-13)
+3-band parametric EQ — 7 filter types (LOWCUT/LOWSHELF/BELL/BANDPASS/HI.SHELF/HI.CUT/ALLPASS)
+and 5 stereo modes (STEREO/MID/SIDE/LEFT/RIGHT), RBJ cookbook biquads, coefficients recomputed
+only on change, and an exact bypass when a bank is flat so an untouched song renders unaltered.
+**Instrument EQ** runs per track, pointed at whichever of the 128 banks the instrument's `eq`
+byte names. **The main mix EQ** runs in the master chain between OTT and the limiter.
+**Editor screen** (`src/ui/screens/eq/`) with the response curve drawn as font glyphs over a
+log axis, reached from the Instrument screen's EQ field, the Instrument Pool's EQ column, and
+the mixer's EQ label. Tests: `[eq]` (22 cases).
+**Everything about the format is hardware-confirmed** (`hw_findings.md` §UI-5): the 7 types and
+5 modes read off a device, the 16-bit coarse/fine encoding for frequency (Hz) and gain
+(hundredths of a dB), and the location of the four bus EQs — main mix plus ModFX/Delay/Reverb,
+immediately after the bank array. Q's curve is measured from the device's own response display,
+`Q = 10^((byte-50)/50)`, which puts the default of 50 on exactly 1.0.
+*Not applied:* the three send EQs load, save and edit but do not affect audio — the sends are
+mono, and these are input EQs that want stereo sends first.
+
 ### Synth engines — all four are now audible (2026-07-17)
 The M8's four synth instrument types each render their own sound; none is the old shared saw.
 - **MacroSynth = Braids** (`INST_MACROSYN`, `FMSYNTH_IMPLEMENTATION.md`-adjacent work; ported
@@ -466,7 +483,8 @@ is implemented and verified.
   *are* executed inside tables; `REV` is still a stub everywhere. `TBL`/`GRV`/`TIC` are now
   live — see `FX_COMMANDS_SPEC.md` for the full per-command matrix and the long list of
   M8 FX commands still absent, e.g. ARP/RET/RND/RETRIG/scale+arp commands.)
-- **Project transpose, main EQ** — stored, unused. (**Limiter, DJ filter and OTT are now
+- **Project transpose** — stored, unused. (**EQ is now implemented** — see the EQ entry under
+  Implemented. **Limiter, DJ filter and OTT are now
   implemented** on the master bus — see the Mixer entry under Implemented. **Input/USB mixer**
   is deliberately not implemented and never will be: soft-mate has no analog or USB input. Its
   values still load and are preserved on save.)

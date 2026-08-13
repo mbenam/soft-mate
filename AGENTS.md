@@ -169,6 +169,17 @@ LFO TRIG    00 FREE  01 RETRIG  02 HOLD  03 ONCE
 TRACK SRC   00 NOTE  01 VELOCITY  02 VEL. TAKE
 TRIG SRC    an instrument index (sidechain source)
 
+EQ TYPE     7, 0x00-0x06   (read off fw 6.5.0 by cycling the field)
+            00 LOWCUT  01 LOWSHELF  02 BELL  03 BANDPASS
+            04 HI.SHELF  05 HI.CUT  06 ALLPASS
+            ^ the file library's EqType enum stops at 5 and clamps 6 to Bell.
+              Decode the raw byte, not eq_type().
+EQ MODE     5, 0x00-0x04   00 STEREO  01 MID  02 SIDE  03 LEFT  04 RIGHT
+EQ byte     type = b & 0x7, mode = (b >> 5) & 0x7; bits 3-4 unknown, preserve them
+EQ freq     16-bit, coarse byte high, in Hz.  EQ gain 16-bit signed, HUNDREDTHS of a dB
+EQ Q        plain byte 0-99, Q = 10^((b-50)/50) -- measured off the device's curve,
+            so the default of 50 is exactly Q 1.0
+
 Sampler root note   C-4 (MIDI 60)
 DETUNE              1/16 semitone per step, 0x80 centre
 Envelope times      IN TICKS, tempo-relative. Not seconds.

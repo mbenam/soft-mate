@@ -1,5 +1,11 @@
 # EQ — Implementation Spec
 
+> **COMPLETE / ARCHIVED 2026-08-13.** All nine steps done; suite green at 265 cases.
+> Findings folded into `hw_findings.md` §UI-5, `AGENTS.md` §7 and `status.md`.
+> Carried forward and not scheduled: the three send EQs are stored and editable but not
+> applied (§8), and the ModFX/Delay/Reverb block ordering is still inferred — confirm it
+> before applying them.
+
 A 3-band parametric EQ, its editor screen, and the bank system instruments use to share
 settings. Decided 2026-08-13 from the M8 manual's EQ section, a photo of the EQ Editor view,
 and the `.m8s` format as modeled by `m8-files-cxx`.
@@ -266,8 +272,10 @@ view we don't have.
        in the master chain between OTT and the limiter; the mixer's EQ label is now a cursor
        stop that opens it. Tests EQ19-EQ22.
        **The three send EQs are loaded, saved and editable but NOT applied** -- see §8.
-9. [ ] **Fold findings into reference docs, then archive this spec.** Cannot be ticked while any
-       step above is unticked (`AGENTS.md` §9).
+9. [x] **Fold findings into reference docs, then archive this spec.** Done 2026-08-13. The
+       hardware findings are in `hw_findings.md` §UI-5, the byte encoding and the EQ enums in
+       `AGENTS.md` §7 alongside the other hardware-verified constants, and the feature summary
+       in `status.md`.
 
 ---
 

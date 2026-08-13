@@ -366,6 +366,9 @@ specifically built to catch.
 - All four M8 synth engines audible: MacroSynth (ported Braids), HyperSynth (supersaw),
   FMSynth (4-op/12-algo), WavSynth (9 shapes + SIZE/MULT/WARP/SCAN) — each with load/save
   and offline "finite / non-silent / params change the spectrum" tests.
+- 3-band parametric EQ on every instrument (via 128 shared banks) and on the main mix,
+  with an editor screen whose response curve is drawn as font glyphs. Seven filter types
+  and five stereo modes, all read off real hardware; see `archive/EQ_SPEC.md`.
 - Tables execute at tick time (per-row transpose/volume + HOP/TIC/VOL/PIT FX), assigned via
   phrase `TBL`; `GRV` per-track groove override.
 - Hardware ground-truth pipeline (probe generator → **unattended framebuffer-verified
@@ -642,6 +645,7 @@ src/engine/    Engine.{h,cpp}       orchestrator: rings, tick, mix, effects, dem
                SamplerEngine.{h,cpp} phase-walking sample playback, loop/pingpong
                SamplePool.{h,cpp}   128-slot refcounted sample registry (RT-safe)
                Envelopes.h, Lfo.h, Modulation.h   modulator primitives
+               EqFilter.h           3-band parametric EQ: data + RBJ biquads
                InstrumentSamplerParams.h, dr_wav.h
 src/io/        SongIO.{h,cpp}       .m8s ⇄ engine conversion, overlay save
 src/analysis/  AudioMetrics.{h,cpp}, Fft.h   objective audio measurements (kissfft)
@@ -649,7 +653,8 @@ src/ui/        Renderer.{h,cpp}     SDL3 + 40×30 VRAM shadow grid + dumps
                ViewManager.{h,cpp}  Shift+Arrow screen graph + modal stack
                ScriptRunner.{h,cpp} .m8script DSL for headless UI testing
                FileBrowser.{h,cpp}  WAV/.m8s picker + dr_wav decode
-               screens/<name>/      12 screens: Render fn + Layout + NavNode map
+               screens/<name>/      14 screens: Render fn + Layout + NavNode map
+                                    (eq/ draws its curve with the 0x08-0x0E glyphs)
 src/tools/     main_render.cpp      offline WAV+CSV renderer
                main_analyze.cpp     WAV metric gate / diff
                main_makeprobe.cpp   probe .m8s generator
