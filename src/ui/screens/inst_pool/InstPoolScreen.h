@@ -30,9 +30,12 @@ void HandleInstPoolInput(const SDL_Event& event, bool editHeld, bool& arrowPress
                           CommandSink& commandSink,
                           ViewManager& viewManager, int& currentInstIndex);
 
-// X-tap action: open the instrument under the cursor. Call only when no arrow
-// was pressed during the edit hold.
-void HandleInstPoolEditRelease(int cursor_y, ViewManager& viewManager, int& currentInstIndex);
+// X-tap action. On the EQ column it opens that instrument's EQ bank in the EQ
+// editor, writing the bank index to `eqBank`; on any other column it opens the
+// instrument itself. Call only when no arrow was pressed during the edit hold.
+void HandleInstPoolEditRelease(int cursor_x, int cursor_y,
+                               const engine::EngineState& uiEngineState,
+                               ViewManager& viewManager, int& currentInstIndex, int& eqBank);
 
 } // namespace inst_pool
 } // namespace ui

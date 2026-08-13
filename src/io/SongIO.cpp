@@ -357,6 +357,8 @@ static void convertSongToEngine(const m8::Song& song,
     // EQ banks (EQ_SPEC.md §3-4). The library gives us however many the song's
     // version carries -- 32 on V4, 128 on V4.1+ -- so take what is there and
     // leave the rest at their factory defaults.
+    state.eqBankCount = static_cast<int>(
+        std::min(song.eqs.size(), static_cast<size_t>(engine::kMaxEqBanks)));
     for (size_t i = 0; i < song.eqs.size() && i < static_cast<size_t>(engine::kMaxEqBanks); ++i) {
         const auto& src = song.eqs[i];
         auto& dst = state.eqs[i];

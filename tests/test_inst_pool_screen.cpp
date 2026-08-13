@@ -29,6 +29,7 @@ struct TestPoolContext {
     int cursorX = 0;
     int cursorY = 0;
     int currentInstIndex = 0;
+    int eqBank = 0;
     bool arrowPressedDuringEdit = false;
 
     TestPoolContext() { viewManager.setCoords(3, 2); }   // start on INST_POOL
@@ -65,7 +66,8 @@ TEST_CASE("IP2 X tap opens the instrument under the cursor", "[inst_pool]") {
 
     SECTION("from the name column") {
         ctx.cursorX = 0;
-        HandleInstPoolEditRelease(ctx.cursorY, ctx.viewManager, ctx.currentInstIndex);
+        HandleInstPoolEditRelease(ctx.cursorX, ctx.cursorY, ctx.engineState,
+                                  ctx.viewManager, ctx.currentInstIndex, ctx.eqBank);
         REQUIRE(ctx.viewManager.getCurrentView() == ViewType::INSTRUMENT);
         REQUIRE(ctx.currentInstIndex == 0x2A);
     }
@@ -74,7 +76,8 @@ TEST_CASE("IP2 X tap opens the instrument under the cursor", "[inst_pool]") {
     // columns are not a different target.
     SECTION("from a send column") {
         ctx.cursorX = 3;
-        HandleInstPoolEditRelease(ctx.cursorY, ctx.viewManager, ctx.currentInstIndex);
+        HandleInstPoolEditRelease(ctx.cursorX, ctx.cursorY, ctx.engineState,
+                                  ctx.viewManager, ctx.currentInstIndex, ctx.eqBank);
         REQUIRE(ctx.viewManager.getCurrentView() == ViewType::INSTRUMENT);
         REQUIRE(ctx.currentInstIndex == 0x2A);
     }
@@ -111,9 +114,26 @@ TEST_CASE("IP5 an out-of-range cursor never moves the view", "[inst_pool]") {
     TestPoolContext ctx;
     ctx.currentInstIndex = 7;
 
-    HandleInstPoolEditRelease(-1, ctx.viewManager, ctx.currentInstIndex);
-    HandleInstPoolEditRelease(128, ctx.viewManager, ctx.currentInstIndex);
+    HandleInstPoolEditRelease(0, -1, ctx.engineState, ctx.viewManager, ctx.currentInstIndex, ctx.eqBank);
+    HandleInstPoolEditRelease(0, 128, ctx.engineState, ctx.viewManager, ctx.currentInstIndex, ctx.eqBank);
 
     REQUIRE(ctx.viewManager.getCurrentView() == ViewType::INST_POOL);
     REQUIRE(ctx.currentInstIndex == 7);
+}
+
+TEST_CASE("IP6 the EQ column opens the EQ editor, not the instrument", "[inst_pool]") {
+    // The EQ column names something other than this instrument's own
+    // parameters -- a shared bank -- so a tap there is a doorway to the EQ
+    // editor (EQ_SPEC.md step 7).
+    TestPoolContext ctx;
+    ctx.cursorY = 9;
+    ctx.cursorX = 5;                       // EQ column
+    ctx.engineState.instruments[9].sampler.eq = 6;
+
+    HandleInstPoolEditRelease(ctx.cursorX, ctx.cursorY, ctx.engineState,
+                              ctx.viewManager, ctx.currentInstIndex, ctx.eqBank);
+
+    REQUIRE(ctx.viewManager.getCurrentView() == ViewType::EQ);
+    REQUIRE(ctx.eqBank == 6);              // the editor opens that bank
+    REQUIRE(ctx.currentInstIndex == 9);
 }

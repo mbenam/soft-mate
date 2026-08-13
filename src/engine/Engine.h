@@ -363,9 +363,13 @@ struct EngineState {
     EffectsState effects;
     Scale scales[16];
     // Instrument EQ banks. An instrument's `eq` byte indexes this array; 0 is
-    // shown as "--" on the Instrument screen. Loaded and saved; not yet applied
-    // to audio (EQ_SPEC.md step 4).
+    // shown as "--" on the Instrument screen.
     EqBank eqs[kMaxEqBanks];
+    // How many of those the loaded song actually carries -- 32 on a V4 file,
+    // 128 on V4.1+. We always allocate the maximum, but only this many round
+    // trip through the file, so the UI must not let a bank be assigned beyond
+    // it or the assignment would vanish on save.
+    int eqBankCount = kMaxEqBanks;
 
     EngineState() {
         instruments.resize(128);

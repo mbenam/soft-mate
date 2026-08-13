@@ -1,0 +1,42 @@
+# eq_editor.m8script — reaching the EQ editor, end to end.
+#
+# The unit tests cover HandleEqInput directly, which proves the handler works
+# but not that main.cpp's dispatch ever reaches it. This covers the route: the
+# Instrument Pool's EQ column is a grid, so the path to it is deterministic
+# (five RIGHTs), unlike the Instrument screen's nav-graph position.
+
+goto INST_POOL
+assert_screen contains "INSTRUMENT POOL"
+
+# Columns are INST. / DRY / CH / DE / RV / EQ, so five RIGHTs lands on EQ.
+key RIGHT
+key RIGHT
+key RIGHT
+key RIGHT
+key RIGHT
+
+# An X tap on the EQ column opens the editor rather than the instrument.
+key X
+wait 1
+assert_screen contains "EQ BANK"
+assert_screen contains "GAIN"
+assert_screen contains "FREQ"
+assert_screen contains "TYPE"
+assert_screen contains "MODE"
+assert_screen contains "LOW"
+assert_screen contains "MID"
+assert_screen contains "HIGH"
+
+# The default bank is flat, so the curve must be a straight line: every column
+# plots at the same height. Row 9 is the 0 dB row for a 12-row graph starting
+# at row 3 (EqScreenLayout.h), and dumpScreenText renders the dash glyphs as
+# a-g, so a flat curve reads as one repeated letter.
+assert_no_overlap
+
+# OPTION leaves the editor and goes back where we came from.
+key Z
+wait 1
+assert_screen contains "INSTRUMENT POOL"
+assert_screen not_contains "EQ BANK"
+
+assert_no_error

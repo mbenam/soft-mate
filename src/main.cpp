@@ -927,7 +927,8 @@ int main(int argc, char* argv[]) {
                             // so without it every edit gesture would also fling
                             // the user to the INSTRUMENT screen on release.
                             if (!arrowPressedDuringEdit) {
-                                m8::ui::inst_pool::HandleInstPoolEditRelease(pool_cursor_y, viewManager, currentInstIndex);
+                                m8::ui::inst_pool::HandleInstPoolEditRelease(pool_cursor_x, pool_cursor_y, uiEngineState,
+                                                                            viewManager, currentInstIndex, eqScreenState.bank);
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
                             if (!arrowPressedDuringEdit) {

@@ -249,11 +249,15 @@ view we don't have.
        evaluated analytically so drawing costs no audio.
 6. [x] **Editor screen.** Done 2026-08-13 — `src/ui/screens/eq/`. Curve over a log axis
        (20 Hz-20 kHz, +/-18 dB), 5x3 parameter table, OPTION exits. Entered by an X tap on the
-       Instrument screen's EQ field. Editing goes through new `EQ_*` ParamIDs so the mirror and
-       the engine receive the same mutation. **Not yet entered from the Instrument Pool**, and
-       there is no `.m8script` covering the entry path yet -- the unit tests cover the handler,
-       not the route to it.
-7. [ ] **Bank assignment.** Make the existing `eq` field editable on both screens.
+       Instrument screen's EQ field, and from the Instrument Pool's EQ column (step 7). Editing
+       goes through new `EQ_*` ParamIDs so the mirror and the engine receive the same mutation.
+7. [x] **Bank assignment.** Done 2026-08-13. Both screens already edited the `eq` byte but
+       clamped it to 0-255 and read it with a sampler/macrosyn pick that ignored the other
+       three instrument types; now they use `getEq()` and clamp to `EngineState::eqBankCount`,
+       which `SongIO` sets from the song's own bank count -- assigning bank 100 on a 32-bank V4
+       file would otherwise vanish on save. The pool's EQ column opens the editor rather than
+       the instrument. Covered by IP6 and `tests/ui/eq_editor.m8script`, which drives the whole
+       route through the app.
 8. [ ] **Wire the main mix and effect EQs.** Their location is no longer unknown — see §4c;
        they are four 18-byte blocks at `Offsets::eq + instrument_eq_count * 18`. What remains is
        reading them into engine state, applying them (mix EQ into the master chain where the

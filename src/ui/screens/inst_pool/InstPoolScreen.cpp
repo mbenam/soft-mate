@@ -139,7 +139,20 @@ static void OpenInstrumentUnderCursor(int cursor_y, ViewManager& viewManager,
     viewManager.setCoords(3, 0);   // INSTRUMENT (ViewManager::getViewAt)
 }
 
-void HandleInstPoolEditRelease(int cursor_y, ViewManager& viewManager, int& currentInstIndex) {
+void HandleInstPoolEditRelease(int cursor_x, int cursor_y,
+                               const engine::EngineState& uiEngineState,
+                               ViewManager& viewManager, int& currentInstIndex, int& eqBank) {
+    if (cursor_y < 0 || cursor_y > 127) return;
+
+    // The EQ column is a doorway to the EQ editor rather than to the
+    // instrument -- it is the one column that names something other than this
+    // instrument's own parameters (EQ_SPEC.md step 7).
+    if (cursor_x == 5) {
+        eqBank = uiEngineState.instruments[cursor_y].getEq();
+        currentInstIndex = cursor_y;
+        viewManager.pushModal(m8::ui::ViewType::EQ);
+        return;
+    }
     OpenInstrumentUnderCursor(cursor_y, viewManager, currentInstIndex);
 }
 
@@ -182,7 +195,7 @@ void HandleInstPoolInput(const SDL_Event& event, bool editHeld, bool& arrowPress
             else if (cursor_x == 2) { int v = isMac ? inst.macrosyn.cho : inst.sampler.cho; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>(v + step, 0, 255), cursor_y); }
             else if (cursor_x == 3) { int v = isMac ? inst.macrosyn.del : inst.sampler.del; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>(v + step, 0, 255), cursor_y); }
             else if (cursor_x == 4) { int v = isMac ? inst.macrosyn.rev : inst.sampler.rev; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>(v + step, 0, 255), cursor_y); }
-            else if (cursor_x == 5) { int v = isMac ? inst.macrosyn.eq : inst.sampler.eq; PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(v + step, 0, 255), cursor_y); }
+            else if (cursor_x == 5) { PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(inst.getEq() + step, 0, uiEngineState.eqBankCount - 1), cursor_y); }
         }
     }
 }

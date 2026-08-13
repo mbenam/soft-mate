@@ -210,7 +210,11 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
         if (cursor_id == C::TYPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, std::clamp<int>(static_cast<int>(inst.type) + step, 0, 1), currentInstIndex);
         else if (cursor_id == C::TRANSP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isMac2 ? inst.macrosyn.transp : inst.sampler.transp) + step, 0, 1), currentInstIndex);
         else if (cursor_id == C::TBL_TIC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isMac2 ? inst.macrosyn.tbl_tic : inst.sampler.tbl_tic) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::EQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>((isMac2 ? inst.macrosyn.eq : inst.sampler.eq) + step, 0, 255), currentInstIndex);
+        // Bank index, not a byte: clamp to what the loaded song actually carries
+        // (32 banks on a V4 file, 128 on V4.1+), or the assignment would be lost
+        // on save. getEq() rather than a sampler/macrosyn pick -- every
+        // instrument type has an eq field.
+        else if (cursor_id == C::EQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(inst.getEq() + step, 0, uiEngineState.eqBankCount - 1), currentInstIndex);
         else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac2 ? inst.macrosyn.amp : inst.sampler.amp) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac2 ? inst.macrosyn.lim : inst.sampler.lim) + step, 0, 1), currentInstIndex);
         else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac2 ? inst.macrosyn.pan : inst.sampler.pan) + step, 0, 255), currentInstIndex);
