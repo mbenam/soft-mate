@@ -3,8 +3,8 @@
 > **COMPLETE / ARCHIVED 2026-08-13.** All nine steps done; suite green at 265 cases.
 > Findings folded into `hw_findings.md` §UI-5, `AGENTS.md` §7 and `status.md`.
 > Carried forward and not scheduled: the three send EQs are stored and editable but not
-> applied (§8), and the ModFX/Delay/Reverb block ordering is still inferred — confirm it
-> before applying them.
+> applied (§8) — they need the sends to become stereo first. The ModFX/Delay/Reverb block
+> ordering was confirmed on hardware 2026-08-13 (§4c) and is no longer a blocker.
 
 A 3-band parametric EQ, its editor screen, and the bank system instruments use to share
 settings. Decided 2026-08-13 from the M8 manual's EQ section, a photo of the EQ Editor view,
@@ -151,15 +151,17 @@ follow the banks.
 
 | Block | Offset | Purpose | Default bands |
 |---|---|---|---|
-| 0 | `+0` | **Main mix** — confirmed by the diff | LOWSHELF 100 / BELL 1k / HI.SHELF 5k |
-| 1 | `+18` | ModFX *(inferred)* | LOWCUT 100 / BELL 1k / HI.SHELF 5k |
-| 2 | `+36` | Delay *(inferred)* | LOWCUT 500 / BELL 1k / HI.CUT 10k |
-| 3 | `+54` | Reverb *(inferred)* | LOWCUT 200 / BELL 1k / HI.CUT 8.8k |
+| 0 | `+0` | **Main mix** | LOWSHELF 100 / BELL 1k / HI.SHELF 5k |
+| 1 | `+18` | **ModFX** | LOWCUT 100 / BELL 1k / HI.SHELF 5k |
+| 2 | `+36` | **Delay** | LOWCUT 500 / BELL 1k / HI.CUT 10k |
+| 3 | `+54` | **Reverb** | LOWCUT 200 / BELL 1k / HI.CUT 8.8k |
 
-Block 0 is fact — it is the one that changed. The other three are an inference from their
-defaults and from the order the Effects screen lists them: a send rolled off at 10 kHz and cut
-below 500 Hz reads as a delay, one rolled off at 8.8 kHz as a reverb. Confirm the same way if
-it matters — set a distinctive EQ on the delay from Effects Settings, save, diff.
+**All four confirmed on hardware, none inferred.** Block 0 came from the mix-EQ diff. The other
+three were settled 2026-08-13 by a second experiment: on the Effects screen, each section's
+INPUT EQ was given a different low-band frequency — chorus 111 Hz, delay 222 Hz, reverb 333 Hz
+— and the file saved against an untouched baseline. Eight bytes differ in the whole file: the
+three frequencies landing in blocks 1, 2 and 3 in that order, plus the project name and a save
+counter. The ordering matches the Effects screen's own top-to-bottom order.
 
 The confirming values also re-prove §4a on a different EQ instance entirely: `+12.00 dB / 137 Hz
 / Q 3` came back as `01 89 00 B0 04 03`, where `0x0089` is 137 and `0x04B0` is 1200.
@@ -281,10 +283,6 @@ view we don't have.
 
 ## 8. Known limitations to carry forward
 
-- Which of the three effect EQ blocks is ModFX, Delay and Reverb is an inference from their
-  default frequencies and the Effects screen's ordering (§4c). Block 0, the main mix, is
-  confirmed. One more device save-and-diff would settle the rest -- and should, before the
-  send EQs are applied, or two of them could end up on the wrong effect.
 - **The three send EQs are not applied to audio.** They round-trip and can be edited, but the
   sends are mono floats inside the mix loop, so four of the five stereo modes would be
   meaningless on them; the device calls these "INPUT EQ", so they belong on the send *before*

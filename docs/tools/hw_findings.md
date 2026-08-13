@@ -686,10 +686,17 @@ Found by saving one project twice on the device, identical but for the mix EQ,
 and diffing: 17 bytes differ, 15 of them one 18-byte EQ block, the rest being
 the project name and a save counter. The offset is
 `Offsets::eq + instrument_eq_count * 18` — `0x1AF9E` on a 32-bank V4 file,
-`0x1B65E` on a 128-bank one — followed by four blocks: main mix, then ModFX,
-Delay and Reverb. Only the first is confirmed (it is the one that changed); the
-other three are inferred from their default roll-offs and the Effects screen's
-order.
+`0x1B65E` on a 128-bank one — followed by four blocks: **main mix, ModFX, Delay,
+Reverb**, in that order.
+
+All four are confirmed, none inferred. The mix EQ came from the diff above. The
+other three were settled by a second save-and-diff on the same day: each
+section's INPUT EQ on the Effects screen was given a different low-band
+frequency (chorus 111 Hz, delay 222 Hz, reverb 333 Hz) and saved against an
+untouched baseline. Eight bytes differ across the whole file — the three
+frequencies landing in blocks 1, 2 and 3 in that order, plus the project name
+and a save counter. The block order matches the Effects screen's own top-to-
+bottom order.
 
 **Q maps logarithmically over 0-99.** Measured from the device's own response
 curve — a bell at 1 kHz, +12 dB, screenshotted at Q = 01, 10, 25, 50 and 99. At
