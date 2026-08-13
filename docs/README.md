@@ -21,6 +21,7 @@
 | `specs/M8_DRIVER_BUGS.md` | plan | active | Chronological log of driver bugs and hardware findings |
 | `specs/M8_EVIDENCE_REPAIR_SPEC.md` | plan | active | Hardware measurement re-taking plan (X5-X7 blocked pending hardware) |
 | `specs/M8_HARDWARE_TEST_SPEC.md` | plan | active | Real-hardware test rig integration plan |
+| `specs/EQ_SPEC.md` | plan | active | 3-band parametric EQ, bank system, and the EQ editor screen |
 | `archive/MIXER_SPEC.md` | plan | complete-archived | Mixer screen rebuild + master bus (OTT/LIM/DJF), font-glyph meters (see `status.md` Mixer entry) |
 | `specs/M8_MEASUREMENT_EVIDENCE_SPEC.md` | plan | active | Reproducible measurement artifacts plan (W4-W5 invalidated) |
 | `specs/M8_SAMPLER_COMPLETION_SPEC.md` | plan | active | Sampler instrument feature completion plan |
