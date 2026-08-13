@@ -11,9 +11,18 @@ namespace m8 {
 namespace ui {
 namespace mixer {
 
+// Live levels for the meters, read from the engine's atomics by main.cpp and
+// passed in -- the screen never touches engine state itself (AGENTS.md §6),
+// exactly like the playhead array the sequencer screens receive.
+struct MixerLevels {
+    engine::MeterLevel track[8]{};
+    engine::MeterLevel master{};
+};
+
 void RenderMixerScreen(Renderer& renderer,
                        const engine::EngineState& engState,
-                       CursorId active_cursor_id);
+                       CursorId active_cursor_id,
+                       const MixerLevels& levels);
 
 void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                        engine::EngineState& uiEngineState, CursorId& cursor_id,

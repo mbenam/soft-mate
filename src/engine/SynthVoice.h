@@ -50,16 +50,35 @@ public:
     void triggerModsWithSource(uint8_t src);
 
 private:
-    // Sampler amp/filter stage helpers. applyFilter dispatches FILTER types
+    // Per-voice output-stage helpers. applyFilter dispatches FILTER types
     // (1-4 via the non-ZDF SVF, 6/7 via the ZDF SVF; 5 passes through). the
-    // limiter/waveshaper implements the LIM modes. Both are used by the sampler
-    // render path; the ordering relative to the filter depends on POST mode.
+    // limiter/waveshaper implements the LIM modes. The ordering of the two
+    // relative to the AMP gain depends on POST mode -- see applyAmpLimFilter.
     float applyFilter(float in, int type, float cutoffHz, float res);
     static float applyLimiter(float x, int mode);
 
+    // DEGRADE: sample-and-hold decimator. Shared by the sampler and macrosyn
+    // render paths, which carried byte-identical copies of it
+    // (ARCHITECTURE.md §5.2 #8). Stateful -- owns m_degradePhase/m_degradeHeld.
+    float applyDegrade(float in, int degradeByte, float degradeMod);
+
+    // AMP drive -> LIM waveshaper -> FILTER, including the LIM 04-08 (POST)
+    // ordering flip: POST modes apply the AMP gain and its clipping AFTER the
+    // filter (manual p.55), 00-03 shape first and filter after. Byte values are
+    // the raw 0-255 instrument fields; `mt` supplies the modulation offsets.
+    // Shared by the sampler, hyper, FM and wav paths, which carried four
+    // identical copies (ARCHITECTURE.md §5.2 #8). The macrosyn path
+    // deliberately does NOT use this -- see the comment at its call site.
+    float applyAmpLimFilter(float in, int ampByte, int limMode, int filterType,
+                            int cutoffByte, int resByte, const ModTargets& mt);
+
     const Instrument* m_instrument = nullptr;
     bool m_active = false;
-    bool m_finished = false;
+    // NOTE: SynthVoice had its own `m_finished` here, set on note-on and when
+    // the sampler ran out, and never read by anything (ARCHITECTURE.md §5.2
+    // #8). Removed rather than left looking like state. Voice liveness is
+    // `m_active`/`isActive()`; sample exhaustion is `SamplerEngine::finished()`,
+    // which IS read (SamplerEngine.cpp) -- don't confuse the two.
 
     float m_frequency = 0.0f;
     float m_currentVolume = 0.0f;

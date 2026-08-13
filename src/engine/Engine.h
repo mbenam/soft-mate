@@ -6,6 +6,8 @@
 #include "SynthVoice.h"
 #include "SamplePool.h"
 #include "Envelopes.h"
+#include "ZdfFilter.h"
+#include <atomic>
 #include <vector>
 #include <cmath>
 #include <cstring>
@@ -184,6 +186,16 @@ struct Playhead {
 
     bool is(PlayMode m) const { return playMode == static_cast<uint8_t>(m); }
 };
+
+// One track's (or the master bus's) output level for the mixer meters.
+// Published by the audio thread as a packed atomic and read with acquire, the
+// same wait-free arrangement as Playhead -- the UI must never touch engine
+// state directly (AGENTS.md §6). 0..255 maps to 0.0..1.0 of full scale.
+struct MeterLevel {
+    uint8_t peakL;
+    uint8_t peakR;
+    bool    clipped;   // hit or exceeded full scale since the last read
+};
 struct Instrument {
     InstType type = InstType::INST_SAMPLER;
     char name[13] = "------------";
@@ -227,27 +239,50 @@ struct Scale {
 };
 
 struct MixerState {
-    int out_vol = 0xE0;
-    int track_vol[8] = { 0xE0, 0xE0, 0xE0, 0xD0, 0xE0, 0xBF, 0xE0, 0xE0 }; 
-    
+    // SPEAKER VOL on screen: this application's own output level, NOT part of the
+    // song. The .m8s format has exactly one master gain (`master_volume`) and it
+    // belongs to mix_vol below -- see MIXER_SPEC.md §3. Never written to a file;
+    // resets to full on launch and on LOAD_SONG (accepted, MIXER_SPEC.md §8).
+    int out_vol = 0xFF;
+    int track_vol[8] = { 0xE0, 0xE0, 0xE0, 0xD0, 0xE0, 0xBF, 0xE0, 0xE0 };
+
     int cho_vol = 0xE0;
     int del_vol = 0xE0;
     int rev_vol = 0xE0;
-    
+
+    // Analog + USB input monitoring. Loaded from the song and kept so the values
+    // survive a save, but soft-mate has no inputs: not shown on the mixer, not
+    // written back (SongIO leaves the file's own bytes alone), not mixed in.
     int in_vol = 0x00;
     int in_cho = 0x00;
     int in_del = 0x00;
     int in_rev = 0x00;
-    
+
     int usb_vol = 0x00;
     int usb_cho = 0x00;
     int usb_del = 0x00;
     int usb_rev = 0x00;
-    
-    int mix_vol = 0xDC; 
-    int lim_val = 0x40; 
-    int djf_freq = 0x80;
-    int djf_res = 0x80;
+
+    // MIX on screen: the song's master volume, from/to `master_volume`.
+    int mix_vol = 0xE0;
+    // LIM and OTT default to OFF, so the master bus is transparent unless a
+    // song or the user asks for it. Neither curve is hardware-verified
+    // (MIXER_SPEC.md §8), and defaulting an unverified compressor to "on"
+    // silently rewrites the sound of every existing song -- which is exactly
+    // what happened when OTT inherited 0x80 from the field it replaced: for a
+    // filter resonance 0x80 meant "centred", but for OTT the manual is explicit
+    // that 00..80 *mixes it in*, so 0x80 is fully wet. Songs carry their own
+    // values in the file and override these.
+    int lim_val = 0x00;
+    int djf_freq = 0x80;   // 0x80 IS off for the DJ filter -- it is bipolar
+    // OTT on screen, from/to the file's `dj_peak`. Over The Top is a parallel
+    // multiband compressor, not a filter resonance -- the field was misnamed
+    // `djf_res` until the device screen was read (MIXER_SPEC.md §3, closes
+    // hw_findings.md §UI-4a). 0x00..0x80 mixes in; above 0x80 fades the dry mix,
+    // so 0x00 is off and 0x80 is already fully wet.
+    int ott = 0x00;
+    // DJ filter type (LP/HP, LP/BS, BS/HP). Round-trips, but has no UI: on
+    // hardware it is chosen in the Scope view, which we are not building.
     int djf_typ = 0x00;
 };
 
@@ -358,6 +393,15 @@ public:
         return m_playheadState[track].load(std::memory_order_acquire);
     }
     
+    // Mixer meters. track 0..7; getMasterLevel() is the post-everything bus.
+    MeterLevel getTrackLevel(int track) const {
+        if (track < 0 || track >= 8) return MeterLevel{0, 0, false};
+        return unpackLevel(m_trackLevel[track].load(std::memory_order_acquire));
+    }
+    MeterLevel getMasterLevel() const {
+        return unpackLevel(m_masterLevel.load(std::memory_order_acquire));
+    }
+
     Playhead getPlayhead(int track) const {
         const uint32_t s = getPlayheadState(track);
         return Playhead{ 
@@ -370,6 +414,11 @@ public:
     }
 
 private:
+    static MeterLevel unpackLevel(uint32_t v) {
+        return MeterLevel{ uint8_t(v & 0xFF), uint8_t((v >> 8) & 0xFF),
+                           ((v >> 16) & 0x1) != 0 };
+    }
+
     // -----------------------------------------------------------------------
     // Generated drum samples. Runs before the audio thread starts, so touching
     // the pool directly is safe. These are deliberately crude — they exist so
@@ -610,7 +659,11 @@ private:
         m_state.mixer.track_vol[5] = 0xA0;   // arp
         m_state.mixer.track_vol[6] = 0xB8;   // lead   — it's the melody, let it lead
         m_state.mixer.track_vol[7] = 0x90;   // perc
-        m_state.mixer.out_vol      = 0x98;
+        // The song's master volume is MIX, not SPEAKER VOL. This line set
+        // out_vol back when that field *was* the song master; since the two
+        // were separated (MIXER_SPEC.md §3) it has to move, or the demo plays
+        // through both gains at once and comes out quieter than authored.
+        m_state.mixer.mix_vol      = 0x98;
 
         // Effects: moderate returns, not slamming the bus.
         m_state.effects.del_time_l   = 0x2C;
@@ -643,6 +696,16 @@ public:
 private:
     void recalcBPM();
     void syncSongRow();
+
+    // ---- Master bus stages (MIXER_SPEC.md §4) --------------------------------
+    // Order is fixed by the manual: OTT -> [EQ, not built] -> LIM -> DJF -> MIX.
+    // All three keep their state in members below; none allocates.
+    void  applyOtt(float& l, float& r);
+    void  applyLimiter(float& l, float& r);
+    void  applyDjFilter(float& l, float& r);
+    // Publishes the meter atomics. Called once per render() call, never per
+    // frame -- the UI reads at frame rate and does not need sample resolution.
+    void  publishMeters(int frames);
 
     static inline float dcBlock(float x, float& state) {
         constexpr float c = 0.9998f;
@@ -689,6 +752,31 @@ private:
     daisysp::DelayLine<float, 96000> m_delayL;
     daisysp::DelayLine<float, 96000> m_delayR;
     daisysp::ReverbSc m_reverb;
+
+    // ---- Meters -------------------------------------------------------------
+    std::atomic<uint32_t> m_trackLevel[8]{};
+    std::atomic<uint32_t> m_masterLevel{0};
+    // Block maxima, reset every publish; and the decaying held peak the UI sees.
+    float m_meterBlockL[9] = {};      // 0..7 tracks, 8 = master
+    float m_meterBlockR[9] = {};
+    float m_meterHeldL[9]  = {};
+    float m_meterHeldR[9]  = {};
+    bool  m_meterClip[9]   = {};
+    // Per-publish decay. ~0.75 per block gives a visible fall-off at any
+    // sensible block size without the meter looking frozen.
+    static constexpr float kMeterDecay = 0.75f;
+
+    // ---- Master bus state ---------------------------------------------------
+    // DJ filter: one ZDF SVF per channel. 0x80 is off and bypasses entirely.
+    ZdfSvf m_djfL;
+    ZdfSvf m_djfR;
+    // Limiter: shared gain-reduction envelope so the image doesn't shift.
+    float m_limGain = 1.0f;
+    // OTT: three bands, one-pole crossovers, per-band envelopes. An
+    // approximation of the real multiband up/down compressor, in the same
+    // spirit as the FM/Wav engines -- see MIXER_SPEC.md §8.
+    float m_ottLpL[2] = {}, m_ottLpR[2] = {};
+    float m_ottEnvL[3] = {}, m_ottEnvR[3] = {};
 };
 
 } // namespace engine

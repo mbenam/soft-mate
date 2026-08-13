@@ -36,7 +36,7 @@ scripting harness.
 | `m8_composesong` / `m8_makesong` | `src/tools/main_composesong.cpp` / `main_makesong.cpp` | `m8_engine` | Author songs to `.m8s` as data. `m8_composesong` writes `songs/sunrise.m8s` (the startup song). |
 | `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. `--batch`, `--keyjazz`. |
 | `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop; `--load-file` loads a probe fully unattended (Tier 3). |
-| `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | 130 test cases across ~20 files (verified 2026-07-17). |
+| `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | 239 test cases across 31 files (static `TEST_CASE` count, 2026-08-12 — see `status.md` "Tests" for provenance; last recorded *run* was 147/147 on 2026-07-17's tree). |
 
 Third-party: `third_party/m8-files-cxx` (git submodule — `.m8s` read/write),
 `third_party/kissfft` (FFT for analysis), `third_party/miniaudio` (capture tool
@@ -507,10 +507,46 @@ specifically built to catch.
    sampler path and the macrosyn path. `rateScale` is computed by the
    mod-to-mod destinations and then **never used** — MOD_RATE/MOD_BINV silently
    do nothing to rates. `m_finished` is set but never read.
-   **[PARTIAL — CODE_CLEANUP_SPEC #8: the dead `rateScale` array and its three
-   write sites removed (honest no-op instead of looking implemented); the
-   `postFilter` duplicate branches and the sampler/macrosyn DSP-chain
-   duplication are untouched — not in scope for #8, still open]**
+   **[CLOSED 2026-08-12, in three parts:**
+   1. `rateScale` — removed 2026-07-16 (CODE_CLEANUP_SPEC #8, option (b)); that
+      spec item covered *only* this sub-item, which is why the rest sat open.
+   2. `postFilter` — **the claim is obsolete, not fixed.** There is no
+      `postFilter` anywhere in the tree (`grep` finds it only in this document).
+      The branches it named were replaced when LIM 04/05 (POST / POST:AD) were
+      implemented; what stands there now is the `limMode < 4` ordering flip,
+      whose two branches are deliberately *different* (filter-first vs
+      shape-first). Nothing to dedup.
+   3. DSP-chain duplication — **fixed for four of the five paths.** Extracted
+      `SynthVoice::applyDegrade` (the two byte-identical DEGRADE copies, now
+      used by both the sampler and macrosyn paths) and
+      `SynthVoice::applyAmpLimFilter` (the AMP→LIM→FILTER stage incl. the POST
+      ordering flip, now used by the sampler, hyper, FM and wav paths — four
+      identical copies, not two: the critique undercounted). Behaviour-
+      preserving by construction; see the caveat below.
+      **The macrosyn path is deliberately excluded** and keeps its inline
+      chain. It predates the Phase 4 DSP work and never got it, so folding it in
+      would change macrosyn audio, not just deduplicate: LIM 04-08 would gain
+      the POST ordering (and 05 a `tanh` instead of a clamp), FILTER 05 would
+      stop advancing the shared SVF state, and FILTER 06/07 would go from silent
+      no-ops to real ZDF filtering. That is a worthwhile fix — it is the same
+      upgrade the sampler already had — but it is an *audio* change needing a
+      render diff, so it is tracked separately rather than smuggled into a
+      cleanup. The reasons are restated at the call site in `SynthVoice.cpp`.
+   Also removed: `SynthVoice::m_finished`, written on note-on and on sampler
+   exhaustion and never read (not to be confused with `SamplerEngine::
+   m_finished`, which *is* read via `finished()`).
+   New tests `OS1`-`OS4` (`tests/test_output_stage.cpp`, `[output_stage]`) pin
+   the extracted wiring: the POST ordering branch stays reachable, WavSynth's
+   filter modes 8-11 still map to "no output-stage filter", every type that
+   shares the stage still calls it, and DEGRADE still runs on both paths.
+   **VERIFIED 2026-08-12.** Built clean (only pre-existing C4244/C5056
+   warnings). Suite: 226 cases / 892,818 assertions, all passing;
+   `[output_stage]` 4 cases / 53 assertions. Bit-identical audio confirmed the
+   strong way — `songs/sunrise.m8s` rendered for 20 s by `m8_render` before and
+   after the change produced files with the same fnv1a64 hash
+   (`6654b5fbb403b198`), so `m8_analyze --diff` refused the comparison as
+   identical inputs rather than printing `max |A-B| = 0.0`. Same bytes, not
+   merely the same within tolerance.**]**
 
 9. **Repo hygiene.** `build/`, `build_render/` (including `.exe`, `.dll`,
    `.obj`, CMake caches), stray `Renderer.obj`, `stderr_*.txt` debug logs,
@@ -531,11 +567,15 @@ specifically built to catch.
     mock content ("F#5", "REP 08") reads as design-tool output committed as
     code. `ScriptCtxHelper` being `static` works only because there is exactly
     one runner — a real ctx object would be cleaner.
-    **[PARTIAL — CODE_CLEANUP_SPEC #10: `kBusAtten` deleted (verified
+    **[CLOSED 2026-08-12 — CODE_CLEANUP_SPEC #10: `kBusAtten` deleted (verified
     bit-identical audio), dead `isPlaying` lambda deleted, mock layout data
-    documented (not trimmed) in Phrase/Chain/Song `*ScreenLayout.h`;
-    `ScriptCtxHelper`'s `static` left alone — genuinely optional per the spec
-    and not touched beyond the adjacent dead-lambda removal]**
+    documented (not trimmed) in Phrase/Chain/Song `*ScreenLayout.h`. The last
+    sub-item, `ScriptCtxHelper`'s `static`, is now done too: it is a plain stack
+    local. The comment justifying the `static` ("so C function pointers can
+    access it") was simply wrong — the callbacks reach the object through
+    `sctx.userData`, and `ScriptRunner::onFrameEnd` consumes the context
+    synchronously and stores neither it nor the pointer, so nothing ever needed
+    static storage duration or the cross-frame persistence it gave.]**
 
 11. **Minor engine correctness nits.**
     - `PLAY_START` sets both `currentPhrase` and `currentChain` to `targetId`

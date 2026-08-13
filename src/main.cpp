@@ -760,7 +760,8 @@ int main(int argc, char* argv[]) {
                                                     uiEngineState, currentScaleIndex, scale_cursor_id, nameCharIndex, commandSink, &scaleActions);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
                     m8::ui::inst_pool::HandleInstPoolInput(event, editHeld, arrowPressedDuringEdit,
-                                                           uiEngineState, pool_cursor_x, pool_cursor_y, commandSink);
+                                                           uiEngineState, pool_cursor_x, pool_cursor_y, commandSink,
+                                                           viewManager, currentInstIndex);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::MIXER) {
                     m8::ui::mixer::HandleMixerInput(event, editHeld, arrowPressedDuringEdit,
                                                     uiEngineState, active_cursor_mixer, commandSink);
@@ -905,6 +906,15 @@ int main(int argc, char* argv[]) {
                                 fileBrowser, viewManager, scaleBrowserMode
                             };
                             m8::ui::scale::HandleScaleEditRelease(scale_cursor_id, currentScaleIndex, uiEngineState, commandSink, scaleActions);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
+                            // X tap (no arrows) = open the instrument under the
+                            // cursor. The guard matters more here than on most
+                            // screens: X+UP/DOWN is the pool's own value editor,
+                            // so without it every edit gesture would also fling
+                            // the user to the INSTRUMENT screen on release.
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::inst_pool::HandleInstPoolEditRelease(pool_cursor_y, viewManager, currentInstIndex);
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
                             if (!arrowPressedDuringEdit) {
                                 m8::ui::phrase::HandlePhraseEditRelease(uiSequencer, currentPhrase, cursorCol, cursorRow, commandSink);
@@ -972,7 +982,13 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
             m8::ui::inst_pool::RenderInstPoolScreen(renderer, uiEngineState, pool_cursor_x, pool_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::MIXER) {
-            m8::ui::mixer::RenderMixerScreen(renderer, uiEngineState, active_cursor_mixer);
+            // Live meter levels come from the engine's atomics, the same
+            // wait-free route the playheads above use -- never by reading
+            // engine state.
+            m8::ui::mixer::MixerLevels mixLevels;
+            for (int t = 0; t < 8; ++t) mixLevels.track[t] = engine.getTrackLevel(t);
+            mixLevels.master = engine.getMasterLevel();
+            m8::ui::mixer::RenderMixerScreen(renderer, uiEngineState, active_cursor_mixer, mixLevels);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::EFFECTS) {
             m8::ui::effects::RenderEffectsScreen(renderer, uiEngineState, active_cursor_effects);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER) {
@@ -1050,7 +1066,17 @@ int main(int argc, char* argv[]) {
                 bool* audioActive;
                 std::string currentScreenName;
             };
-            static ScriptCtxHelper helper; // static so C function pointers can access it
+            // Plain stack local, not `static` (CODE_CLEANUP_SPEC.md #10). The
+            // old comment here claimed static storage was needed "so C function
+            // pointers can access it" -- it never was: the callbacks reach this
+            // object through `sctx.userData`, which is set to `&helper` two
+            // lines below, and `ScriptRunner::onFrameEnd(const ScriptAppContext&)`
+            // consumes it synchronously and stores neither the context nor the
+            // pointer (verified: no ScriptAppContext member on ScriptRunner, and
+            // the only other user, autoDump(ctx), is called from inside
+            // onFrameEnd). Every field is assigned before use each frame, so the
+            // static's cross-frame persistence was never read either.
+            ScriptCtxHelper helper{};
             helper.renderer   = &renderer;
             helper.playing    = isPlaying;
             helper.hasErrorFlag = !missingSamplesMsg.empty();

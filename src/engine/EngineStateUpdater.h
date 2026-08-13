@@ -57,7 +57,7 @@ struct EngineStateUpdater {
             case ParamID::MIX_MIX_VOL: mx.mix_vol = cmd.value; break;
             case ParamID::MIX_LIM_VAL: mx.lim_val = cmd.value; break;
             case ParamID::MIX_DJF_FREQ: mx.djf_freq = cmd.value; break;
-            case ParamID::MIX_DJF_RES: mx.djf_res = cmd.value; break;
+            case ParamID::MIX_OTT: mx.ott = cmd.value; break;
             case ParamID::MIX_DJF_TYP: mx.djf_typ = cmd.value; break;
 
             // Effects

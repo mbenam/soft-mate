@@ -559,11 +559,37 @@ below are deferred by decision, not open bugs.
 |------|------|-------------|
 | §UI-3a | Background/separator fills (535 bg-only cell gap) | MIXER-specific bars; no other screen needs this geometry. Will revisit via video capture. |
 | §UI-3b | Vertical row offsets (element-by-element, not uniform) | Root cause unknown; pitch ruled out three times. Re-measure after fills land. |
-| §UI-4a | RES vs OTT label (device shows OTT) | May be a parameter the clone does not model. Needs device FX enumeration first. |
+| ~~§UI-4a~~ | ~~RES vs OTT label~~ | **CLOSED 2026-08-12** — see below. |
 | §UI-4b | Device mixer FX parameter list | BLOCKED — needs hardware. |
-| §UI-4c | mix_vol field (compile-time default, never loaded) | No .m8s source for this field; value is always the default. Low impact. |
+| ~~§UI-4c~~ | ~~mix_vol never loaded~~ | **CLOSED 2026-08-12** — see below. |
 | §UI-4d | Sends column spacing (3-col device vs 4-col clone) | MIXER-specific layout; no other screen has this structure. |
-| §UI-4e | Stereo analog_input lost on save | Engine has no right-channel fields; library discards right-channel bytes. Accepted. |
+| ~~§UI-4e~~ | ~~Stereo analog_input lost on save~~ | **CLOSED 2026-08-12** — see below. |
+
+### §UI-4a / §UI-4c / §UI-4e — closed 2026-08-12
+
+Three of these were one misreading of the master column, settled by the M8 manual's mixer
+section plus a photo of the device's mixer screen. No hardware session was needed after all —
+the manual answered what the framebuffer diffs could not.
+
+- **§UI-4a — the device's "OTT" is not a mislabelled RES; there is no RES.** The master column
+  is MIX / LIM / DJF / **OTT**. Over The Top is a parallel multiband compressor, a real effect
+  in its own right. The clone's `djf_res` was an invention; the file format's `dj_peak` is OTT's
+  amount. Renamed to `ott` and implemented. The invented "TYP" row is gone too — the DJ filter's
+  type is chosen in the Scope view on hardware, which is why it could never be found on the
+  mixer screen.
+- **§UI-4c — `mix_vol` was never loaded because the value was landing on the wrong control.**
+  The file has exactly one master gain (`MixerSettings::master_volume`) and it is MIX. The
+  clone was loading it into `out_vol` and drawing that at the top of the screen as "OUTPUT
+  VOL". The device's top line is "SPEAKER VOL", a device-level output that has no slot in the
+  song file at all. Fixed: `master_volume` ⇄ `mix_vol`; SPEAKER VOL is application state and is
+  never persisted.
+- **§UI-4e — resolved by not writing the field.** soft-mate has no analog or USB input, so
+  there is no reason to rebuild those blocks from engine fields that cannot represent a right
+  channel. `convertEngineToSong` now leaves them alone and save-by-overlay preserves the
+  original bytes exactly, right channel included.
+
+Everything above is implemented and the suite is green (238 cases, 893,012 assertions,
+2026-08-12). Full write-up: `archive/MIXER_SPEC.md`.
 
 ### Approach for deferred items
 

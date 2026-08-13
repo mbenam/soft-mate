@@ -301,8 +301,11 @@ static void convertSongToEngine(const m8::Song& song,
     state.bpm = static_cast<int>(t);
     state.bpm_frac = static_cast<int>(std::round((t - state.bpm) * 100.0f));
 
-    // Mixer
-    state.mixer.out_vol = song.mixer_settings.master_volume;
+    // Mixer. The file's single master gain is the mixer's MIX control, not the
+    // screen's top-line SPEAKER VOL -- that one is ours and is never persisted
+    // (MIXER_SPEC.md §3). This was loading into out_vol, which is why mix_vol
+    // was always its compile-time default (hw_findings.md §UI-4c).
+    state.mixer.mix_vol = song.mixer_settings.master_volume;
     for (int i = 0; i < 8; ++i)
         state.mixer.track_vol[i] = song.mixer_settings.track_volume[i];
     state.mixer.cho_vol = song.mixer_settings.chorus_volume;
@@ -310,7 +313,7 @@ static void convertSongToEngine(const m8::Song& song,
     state.mixer.rev_vol = song.mixer_settings.reverb_volume;
     state.mixer.lim_val = song.mixer_settings.master_limit;
     state.mixer.djf_freq = song.mixer_settings.dj_filter;
-    state.mixer.djf_res = song.mixer_settings.dj_peak;
+    state.mixer.ott = song.mixer_settings.dj_peak;   // OTT, not filter resonance
     state.mixer.djf_typ = song.mixer_settings.dj_filter_type;
 
     // Analog input (mono or stereo — engine takes left/mono channel)
@@ -553,8 +556,9 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     song.tempo = static_cast<float>(state.bpm)
                + static_cast<float>(state.bpm_frac) / 100.0f;
 
-    // Mixer
-    song.mixer_settings.master_volume = state.mixer.out_vol;
+    // Mixer. master_volume is the MIX control; the screen's SPEAKER VOL
+    // (state.mixer.out_vol) is ours alone and is deliberately not written.
+    song.mixer_settings.master_volume = state.mixer.mix_vol;
     for (int i = 0; i < 8; ++i)
         song.mixer_settings.track_volume[i] = state.mixer.track_vol[i];
     song.mixer_settings.chorus_volume = state.mixer.cho_vol;
@@ -562,24 +566,16 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     song.mixer_settings.reverb_volume = state.mixer.rev_vol;
     song.mixer_settings.master_limit = state.mixer.lim_val;
     song.mixer_settings.dj_filter = state.mixer.djf_freq;
-    song.mixer_settings.dj_peak = state.mixer.djf_res;
+    song.mixer_settings.dj_peak = state.mixer.ott;   // OTT, not filter resonance
     song.mixer_settings.dj_filter_type = state.mixer.djf_typ;
 
-    // Analog input — write as mono (single InputMixerSettings, right vol = 0xFF)
-    song.mixer_settings.analog_input = m8::InputMixerSettings{
-        static_cast<uint8_t>(state.mixer.in_vol),
-        static_cast<uint8_t>(state.mixer.in_cho),
-        static_cast<uint8_t>(state.mixer.in_del),
-        static_cast<uint8_t>(state.mixer.in_rev)
-    };
-
-    // USB input
-    song.mixer_settings.usb_input = m8::InputMixerSettings{
-        static_cast<uint8_t>(state.mixer.usb_vol),
-        static_cast<uint8_t>(state.mixer.usb_cho),
-        static_cast<uint8_t>(state.mixer.usb_del),
-        static_cast<uint8_t>(state.mixer.usb_rev)
-    };
+    // analog_input / usb_input are deliberately NOT written. soft-mate has no
+    // inputs and no UI for them, so the engine's copies can only ever be what
+    // the file already said -- and rebuilding them here was actively lossy: the
+    // engine has no right-channel fields, so a stereo analog input came back as
+    // mono and its right-channel bytes were discarded on every save
+    // (hw_findings.md §UI-4e). Leaving them alone lets save-by-overlay preserve
+    // the original bytes exactly. See MIXER_SPEC.md §3.
 
     // Effects
     auto& fx = song.effects_settings;

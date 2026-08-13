@@ -1,6 +1,6 @@
 # M8 Tracker Clone — Status
 
-Last updated: 2026-07-17
+Last updated: 2026-08-12
 
 A software clone of the **Dirtywave M8 Tracker**: the tracker workflow, the 2D view
 navigation, the custom UI layout, and the audio engine.
@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 147 cases
+- **Tests**: Catch2 v3 — 239 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -66,7 +66,7 @@ Targets:
   with verification. Cursor detection fixed for grid screens (`<` character marker). CLI modes:
   `--load-file`, `--goto-screen`, `--read-field`, `--dump-screen`, `--json`, `--keys`,
   `--record-frames`, `--pin-gestures`.
-- `m8_tests` — 130 cases
+- `m8_tests` — 239 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -108,6 +108,20 @@ Bounds-checked, fuzzed 10k under ASan. Note release on chain end.
 Stereo, 8 monophonic voices, per-track vol, equal-power pan, per-instrument dry/chorus/delay/
 reverb. Master chorus/delay/reverb/`tanh`, feedback clamped, DC blockers on feedback paths and
 master bus. Tempo verified on real songs.
+
+### Mixer + master bus (`MIXER_SPEC.md`, 2026-08-12)
+Rebuilt screen and the bus behind it. The master chain now follows the manual's order:
+**OTT → [EQ, not built] → LIM → DJF → MIX → SPEAKER VOL**. Meters are live: per-track stereo
+peaks and a master peak travel from the audio thread as packed atomics (same wait-free route as
+the playhead) and are drawn as font glyphs — seven fill levels at `0x01`–`0x07`, stacked, 8
+levels per cell, coloured by level with red at clip. Volume settings show through as a dim bar
+under the live level, so a stopped mixer still shows the mix.
+**Model corrections:** the file's `master_volume` is MIX (was loading into the top-of-screen
+volume, which is why MIX was always a hardcoded default); `dj_peak` is **OTT**, not a filter
+resonance; SPEAKER VOL is app-level and never persisted; INPUT/USB are gone from the UI and no
+longer written on save (which also stops discarding a stereo analog input's right channel).
+Tests: `[mixer]` (5 cases). *The LIM/DJF/OTT curves are reference approximations, not
+hardware-verified* — see `MIXER_SPEC.md` §8.
 
 ### Synth engines — all four are now audible (2026-07-17)
 The M8's four synth instrument types each render their own sound; none is the old shared saw.
@@ -268,15 +282,40 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 147 cases
+### Tests — 239 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
-[rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables] [ui]
-[hwdecode]`.
-Offline against `m8_engine`, no audio device. All pass under x64 ASan (verified 2026-07-17:
-147/147, ~892k assertions). Weightiest: B8.1, B3.3, B4.9 (10k fuzz), B7.2, L4, L7, M2, M12,
-A3, A5. New engine tags: `[macrosynth]` (all 44 Braids shapes), `[fmsynth]` (12 algos),
-`[wavsynth]` (9 shapes), `[hypersynth]`, `[tables]` (6 cases). `[hwdecode]` (17 cases, 71
-assertions) covers the M8 device control decode layer.
+[rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
+[output_stage] [inst_pool] [mixer] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
+[confirmation_dialog] [file_browser] [clean_phrases] [clean_inst] [project_tempo]
+[project_transpose] [project_scale] [project_groove] [project_quantize]
+[project_inst_pool]`.
+Offline against `m8_engine`, no audio device. Weightiest: B8.1, B3.3, B4.9 (10k fuzz), B7.2,
+L4, L7, M2, M12, A3, A5. Engine tags: `[macrosynth]` (all 44 Braids shapes), `[fmsynth]`
+(12 algos), `[wavsynth]` (9 shapes), `[hypersynth]`, `[tables]` (6 cases). `[hwdecode]`
+(44 cases) covers the M8 device control decode layer.
+
+**Count provenance (2026-08-12):** 232 is a *static* count — `TEST_CASE` macros across the
+31 files in `tests/*.cpp`, not a suite run (223 before this session added four
+`[output_stage]` cases and five `[inst_pool]` ones). It replaces the "147 cases" and "130 cases"
+figures this document carried in three places, both of which predate the screen-test work
+(`[project_*]`, `[scale]`, `[render]`, `[bundle]`, `[char_picker]`,
+`[confirmation_dialog]`, `[file_browser]`, `[clean_*]`) and the growth of
+`test_device_decode.cpp` from 17 to 44 `[hwdecode]` cases. Note the unit: Catch2 counts one
+`TEST_CASE` as one case regardless of how many `SECTION`/`DYNAMIC_SECTION` blocks it
+contains, so the runner's reported total will match this only if every case is compiled in.
+**Three different numbers are all correct, so quote the right one.** The 2026-08-12 run
+reported **226 cases / 892,818 assertions, all passing**, which reconciles with the 232 static
+count exactly:
+
+| | count | why |
+|---|---|---|
+| `TEST_CASE` macros in `tests/*.cpp` | 232 | the static count above |
+| runnable by default | 231 | `test_ui_fuzz.cpp`'s case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| actually run on 2026-08-12 | 226 | that binary predates `tests/test_inst_pool_screen.cpp`; its five `[inst_pool]` cases have **not** been run yet |
+
+So: the engine and screen suites are green as of 2026-08-12, `[inst_pool]` is unverified, and
+`[fuzz]` only runs when you ask for it. The previous run on record was 2026-07-17 (147/147
+under x64 ASan) against that day's tree.
 
 ### UI test harness — Task 3 (`M8_UI_HARNESS_SPEC.md`)
 Shadow grid (`VirtualCell[30][40]`) inside `Renderer`. Every draw call also stamps the
@@ -427,7 +466,10 @@ is implemented and verified.
   *are* executed inside tables; `REV` is still a stub everywhere. `TBL`/`GRV`/`TIC` are now
   live — see `FX_COMMANDS_SPEC.md` for the full per-command matrix and the long list of
   M8 FX commands still absent, e.g. ARP/RET/RND/RETRIG/scale+arp commands.)
-- **Project transpose, EQ, limiter, DJF, input/USB mixer** — stored, unused.
+- **Project transpose, main EQ** — stored, unused. (**Limiter, DJ filter and OTT are now
+  implemented** on the master bus — see the Mixer entry under Implemented. **Input/USB mixer**
+  is deliberately not implemented and never will be: soft-mate has no analog or USB input. Its
+  values still load and are preserved on save.)
 - **On-screen keyboard, sample browser/preview, live recording, `.m8i` save.**
 
 ---
@@ -617,8 +659,10 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
   navigation fix in `loadFile`. Tier 4: `DeviceScriptRunner` compiles, loads `.m8script`
   files, and runs commands against the real device (`m8_nav --script FILE.m8script`).
   `m8_diffcheck` runs a script on the device, dumps the final screen, and compares
-  against a golden reference. All 147 tests pass (17 offline `[hwdecode]` tests, 71
-  assertions). Tier 5 (recipes) is next.
+  against a golden reference. All 147 tests passed at the time of that work (2026-07-17,
+  17 offline `[hwdecode]` tests, 71 assertions); the decode layer has since grown to 44
+  `[hwdecode]` cases and the suite to 223 — not re-run since, see Tests. Tier 5 (recipes)
+  is next.
 - `FX_COMMANDS_SPEC.md` — **new (2026-07-17).** Full per-command matrix (what works in the phrase
   engine vs table engine vs file I/O vs UI), the relative/absolute value contract, and the long
   list of M8 FX commands still absent. TBL/GRV/TIC implemented; VOL/PIT execute in tables; REV
@@ -630,6 +674,11 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
   using ARP/etc., violating the "preserve unmodeled data" invariant). Now `0x00–0x08` decode to
   VOL..TIC (TBL/GRV/TIC round-trip + are UI-selectable) and `≥ 0x09` decode to `FxCmd::UNKNOWN`,
   preserved byte-for-byte on save. Regression tests L12/L13.
+- `MIXER_SPEC.md` — implemented. **Archived** (`archive/MIXER_SPEC.md`) — mixer screen rebuild
+  and the master bus behind it (OTT / LIM / DJF), font-glyph meters, and four corrections to
+  the mixer data model. Closed `hw_findings.md` §UI-4a, §UI-4c and §UI-4e. Deferred and
+  recorded there, not scheduled: main EQ + its editor view, the Limiter/Mix Scope view (and
+  with it the DJF type control), the top-of-screen scope, and the playing-note list.
 - `CODE_CLEANUP_SPEC.md` — **new.** Fix list for the `ARCHITECTURE.md` §5.2 code critique
   (11 items, tiered correctness → hygiene → structural refactors). Tracks its own status per
   item; `ARCHITECTURE.md` gets a `[FIXED — CODE_CLEANUP_SPEC #N]` annotation as each closes.

@@ -244,6 +244,9 @@ add_executable(m8_tests
     tests/test_render_screen.cpp
     tests/test_bundle_export.cpp
     tests/test_clear_phrases.cpp
+    tests/test_output_stage.cpp
+    tests/test_inst_pool_screen.cpp
+    tests/test_mixer_bus.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp
@@ -252,6 +255,7 @@ add_executable(m8_tests
     src/ui/screens/project/ProjectScreen.cpp
     src/ui/screens/scale/ScaleScreen.cpp
     src/ui/screens/render/RenderScreen.cpp
+    src/ui/screens/inst_pool/InstPoolScreen.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

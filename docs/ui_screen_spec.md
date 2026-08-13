@@ -54,13 +54,22 @@ Do not build these, and do not report them as gaps:
 - oscilloscope / waveform view
 - currently-playing-notes display
 - piano keyboard overlay on the minimap
-- mixer VU meters and level bars
 
-Meters, if they ever happen, are custom glyphs appended to the font table in
-`src/ui/font.h` (`struct Font { char letter; char code[7][6]; }`). They are
-characters, not graphics, and they are last in line.
+**Mixer meters came off this list on 2026-08-12** and are now being built — see
+`specs/MIXER_SPEC.md`. The approach this document always specified turned out to
+be the right one and is what the spec follows: custom glyphs appended to the font
+table in `src/ui/font.h` (`struct Font { char letter; char code[7][6]; }`), seven
+partial-fill levels plus blank, stacked and coloured per cell. They are
+characters, not graphics.
 
-MIXER parity is parked — see `hw_findings.md` §UI-4. Do not open it.
+The other three stay out. The scope and the playing-note list were considered and
+deferred in the same session, not forgotten: both need live audio data crossing
+from the engine to the UI, which the meters are building anyway, so they get
+cheaper once meters land. Revisit then.
+
+MIXER *parity* stays parked — see `hw_findings.md` §UI-4. Rebuilding the mixer to
+be usable is not the same thing as matching the device's geometry, and the
+rebuild does not reopen §UI-3a/§UI-3b.
 
 ## Architecture: add to it, don't replace it
 
@@ -89,8 +98,15 @@ the mechanism.
 
 - No layout exists for FMSYNTH, WAVSYNTH or HYPERSYN. Only
   `InstrumentSamplerLayout.h` and `InstrumentMacrosynLayout.h` exist.
-- `Engine.h` has no `HypersynState` parameter struct, though `SynthVoice.cpp`
-  has a HYPERSYN branch.
+- HYPERSYN has no edit path at all — not just no layout. `HyperState` *does*
+  exist (`src/engine/Engine.h`), loads and saves through `SongIO`, and renders
+  in `SynthVoice.cpp`; what is missing is any `HYPER_*` entry in `ParamID`
+  (`src/engine/CommandRing.h`), so there is no command for the UI to push even
+  once a layout exists. FMSYNTH and WAVSYNTH are one step further along: their
+  `FM_*` / `WAV_*` ParamIDs exist and only the layout is missing.
+  *(Corrected 2026-08-12: this entry previously claimed `Engine.h` had no
+  HyperSynth parameter struct. It does — `HyperState`. The real gap is the
+  ParamID/edit path.)*
 - `HandleTableInput` takes no data reference — TABLE moves a cursor but cannot
   edit anything.
 

@@ -745,6 +745,79 @@ struct Font font[] = {
 "     "}},
 #endif
 
+/* ------------------------------------------------------------------
+   Meter fill glyphs, 0x01..0x07 (MIXER_SPEC.md §5.1).
+
+   A bar is a stack of cells; each cell holds one of these, so 0x07 is a
+   full cell and a partial cell tops the stack off. Seven levels because
+   the glyph is seven pixel rows tall -- one level per row, which is the
+   finest this font can express and costs no more than the four-level
+   version would.
+
+   Deliberately NOT printable characters: nothing else in the UI draws
+   these, so a meter can never be confused with text. Renderer::drawChar
+   ignores unknown characters silently (it returns before even stamping
+   the shadow grid), so these must stay in this table or meters vanish
+   with no error. dumpScreenText() maps them back to '1'..'7' so headless
+   dumps stay readable.
+   ------------------------------------------------------------------ */
+{0x01, {
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"#####"}},
+{0x02, {
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"#####",
+"#####"}},
+{0x03, {
+"     ",
+"     ",
+"     ",
+"     ",
+"#####",
+"#####",
+"#####"}},
+{0x04, {
+"     ",
+"     ",
+"     ",
+"#####",
+"#####",
+"#####",
+"#####"}},
+{0x05, {
+"     ",
+"     ",
+"#####",
+"#####",
+"#####",
+"#####",
+"#####"}},
+{0x06, {
+"     ",
+"#####",
+"#####",
+"#####",
+"#####",
+"#####",
+"#####"}},
+{0x07, {
+"#####",
+"#####",
+"#####",
+"#####",
+"#####",
+"#####",
+"#####"}},
+
 /* Fallback/end Char. If you don't know the
 font size, use this as the "null terminator" */
 {0, {

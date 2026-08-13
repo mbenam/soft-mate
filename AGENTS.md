@@ -54,8 +54,13 @@ The test suite exists to catch regressions, not to generate reading material.
 **Never paste test output into a reply.** Report pass/fail counts and the text of actual
 failures. Nothing else.
 
-Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
-[rt_safety] [demo]`
+Tags (complete list, re-derived from `tests/*.cpp` 2026-08-12 — the old list here named
+only the first ten): engine — `[tempo] [walk] [fx] [groove] [commands] [sample_pool]
+[sampler] [modulation] [rt_safety] [demo] [tables] [io] [audio] [macrosynth] [hypersynth]
+[fmsynth] [wavsynth] [output_stage] [mixer]`; UI/screens — `[ui] [fuzz] [scale] [render] [bundle]
+[char_picker] [confirmation_dialog] [file_browser] [clean_phrases] [clean_inst] [inst_pool]
+[project_tempo] [project_transpose] [project_scale] [project_groove] [project_quantize]
+[project_inst_pool]`; device — `[hwdecode]`; docs — `[doc]`
 
 Never write a test that asserts per-sample in a loop. Accumulate a flag, assert once.
 

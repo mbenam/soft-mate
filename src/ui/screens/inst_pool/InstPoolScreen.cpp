@@ -120,9 +120,38 @@ void RenderInstPoolScreen(Renderer& renderer,
     }
 }
 
+// Open the instrument under the pool cursor on the INSTRUMENT screen.
+//
+// This is a clone-side navigation affordance, not a hardware-verified
+// behaviour: no capture of the real M8's pool-key handling backs it, and it is
+// not claimed as parity. It exists because the pool is the only screen that
+// lists all 128 instruments, and without it the sole way out was SHIFT+RIGHT
+// (docs/ui_screen_spec.md: a screen is done when you can use it to write
+// songs, not when it matches the device). If a capture later shows the device
+// doing something else with this key, that finding wins.
+//
+// Empty slots jump too, deliberately -- opening an unused slot is how you
+// start defining one.
+static void OpenInstrumentUnderCursor(int cursor_y, ViewManager& viewManager,
+                                      int& currentInstIndex) {
+    if (cursor_y < 0 || cursor_y > 127) return;
+    currentInstIndex = cursor_y;
+    viewManager.setCoords(3, 0);   // INSTRUMENT (ViewManager::getViewAt)
+}
+
+void HandleInstPoolEditRelease(int cursor_y, ViewManager& viewManager, int& currentInstIndex) {
+    OpenInstrumentUnderCursor(cursor_y, viewManager, currentInstIndex);
+}
+
 void HandleInstPoolInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                           engine::EngineState& uiEngineState, int& cursor_x, int& cursor_y,
-                          CommandSink& commandSink) {
+                          CommandSink& commandSink,
+                          ViewManager& viewManager, int& currentInstIndex) {
+    if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
+        OpenInstrumentUnderCursor(cursor_y, viewManager, currentInstIndex);
+        return;
+    }
+
     if (event.key.key == SDLK_DOWN) {
         if (!editHeld) cursor_y = (cursor_y + 1) % 128;
     } else if (event.key.key == SDLK_UP) {
@@ -131,6 +160,12 @@ void HandleInstPoolInput(const SDL_Event& event, bool editHeld, bool& arrowPress
         if (!editHeld) cursor_x = (cursor_x + 1) % 6;
     } else if (event.key.key == SDLK_LEFT) {
         if (!editHeld) cursor_x = (cursor_x - 1 + 6) % 6;
+    }
+
+    if (editHeld && (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
+        // The pool has no horizontal edit action, but the hold is still an edit
+        // gesture rather than a tap -- flag it so the X release opens nothing.
+        arrowPressedDuringEdit = true;
     }
 
     if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN)) {

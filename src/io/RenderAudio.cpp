@@ -126,8 +126,12 @@ static std::vector<float> renderEnginePass(const engine::Sequencer& inputSeq,
         state.mixer.lim_val = 0.0f; // 0 = CLIP (or transparent)
     }
     if (!settings.mixEqEnabled) {
-        state.mixer.djf_freq = 0.5f; // neutral
-        state.mixer.djf_res = 0.0f;
+        // Neutral means 0x80 for the DJ filter (its documented "off" position)
+        // and 0x00 for OTT. The old code assigned 0.5f to these int fields,
+        // which truncated to 0 -- i.e. DJF hard left, not off. Harmless so far
+        // only because neither is applied to audio yet (MIXER_SPEC.md §4).
+        state.mixer.djf_freq = 0x80;
+        state.mixer.ott = 0x00;
     }
 
     // Push LOAD_SONG

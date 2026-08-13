@@ -5,6 +5,10 @@ build_asan/
 *.zip
 artifacts/
 test_out_ui/
+# Song bundles written by PROJECT > EXPORT/SHARE (src/io/BundleExport.cpp
+# defaults its destination to "Bundles"). Output, not source — the songs and
+# their samples are already tracked under songs/.
+Bundles/
 
 # Hardware-test artifacts (generated probes, oracles, captures, verdicts)
 hwtest_out/

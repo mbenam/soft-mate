@@ -1,0 +1,76 @@
+# project_inst_pool.m8script — PROJECT > INST. POOL opens the INSTRUMENT POOL
+# screen, driven end to end through the real app.
+#
+# The unit test for this (test_project_screen.cpp, [project_inst_pool]) calls
+# HandleProjectEditRelease and HandleProjectInput directly. That proves the
+# screen handler sets the view coords, but NOT that main.cpp's key dispatch
+# ever reaches the handler — which is the half a user would actually notice if
+# it broke. This script covers it: real key events -> main()'s event loop ->
+# the handler -> a repainted screen.
+
+goto PROJECT
+assert_screen contains "PROJECT"
+
+# TEMPO_INT is the cursor on entry. Ten DOWNs walk the nav map
+# (ProjectScreenLayout.h): TRANSPOSE, GROOVE, SCALE, LIVE QUANTIZE, MIDI,
+# NAME, PROJECT(LOAD), EXPORT/SHARE, CLEAR UNUSED, INST. POOL.
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+
+assert_screen row 14 contains "INST. POOL"
+assert_screen row 14 contains "VIEW INST.POOL"
+
+# Tap X (edit). The action fires on RELEASE, via HandleProjectEditRelease.
+key X
+wait 1
+assert_screen contains "INSTRUMENT POOL"
+# Proves we actually left PROJECT rather than drawing the pool over it: this
+# string only exists on the PROJECT screen's INST. POOL row.
+assert_screen not_contains "VIEW INST.POOL"
+assert_no_overlap
+
+# --- the pool as a jump list ------------------------------------------------
+# Pool cursor starts on row 00; three DOWNs put it on instrument 03.
+key DOWN
+key DOWN
+key DOWN
+
+# An X tap opens the instrument under the cursor. The INSTRUMENT header carries
+# the index, so this asserts the right *instrument*, not just the right screen.
+key X
+wait 1
+assert_screen contains "INST. 03"
+assert_screen not_contains "INSTRUMENT POOL"
+
+# Back to the pool the long way: (3,0) -> (3,1) MODS -> (3,2) POOL.
+key SHIFT+UP
+key SHIFT+UP
+wait 1
+assert_screen contains "INSTRUMENT POOL"
+
+# X is ALSO the pool's edit modifier. X+UP edits the value under the cursor and
+# must not navigate anywhere — main.cpp gates the release on
+# !arrowPressedDuringEdit. If that guard is lost, this lands on INST. 03 and
+# the assertion below fails. (X+UP on the name column cycles instrument 03's
+# TYPE; nothing is saved, so the edit is confined to this run.)
+key X+UP
+wait 1
+assert_screen contains "INSTRUMENT POOL"
+
+# The pool lives at view coords (3,2). SHIFT+RIGHT is special-cased in
+# ViewManager::handleNavigation to drop to INSTRUMENT at (3,0) instead of
+# walking off the edge of the grid — the older way out, still valid.
+key SHIFT+RIGHT
+wait 1
+assert_screen contains "INST."
+assert_screen not_contains "INSTRUMENT POOL"
+
+assert_no_error

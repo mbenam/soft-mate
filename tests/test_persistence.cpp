@@ -808,3 +808,55 @@ TEST_CASE("IO-4 mono analog_input round-trips through library read", "[io]") {
     REQUIRE(mono.delay == 0x33);
     REQUIRE(mono.reverb == 0x44);
 }
+
+// ---------------------------------------------------------------------------
+// Mixer model corrections (MIXER_SPEC.md §3). The file's single master gain is
+// the mixer's MIX control; the screen's SPEAKER VOL is ours and is never
+// persisted. `dj_peak` is OTT, not a filter resonance.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("L14 master_volume loads into MIX, not SPEAKER VOL", "[io]") {
+    auto path = songPath("V4EMPTY.m8s");
+    auto result = loadSong(path, "");
+    REQUIRE(result.ok);
+
+    // Whatever the file says, it must land on mix_vol. Loading must not touch
+    // out_vol at all -- it is application state, so it stays at its default.
+    REQUIRE(result.state.mixer.out_vol == 0xFF);
+
+    // And it must survive the trip back out: save writes master_volume from
+    // mix_vol, so a reload sees the same value.
+    std::string err;
+    REQUIRE(saveSong("mixer_rt.m8s", result, result.sequencer, result.state, err));
+    auto again = loadSong("mixer_rt.m8s", "");
+    REQUIRE(again.ok);
+    REQUIRE(again.state.mixer.mix_vol == result.state.mixer.mix_vol);
+    REQUIRE(again.state.mixer.ott == result.state.mixer.ott);
+    std::remove("mixer_rt.m8s");
+}
+
+TEST_CASE("L15 SPEAKER VOL is never written to the song", "[io]") {
+    auto path = songPath("V4EMPTY.m8s");
+    auto result = loadSong(path, "");
+    REQUIRE(result.ok);
+
+    // Move SPEAKER VOL somewhere distinctive and save. The file must be
+    // byte-identical to a save that left it alone -- it has no slot in the
+    // format and must not displace the song's own master volume.
+    std::string err;
+    REQUIRE(saveSong("spk_a.m8s", result, result.sequencer, result.state, err));
+
+    auto altered = result.state;
+    altered.mixer.out_vol = 0x10;
+    REQUIRE(saveSong("spk_b.m8s", result, result.sequencer, altered, err));
+
+    auto a = readFile("spk_a.m8s");
+    auto b = readFile("spk_b.m8s");
+    REQUIRE(a.size() == b.size());
+    size_t diffs = 0;
+    for (size_t i = 0; i < a.size(); ++i) if (a[i] != b[i]) ++diffs;
+    REQUIRE(diffs == 0);
+
+    std::remove("spk_a.m8s");
+    std::remove("spk_b.m8s");
+}

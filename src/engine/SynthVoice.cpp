@@ -182,7 +182,6 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
     m_frequency = frequency;
     m_currentVolume = volume;
     m_active = true;
-    m_finished = false;
     m_samplePhase = 0.0f;
     m_gateTarget = 1.0f;
     m_velocityTakeover = false;
@@ -358,36 +357,10 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         float sample = 0.5f * (sampOut[0] + sampOut[1]);
 
         m_samplePhase = float(m_sampler.phase());
-        if (m_sampler.finished()) m_finished = true;
 
-        if (s.degrade > 0 || mt.degrade > 0.0f) {
-            float deg = std::clamp(s.degrade / 255.0f + mt.degrade, 0.0f, 1.0f);
-            float step = 1.0f + deg * 63.0f;
-            m_degradePhase += 1.0f;
-            if (m_degradePhase >= step) { m_degradeHeld = sample; m_degradePhase -= step; }
-            sample = m_degradeHeld;
-        }
-
-        float ampVal = std::clamp(1.0f + (s.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-
-        int limMode = s.lim;
-        int filterType = s.filter_type;
-        float baseCutoff = 20.0f * std::pow(2.0f, (s.cutoff / 255.0f) * 10.0f);
-        float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
-        float finalRes = std::clamp(s.res / 255.0f + mt.res, 0.0f, 1.0f);
-
-        // LIM 04-08 (POST modes) apply the AMP gain and its clipping AFTER the
-        // filter stage (manual p.55: "amplification applied ... after the filter
-        // stage"); LIM 00-03 amplify+shape first, then filter.
-        if (limMode < 4) {
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-        } else {
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-        }
+        sample = applyDegrade(sample, s.degrade, mt.degrade);
+        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type,
+                                   s.cutoff, s.res, mt);
 
         float effVol = m_velocityTakeover ? 1.0f : m_currentVolume;
         float volMod = m_gate * (1.0f + mt.volume);
@@ -609,14 +582,27 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
     if (m_instrument && m_instrument->type == InstType::INST_MACROSYN) {
         const MacrosynState& s = m_instrument->macrosyn;
 
-        if (s.degrade > 0 || mt.degrade > 0.0f) {
-            float deg = std::clamp(s.degrade / 255.0f + mt.degrade, 0.0f, 1.0f);
-            float step = 1.0f + deg * 63.0f;
-            m_degradePhase += 1.0f;
-            if (m_degradePhase >= step) { m_degradeHeld = sample; m_degradePhase -= step; }
-            sample = m_degradeHeld;
-        }
+        sample = applyDegrade(sample, s.degrade, mt.degrade);
 
+        // NOT applyAmpLimFilter -- deliberately. This inline chain predates the
+        // sampler's Phase 4 DSP work (ZDF filters, LIM POST modes) and never
+        // received it, so folding it into the shared helper would CHANGE
+        // MACROSYN AUDIO, not just deduplicate it (ARCHITECTURE.md §5.2 #8):
+        //   - LIM 04/05 (POST/POST:AD): here they fall into `default:` (hard
+        //     clamp) and keep the amp->lim->filter order. The helper would give
+        //     them the POST ordering (filter first) and make 05 a tanh.
+        //   - LIM 06-08: same clamp, but the helper reorders them too.
+        //   - FILTER 05 (LP>HP): here m_filter.Process() still runs (advancing
+        //     SVF state) while the sample passes through unfiltered; the helper
+        //     returns early and leaves the SVF state alone, so subsequent
+        //     samples diverge as well.
+        //   - FILTER 06/07 (ZDF): here they are silently a no-op; the helper
+        //     would actually apply the ZDF filter.
+        // LIM 00-03 with FILTER 00-04 -- the common case -- is already
+        // identical math in the same order, which is why this reads as a pure
+        // duplicate at a glance. Unifying it is a real fix worth doing, but it
+        // is an audio change that needs a render diff + the golden/diff scripts
+        // re-checked, so it is deliberately not bundled into a cleanup commit.
         float ampVal = std::clamp(1.0f + (s.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
         sample *= ampVal;
 
@@ -649,71 +635,71 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
     if (m_instrument && m_instrument->type == InstType::INST_HYPERSYN) {
         const HyperState& h = m_instrument->hyper;
-
-        float ampVal = std::clamp(1.0f + (h.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-        int limMode = h.lim;
-        int filterType = h.filter_type;
-        float baseCutoff = 20.0f * std::pow(2.0f, (h.cutoff / 255.0f) * 10.0f);
-        float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
-        float finalRes = std::clamp(h.res / 255.0f + mt.res, 0.0f, 1.0f);
-
-        if (limMode < 4) {
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-        } else {
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-        }
+        sample = applyAmpLimFilter(sample, h.amp, h.lim, h.filter_type,
+                                   h.cutoff, h.res, mt);
     }
 
     if (isFM) {
         const FMSynthState& fm = m_instrument->fm;
-        float ampVal = std::clamp(1.0f + (fm.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-        int limMode = fm.lim;
-        int filterType = fm.filter_type;
-        float baseCutoff = 20.0f * std::pow(2.0f, (fm.cutoff / 255.0f) * 10.0f);
-        float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
-        float finalRes = std::clamp(fm.res / 255.0f + mt.res, 0.0f, 1.0f);
-
-        if (limMode < 4) {
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-        } else {
-            sample = applyFilter(sample, filterType, finalCutoff, finalRes);
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-        }
+        sample = applyAmpLimFilter(sample, fm.amp, fm.lim, fm.filter_type,
+                                   fm.cutoff, fm.res, mt);
     }
 
     if (isWav) {
         const WavSynthState& ws = m_instrument->wav;
-        float ampVal = std::clamp(1.0f + (ws.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-        int limMode = ws.lim;
-        int filterType = ws.filter_type;
-        float baseCutoff = 20.0f * std::pow(2.0f, (ws.cutoff / 255.0f) * 10.0f);
-        float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
-        float finalRes = std::clamp(ws.res / 255.0f + mt.res, 0.0f, 1.0f);
-
-        int stdFilter = (filterType >= 8) ? 0 : filterType;
-
-        if (limMode < 4) {
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-            if (stdFilter > 0) sample = applyFilter(sample, stdFilter, finalCutoff, finalRes);
-        } else {
-            if (stdFilter > 0) sample = applyFilter(sample, stdFilter, finalCutoff, finalRes);
-            sample *= ampVal;
-            sample = applyLimiter(sample, limMode);
-        }
+        // WAV filter modes 8-11 are applied into the wavetable buffer above,
+        // not here, so they map to "no output-stage filter". applyFilter
+        // returns its input untouched for type <= 0 (and touches no filter
+        // state), which is exactly what the previous `if (stdFilter > 0)`
+        // guard did.
+        int stdFilter = (ws.filter_type >= 8) ? 0 : ws.filter_type;
+        sample = applyAmpLimFilter(sample, ws.amp, ws.lim, stdFilter,
+                                   ws.cutoff, ws.res, mt);
     }
 
     float effVol = m_velocityTakeover ? 1.0f : m_currentVolume;
     float volMod = m_gate * (1.0f + mt.volume);
     if (volMod < 0.0f) volMod = 0.0f;
     return std::clamp(sample * effVol * volMod * m_tableVolume, -1.0f, 1.0f);
+}
+
+// DEGRADE: sample-and-hold decimator, up to 1/64 rate. Extracted verbatim from
+// the byte-identical copies that lived in the sampler and macrosyn render paths
+// (ARCHITECTURE.md §5.2 #8) -- same expressions in the same order, so the
+// output is unchanged for both callers.
+float SynthVoice::applyDegrade(float in, int degradeByte, float degradeMod) {
+    if (degradeByte > 0 || degradeMod > 0.0f) {
+        float deg = std::clamp(degradeByte / 255.0f + degradeMod, 0.0f, 1.0f);
+        float step = 1.0f + deg * 63.0f;
+        m_degradePhase += 1.0f;
+        if (m_degradePhase >= step) { m_degradeHeld = in; m_degradePhase -= step; }
+        in = m_degradeHeld;
+    }
+    return in;
+}
+
+// AMP -> LIM -> FILTER output stage, shared by the sampler, hyper, FM and wav
+// paths (ARCHITECTURE.md §5.2 #8; the macrosyn path is deliberately excluded,
+// see the comment at its call site).
+//
+// LIM 04-08 (POST modes) apply the AMP gain and its clipping AFTER the filter
+// stage (manual p.55: "amplification applied ... after the filter stage");
+// LIM 00-03 amplify+shape first, then filter.
+float SynthVoice::applyAmpLimFilter(float in, int ampByte, int limMode, int filterType,
+                                    int cutoffByte, int resByte, const ModTargets& mt) {
+    float ampVal = std::clamp(1.0f + (ampByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
+    float baseCutoff = 20.0f * std::pow(2.0f, (cutoffByte / 255.0f) * 10.0f);
+    float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
+    float finalRes = std::clamp(resByte / 255.0f + mt.res, 0.0f, 1.0f);
+
+    if (limMode < 4) {
+        in *= ampVal;
+        in = applyLimiter(in, limMode);
+        return applyFilter(in, filterType, finalCutoff, finalRes);
+    }
+    in = applyFilter(in, filterType, finalCutoff, finalRes);
+    in *= ampVal;
+    return applyLimiter(in, limMode);
 }
 
 // FILTER dispatch. Types 1-4 use the DaisySP (non-ZDF) SVF; 6/7 use the ZDF SVF

@@ -1,5 +1,6 @@
 #include "MixerScreen.h"
 #include "MixerScreenLayout.h"
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 
@@ -8,72 +9,100 @@ namespace ui {
 namespace mixer {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
+    if (colorName == "TITLE") return {255, 60, 60, 255};
+    if (colorName == "LABEL_DIM") return {100, 100, 100, 255};
+    if (colorName == "LABEL_LITE") return {0, 255, 255, 255};
+    if (colorName == "VALUE") return {255, 255, 255, 255};
     return {255, 255, 255, 255};
 }
 
 static std::string ToHex(int value) {
     std::stringstream ss;
-    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (static_cast<unsigned int>(value) & 0xFF);
+    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+       << (static_cast<unsigned int>(value) & 0xFF);
     return ss.str();
 }
 
 static int ResolveMixerValue(CursorId fieldId, const engine::MixerState& mx) {
     using C = CursorId;
-    if (fieldId == C::OUT_VOL) return mx.out_vol;
+    if (fieldId == C::SPEAKER_VOL) return mx.out_vol;
     if (IsTrackVolCursor(fieldId)) return mx.track_vol[TrackIndexOf(fieldId)];
     if (fieldId == C::MST_CHO) return mx.cho_vol;
     if (fieldId == C::MST_DEL) return mx.del_vol;
     if (fieldId == C::MST_REV) return mx.rev_vol;
-    if (fieldId == C::IN_VOL) return mx.in_vol;
-    if (fieldId == C::IN_CHO) return mx.in_cho;
-    if (fieldId == C::IN_DEL) return mx.in_del;
-    if (fieldId == C::IN_REV) return mx.in_rev;
-    if (fieldId == C::USB_VOL) return mx.usb_vol;
-    if (fieldId == C::USB_CHO) return mx.usb_cho;
-    if (fieldId == C::USB_DEL) return mx.usb_del;
-    if (fieldId == C::USB_REV) return mx.usb_rev;
     if (fieldId == C::MIX_VOL) return mx.mix_vol;
     if (fieldId == C::LIM_VAL) return mx.lim_val;
-    if (fieldId == C::DJF_FREQ) return mx.djf_freq;
-    if (fieldId == C::DJF_RES) return mx.djf_res;
-    if (fieldId == C::DJF_TYP) return mx.djf_typ;
+    if (fieldId == C::DJF)     return mx.djf_freq;
+    if (fieldId == C::OTT)     return mx.ott;
     return 0;
 }
 
-static void DrawVerticalBar(Renderer& renderer, int col, int rowBottom, int rowHeight, int val, bool doubleWidth = false) {
-    int px = col * 8;
-    int pyBottom = (rowBottom + 1) * 8;
-    int maxHeight = rowHeight * 8;
-    int w = doubleWidth ? 16 : 8;
-    int fillHeight = (val * maxHeight) / 255;
+// ---------------------------------------------------------------------------
+// Bars, drawn as font glyphs (MIXER_SPEC.md §5.1).
+//
+// Each cell holds one of the fill glyphs 0x01..0x07, so a column of cells is a
+// bar with 8 levels per cell. One drawChar per cell means one write per cell --
+// unlike the rectangle drawing this replaces, which tripped the overlap checker
+// whenever a fill boundary landed mid-cell and forced MIXER to be exempted from
+// assert_no_overlap.
+//
+// A cell is coloured by what reaches it: bright if the live level does, dim if
+// only the volume setting does. That is a single pass with one colour decision,
+// and it means the volume is still visible as a dim bar when nothing is
+// playing -- otherwise a stopped mixer would show eight empty columns.
+// ---------------------------------------------------------------------------
 
-    // Background covers only the UNFILLED (top) portion, foreground the
-    // filled (bottom) portion -- adjacent, not overlapping. Previously the
-    // background was drawn full-height and the foreground on top of it,
-    // which double-writes every cell the fill reaches; since every mixer
-    // volume defaults to non-zero (out_vol=0xE0, tracks similarly), this bar
-    // always tripped assert_no_overlap on a fresh boot.
-    int bgHeight = maxHeight - fillHeight;
-    if (bgHeight > 0) {
-        SDL_Color bgCol = {40, 50, 50, 255};
-        renderer.fillRectPixel(px, pyBottom - maxHeight, w - 1, bgHeight, bgCol);
-    }
-    if (fillHeight > 0) {
-        SDL_Color fillCol = {180, 200, 200, 255};
-        renderer.fillRectPixel(px, pyBottom - fillHeight, w - 1, fillHeight, fillCol);
+static constexpr char kFillFull = 0x07;
+
+// Colour ramp bottom-to-top: teal, green, yellow, then red at the very top.
+static SDL_Color LevelColor(float fractionOfHeight, bool clipped) {
+    if (clipped && fractionOfHeight > 0.92f) return {255, 60, 60, 255};
+    if (fractionOfHeight > 0.85f) return {255, 140, 60, 255};
+    if (fractionOfHeight > 0.65f) return {230, 220, 90, 255};
+    if (fractionOfHeight > 0.35f) return {150, 220, 130, 255};
+    return {120, 210, 200, 255};
+}
+
+static const SDL_Color kSettingColor = {60, 80, 80, 255};
+
+// Draw one bar. `level` and `setting` are 0..255; `level` is live audio and
+// `setting` is the parameter behind it (pass 0 for a pure meter).
+static void DrawGlyphBar(Renderer& renderer, int col, int rowTop, int rowBottom,
+                         int level, int setting, bool clipped) {
+    const int cells = rowBottom - rowTop + 1;
+    if (cells <= 0) return;
+
+    const int totalSteps = cells * 8;
+    const int levelSteps   = (std::clamp(level, 0, 255) * totalSteps) / 255;
+    const int settingSteps = (std::clamp(setting, 0, 255) * totalSteps) / 255;
+
+    for (int c = 0; c < cells; ++c) {
+        // Cell 0 is the bottom of the bar.
+        const int cellBase = c * 8;
+        const int row = rowBottom - c;
+
+        const int liveInCell    = std::clamp(levelSteps   - cellBase, 0, 8);
+        const int settingInCell = std::clamp(settingSteps - cellBase, 0, 8);
+
+        const int fill = std::max(liveInCell, settingInCell);
+        if (fill <= 0) continue;
+
+        // 8 steps map onto 7 glyphs; a full cell is 0x07 (kFillFull).
+        const char glyph = static_cast<char>(std::min(fill, static_cast<int>(kFillFull)));
+
+        // Bright where live audio reaches, dim where only the setting does.
+        const bool live = (liveInCell > 0) && (liveInCell >= settingInCell);
+        const float frac = static_cast<float>(cellBase + fill) / static_cast<float>(totalSteps);
+        renderer.drawChar(glyph, col, row, live ? LevelColor(frac, clipped) : kSettingColor);
     }
 }
 
 void RenderMixerScreen(Renderer& renderer,
                        const engine::EngineState& engState,
-                       CursorId active_cursor_id) {
-                            
+                       CursorId active_cursor_id,
+                       const MixerLevels& levels) {
     const engine::MixerState& mx = engState.mixer;
-                            
+
     static std::vector<UI_GridCell> staticText = GetMixerStaticText();
     static auto interactiveFields = GetMixerInteractiveFields();
 
@@ -81,23 +110,30 @@ void RenderMixerScreen(Renderer& renderer,
         renderer.drawString(cell.text, cell.col, cell.row, GetColorFromString(cell.normal_color));
     }
 
-    // Dynamic Tempo
-    
-
-    // Draw Output Vol Bars (Double width, 12 rows high, row 5 to 16).
-    // Column 24, not 12: the 8 per-track bars below occupy columns i*3 for
-    // i=0..7 (0,3,...,21), so column 12 is track 4's slot -- drawing the
-    // output bar there overlapped it (both bottom-align at row 16, output
-    // spans rows 5-16, track spans rows 9-16, so rows 9-16 collided).
-    // Column 24 is one slot past track 7's column (21) and otherwise unused.
-    DrawVerticalBar(renderer, 24, 16, 12, mx.out_vol, true);
-
-    // Draw Track Vol Bars (1 char width, 8 rows high, row 9 to 16)
-    for (int i = 0; i < 8; i++) {
-        DrawVerticalBar(renderer, i * 3, 16, 8, mx.track_vol[i], false);
+    // Per-track stereo meters. Two adjacent columns, left and right. The voice
+    // path is mono, so L and R differ only by the instrument's pan -- which is
+    // exactly what you want to see on a mixer.
+    for (int i = 0; i < 8; ++i) {
+        const auto& lv = levels.track[i];
+        DrawGlyphBar(renderer, kTrackCol(i),     kMeterTop, kMeterBottom,
+                     lv.peakL, mx.track_vol[i], lv.clipped);
+        DrawGlyphBar(renderer, kTrackCol(i) + 1, kMeterTop, kMeterBottom,
+                     lv.peakR, mx.track_vol[i], lv.clipped);
     }
 
-    // Render Interactive Fields
+    // Send returns. No per-send metering yet, so these show their setting only.
+    const int sendVals[3] = { mx.cho_vol, mx.del_vol, mx.rev_vol };
+    for (int i = 0; i < 3; ++i) {
+        DrawGlyphBar(renderer, kSendCol(i),     kSendMeterTop, kSendMeterBottom, 0, sendVals[i], false);
+        DrawGlyphBar(renderer, kSendCol(i) + 1, kSendMeterTop, kSendMeterBottom, 0, sendVals[i], false);
+    }
+
+    // Master meter: the actual bus output, after every stage.
+    DrawGlyphBar(renderer, kMasterMeterCol,     kMeterTop, kMeterBottom,
+                 levels.master.peakL, mx.mix_vol, levels.master.clipped);
+    DrawGlyphBar(renderer, kMasterMeterCol + 1, kMeterTop, kMeterBottom,
+                 levels.master.peakR, mx.mix_vol, levels.master.clipped);
+
     for (const auto& [fieldId, components] : interactiveFields) {
         bool isActive = (fieldId == active_cursor_id);
         int val = ResolveMixerValue(fieldId, mx);
@@ -114,8 +150,6 @@ void RenderMixerScreen(Renderer& renderer,
             }
         }
     }
-
-    
 }
 
 void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
@@ -123,50 +157,59 @@ void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
                        CommandSink& commandSink) {
     using C = CursorId;
     auto navMap = GetMixerNavMap();
-    if (event.key.key == SDLK_DOWN) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE) {
-            cursor_id = navMap[cursor_id].down;
+    const engine::MixerState& mx = uiEngineState.mixer;
+
+    if (!editHeld) {
+        if (event.key.key == SDLK_DOWN) {
+            if (navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE)
+                cursor_id = navMap[cursor_id].down;
+        } else if (event.key.key == SDLK_UP) {
+            if (navMap.count(cursor_id) && navMap[cursor_id].up != C::NONE)
+                cursor_id = navMap[cursor_id].up;
+        } else if (event.key.key == SDLK_RIGHT) {
+            if (navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE)
+                cursor_id = navMap[cursor_id].right;
+        } else if (event.key.key == SDLK_LEFT) {
+            if (navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE)
+                cursor_id = navMap[cursor_id].left;
         }
-    } else if (event.key.key == SDLK_UP) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].up != C::NONE) {
-            cursor_id = navMap[cursor_id].up;
-        }
-    } else if (event.key.key == SDLK_RIGHT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
-            cursor_id = navMap[cursor_id].right;
-        }
-    } else if (event.key.key == SDLK_LEFT) {
-        if (!editHeld && navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
-            cursor_id = navMap[cursor_id].left;
-        }
+        return;
     }
 
-    if (editHeld && (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN || event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT)) {
-        arrowPressedDuringEdit = true;
-        int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
+    // Edit: LEFT/RIGHT nudge by 1, UP/DOWN by 16 -- the same feel as the other
+    // hex screens.
+    int step = 0;
+    if (event.key.key == SDLK_RIGHT)     step = 1;
+    else if (event.key.key == SDLK_LEFT) step = -1;
+    else if (event.key.key == SDLK_UP)   step = 16;
+    else if (event.key.key == SDLK_DOWN) step = -16;
+    else return;
 
-        const auto& mx = uiEngineState.mixer;
-        if (cursor_id == C::OUT_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_OUT_VOL, std::clamp<int>((int)mx.out_vol + step, 0, 255));
-        else if (IsTrackVolCursor(cursor_id)) {
-            int t = TrackIndexOf(cursor_id);
-            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_TRK_VOL, std::clamp<int>((int)mx.track_vol[t] + step, 0, 255), 0, t);
-        }
-        else if (cursor_id == C::MST_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_CHO_VOL, std::clamp<int>((int)mx.cho_vol + step, 0, 255));
-        else if (cursor_id == C::MST_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DEL_VOL, std::clamp<int>((int)mx.del_vol + step, 0, 255));
-        else if (cursor_id == C::MST_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_REV_VOL, std::clamp<int>((int)mx.rev_vol + step, 0, 255));
-        else if (cursor_id == C::IN_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_VOL, std::clamp<int>((int)mx.in_vol + step, 0, 255));
-        else if (cursor_id == C::IN_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_CHO, std::clamp<int>((int)mx.in_cho + step, 0, 255));
-        else if (cursor_id == C::IN_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_DEL, std::clamp<int>((int)mx.in_del + step, 0, 255));
-        else if (cursor_id == C::IN_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_IN_REV, std::clamp<int>((int)mx.in_rev + step, 0, 255));
-        else if (cursor_id == C::USB_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_VOL, std::clamp<int>((int)mx.usb_vol + step, 0, 255));
-        else if (cursor_id == C::USB_CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_CHO, std::clamp<int>((int)mx.usb_cho + step, 0, 255));
-        else if (cursor_id == C::USB_DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_DEL, std::clamp<int>((int)mx.usb_del + step, 0, 255));
-        else if (cursor_id == C::USB_REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_USB_REV, std::clamp<int>((int)mx.usb_rev + step, 0, 255));
-        else if (cursor_id == C::MIX_VOL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_MIX_VOL, std::clamp<int>((int)mx.mix_vol + step, 0, 255));
-        else if (cursor_id == C::LIM_VAL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_LIM_VAL, std::clamp<int>((int)mx.lim_val + step, 0, 255));
-        else if (cursor_id == C::DJF_FREQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_FREQ, std::clamp<int>((int)mx.djf_freq + step, 0, 255));
-        else if (cursor_id == C::DJF_RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_RES, std::clamp<int>((int)mx.djf_res + step, 0, 255));
-        else if (cursor_id == C::DJF_TYP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_DJF_TYP, std::clamp<int>((int)mx.djf_typ + step, 0, 255));
+    arrowPressedDuringEdit = true;
+    auto bump = [&](m8::engine::ParamID id, int current, int target = 0, int row = 0) {
+        PushParam(commandSink, uiEngineState, id, std::clamp(current + step, 0, 255), target, row);
+    };
+
+    if (cursor_id == C::SPEAKER_VOL) {
+        bump(m8::engine::ParamID::MIX_OUT_VOL, mx.out_vol);
+    } else if (IsTrackVolCursor(cursor_id)) {
+        const int t = TrackIndexOf(cursor_id);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::MIX_TRK_VOL,
+                  std::clamp(mx.track_vol[t] + step, 0, 255), 0, t);
+    } else if (cursor_id == C::MST_CHO) {
+        bump(m8::engine::ParamID::MIX_CHO_VOL, mx.cho_vol);
+    } else if (cursor_id == C::MST_DEL) {
+        bump(m8::engine::ParamID::MIX_DEL_VOL, mx.del_vol);
+    } else if (cursor_id == C::MST_REV) {
+        bump(m8::engine::ParamID::MIX_REV_VOL, mx.rev_vol);
+    } else if (cursor_id == C::MIX_VOL) {
+        bump(m8::engine::ParamID::MIX_MIX_VOL, mx.mix_vol);
+    } else if (cursor_id == C::LIM_VAL) {
+        bump(m8::engine::ParamID::MIX_LIM_VAL, mx.lim_val);
+    } else if (cursor_id == C::DJF) {
+        bump(m8::engine::ParamID::MIX_DJF_FREQ, mx.djf_freq);
+    } else if (cursor_id == C::OTT) {
+        bump(m8::engine::ParamID::MIX_OTT, mx.ott);
     }
 }
 

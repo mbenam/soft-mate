@@ -30,7 +30,7 @@ Tiers 1–3 (everything except the three large structural refactors) are done as
 | 8 | `rateScale` computed, never applied | silent feature gap | 1 | **DONE (2026-07-16 — option (b), honest stub)** |
 | 6 | `e_on.instrument` held sample handle | correctness | 1 | **DONE (2026-07-16 — now `m_trackInstrument[t]`, fixed with the TEST-FILE DC bug)** |
 | 9 | Repo hygiene (tracked build tree, dup CMake) | hygiene | 2 | **DONE (2026-07-16)** |
-| 10 | Misleading comments / dead leftovers | hygiene | 2 | **DONE (2026-07-16)** |
+| 10 | Misleading comments / dead leftovers | hygiene | 2 | **DONE (2026-07-16; the deferred `ScriptCtxHelper` `static` sub-item closed 2026-08-12)** |
 | 5 | Event-ring churn + copy-pasted `e_off` | clarity / ring pressure | 3 | **DONE (2026-07-16 — both 5a and 5b)** |
 | 11 | Minor engine correctness nits (5 sub-items) | polish | 3 | **DONE (2026-07-16 — 11a fixed, 11b/11c skipped deliberately, 11d was a false claim (corrected), 11e documented)** |
 | 2 | Triplicated song-load block | dedup | 4 | **DONE (2026-07-16 — also fixed a latent `.original.clear()` save-breaking bug found while unifying)** |
@@ -145,6 +145,15 @@ and `status.md`'s Placeholders section. `grep rateScale src/engine/SynthVoice.cp
 matches. Full suite unchanged at 302,524 assertions (confirms nothing was exercising the dead
 writes).
 
+**Scope note (2026-08-12).** This item covered `rateScale` and nothing else. `ARCHITECTURE.md`
+§5.2's item 8 is broader — it also named the `postFilter` twin branches, the duplicated
+degrade→amp→limiter→filter chain, and the unread `m_finished` — and those stayed open after
+this item closed, which read confusingly as "#8 is partial". They are now resolved under that
+document's item 8, not here: `postFilter` no longer exists (the LIM POST work replaced it),
+the chain is extracted into `SynthVoice::applyDegrade` / `applyAmpLimFilter` for every path
+except macrosyn (deliberately — folding macrosyn in would change its audio, see the call-site
+comment), and `SynthVoice::m_finished` is deleted.
+
 ---
 
 ## #6 — `e_on.instrument` held the sample handle, not the instrument index
@@ -250,6 +259,19 @@ into, exposing a real latent gap where `m8::io::saveSong`'s `writeFile` never cr
 directory. Fixed in `src/io/SongIO.cpp` (`std::filesystem::create_directories` on the parent
 path before opening the `ofstream`). All 12 `tests/ui/*.m8script` scripts pass; full suite
 unchanged.
+
+**Follow-up (2026-08-12): the deferred `ScriptCtxHelper` sub-item is now done.** It is a plain
+stack local in `main.cpp`; the `static` is gone. Worth recording *why* it was safe, since the
+old comment argued the opposite: the callbacks are captureless C function pointers, but they
+reach the object through `sctx.userData` (set to `&helper`), not through static storage.
+`ScriptRunner::onFrameEnd(const ScriptAppContext&)` consumes the context synchronously and
+stores neither the context nor the pointer — verified by grep: `ScriptRunner` has no
+`ScriptAppContext` member, and the only other consumer, `autoDump(ctx)`, is called from inside
+`onFrameEnd`. Every field is reassigned before use each frame, so the cross-frame persistence
+the `static` provided was never read either. **Verified 2026-08-12:** builds clean and the
+suite is green (226 cases / 892,818 assertions), which includes the `[ui]` script suite —
+`ScriptRunner` is exactly what exercises this object, so the storage-duration change is
+covered rather than merely reasoned about.
 
 ---
 

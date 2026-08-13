@@ -317,7 +317,13 @@ void Renderer::dumpScreenText(const char* path) const {
     if (!f) { std::cerr << "dumpScreenText: cannot open " << path << "\n"; return; }
     for (int y = 0; y < kGridH; ++y) {
         for (int x = 0; x < kGridW; ++x) {
-            fputc(m_vram[y][x].ch, f);
+            char ch = m_vram[y][x].ch;
+            // Meter fill glyphs live at 0x01-0x07 (MIXER_SPEC.md §5.1). Writing
+            // them raw would put control codes in every dump; as digits, a
+            // meter reads as a column of 1-7 and can be asserted like any
+            // other text.
+            if (ch >= 0x01 && ch <= 0x07) ch = static_cast<char>('0' + ch);
+            fputc(ch, f);
         }
         fputc('\n', f);
     }

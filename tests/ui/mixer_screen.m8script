@@ -1,0 +1,48 @@
+# mixer_screen.m8script — the rebuilt MIXER screen (MIXER_SPEC.md).
+#
+# The important assertion here is assert_no_overlap. The old mixer drew its bars
+# with rectangles, which marked boundary cells as written twice whenever a fill
+# didn't land on a cell edge — so MIXER had to be exempted from the overlap
+# check entirely. Bars are font glyphs now, one write per cell, so the check
+# applies to this screen like any other. If it fails, the bar drawing is
+# double-writing and that exemption is creeping back.
+
+goto MIXER
+assert_screen contains "MIXER"
+
+# The master column is MIX / LIM / DJF / OTT. RES and TYP were never on the
+# device — they were our invention and are gone.
+assert_screen contains "MIX"
+assert_screen contains "LIM"
+assert_screen contains "DJF"
+assert_screen contains "OTT"
+assert_screen not_contains "RES"
+assert_screen not_contains "TYP"
+
+# soft-mate has no inputs.
+assert_screen not_contains "INPUT"
+assert_screen not_contains "USB"
+
+# Top line is SPEAKER VOL — this app's own output, not the song's master volume.
+assert_screen row 3 contains "SPEAKER VOL"
+
+# Send returns.
+assert_screen contains "MX"
+assert_screen contains "DE"
+assert_screen contains "RE"
+
+assert_no_overlap
+
+# Cursor starts on track 0's volume. Hold X and press RIGHT to nudge it up,
+# then LEFT to put it back — proves the edit path reaches the mixer's values.
+key X+RIGHT
+key X+LEFT
+
+# Walk down into the master strip and back up; the nav map must not dead-end.
+key DOWN
+key DOWN
+key UP
+key UP
+
+assert_no_overlap
+assert_no_error

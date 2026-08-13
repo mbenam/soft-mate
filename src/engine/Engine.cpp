@@ -162,6 +162,19 @@ void Engine::processCommands() {
                 m_dcMixL = 0.0f; m_dcMixR = 0.0f;
                 m_smoothChoFreq = 0.0f; m_smoothChoDepth = 0.0f;
                 m_smoothDelL = 0.0f; m_smoothDelR = 0.0f;
+                // Master chain state, for the same reason as the effects above:
+                // the offline renderer starts from a fresh engine, so anything
+                // stateful here must be cleared or the two paths diverge
+                // (ARCHITECTURE.md invariant 11).
+                m_djfL.reset(); m_djfR.reset();
+                m_limGain = 1.0f;
+                for (int i = 0; i < 2; ++i) { m_ottLpL[i] = 0.0f; m_ottLpR[i] = 0.0f; }
+                for (int i = 0; i < 3; ++i) { m_ottEnvL[i] = 0.0f; m_ottEnvR[i] = 0.0f; }
+                for (int i = 0; i < 9; ++i) {
+                    m_meterBlockL[i] = m_meterBlockR[i] = 0.0f;
+                    m_meterHeldL[i] = m_meterHeldR[i] = 0.0f;
+                    m_meterClip[i] = false;
+                }
                 m_songGcRing.push(data);
                 for (int i = 0; i < 8; ++i) {
                     m_voices[i].resetOscillator();
@@ -538,6 +551,138 @@ void Engine::doTick() {
         }
     }
 }
+// ---------------------------------------------------------------------------
+// Master bus stages. Order is fixed by the manual (MIXER_SPEC.md §4):
+// OTT -> [EQ, not built] -> LIM -> DJF -> MIX -> SPEAKER VOL.
+// All state lives in members; nothing here allocates, locks, or branches on
+// anything the audio thread doesn't already own.
+// ---------------------------------------------------------------------------
+
+// Over The Top: parallel multiband up/downward compression.
+//
+// APPROXIMATION, not a port (MIXER_SPEC.md §8). Three bands split by one-pole
+// crossovers at ~200 Hz and ~2 kHz; each band is pushed toward a target level,
+// so quiet parts come up and loud parts come down -- the characteristic OTT
+// "everything is loud" effect. The real thing has per-band ratios, attack and
+// release times we have no reference for.
+//
+// Value semantics from the manual: 00..80 mixes the effect in; from 80 up the
+// dry mix fades out, so 0xFF is pure OTT.
+void Engine::applyOtt(float& l, float& r) {
+    const int amt = m_state.mixer.ott;
+    if (amt <= 0) return;
+
+    // One-pole crossover coefficients for 200 Hz and 2 kHz at kSampleRate.
+    constexpr float kA0 = 0.0256f;   // ~200 Hz
+    constexpr float kA1 = 0.2314f;   // ~2 kHz
+
+    m_ottLpL[0] += kA0 * (l - m_ottLpL[0]);
+    m_ottLpL[1] += kA1 * (l - m_ottLpL[1]);
+    m_ottLpR[0] += kA0 * (r - m_ottLpR[0]);
+    m_ottLpR[1] += kA1 * (r - m_ottLpR[1]);
+
+    const float bandL[3] = { m_ottLpL[0], m_ottLpL[1] - m_ottLpL[0], l - m_ottLpL[1] };
+    const float bandR[3] = { m_ottLpR[0], m_ottLpR[1] - m_ottLpR[0], r - m_ottLpR[1] };
+
+    constexpr float kTarget = 0.25f;   // level each band is pulled toward
+    constexpr float kAtk    = 0.02f;
+    constexpr float kRel    = 0.0008f;
+    constexpr float kFloor  = 0.0005f; // below this a band is treated as silent
+    constexpr float kMaxUp  = 8.0f;    // ceiling on upward gain
+
+    float wetL = 0.0f, wetR = 0.0f;
+    for (int b = 0; b < 3; ++b) {
+        const float aL = std::fabs(bandL[b]);
+        m_ottEnvL[b] += (aL > m_ottEnvL[b] ? kAtk : kRel) * (aL - m_ottEnvL[b]);
+        const float aR = std::fabs(bandR[b]);
+        m_ottEnvR[b] += (aR > m_ottEnvR[b] ? kAtk : kRel) * (aR - m_ottEnvR[b]);
+
+        float gL = (m_ottEnvL[b] > kFloor) ? kTarget / m_ottEnvL[b] : 1.0f;
+        float gR = (m_ottEnvR[b] > kFloor) ? kTarget / m_ottEnvR[b] : 1.0f;
+        gL = std::clamp(gL, 1.0f / kMaxUp, kMaxUp);
+        gR = std::clamp(gR, 1.0f / kMaxUp, kMaxUp);
+
+        wetL += bandL[b] * gL;
+        wetR += bandR[b] * gR;
+    }
+
+    // 00..80: fade the wet in over the dry. 80..FF: fade the dry out.
+    const float a = amt / 128.0f;                 // 0..2
+    const float wetMix = std::min(a, 1.0f);
+    const float dryMix = (a <= 1.0f) ? 1.0f : std::max(0.0f, 2.0f - a);
+    l = l * dryMix + wetL * wetMix;
+    r = r * dryMix + wetR * wetMix;
+}
+
+// Main mix limiter. "Engaged when its value is above 00" (manual). Feed-forward
+// peak limiter: one shared gain for both channels so the stereo image doesn't
+// shift when only one side is loud. Fast attack, slow release.
+void Engine::applyLimiter(float& l, float& r) {
+    const int v = m_state.mixer.lim_val;
+    if (v <= 0) { m_limGain = 1.0f; return; }
+
+    // Higher LIM value = harder limiting: threshold falls from unity toward
+    // half of full scale. The exact curve is NOT hardware-verified -- no
+    // capture exists -- so it is deliberately gentle: at the default 0x40 the
+    // threshold is ~0.87, which catches peaks without noticeably squashing
+    // existing material. Do not "improve" this into a steeper curve without a
+    // measurement (AGENTS.md §4).
+    const float threshold = 1.0f - 0.5f * (static_cast<float>(v) / 255.0f);
+    const float peak = std::max(std::fabs(l), std::fabs(r));
+    const float wanted = (peak > threshold) ? (threshold / peak) : 1.0f;
+
+    // Attack immediately (never let a peak through), release gently.
+    constexpr float kRelease = 0.0002f;
+    if (wanted < m_limGain) m_limGain = wanted;
+    else                    m_limGain += kRelease * (wanted - m_limGain);
+
+    l *= m_limGain;
+    r *= m_limGain;
+}
+
+// DJ filter. 0x80 is off; below engages the low-pass, above the high-pass.
+// Only the default type (LP/HP) is modeled -- the other two modes (LP/BS and
+// BS/HP) are selected in the Scope view, which we don't build, so no song can
+// reach them from our UI (MIXER_SPEC.md §2).
+void Engine::applyDjFilter(float& l, float& r) {
+    const int v = m_state.mixer.djf_freq;
+    if (v == 0x80) return;   // off: bypass entirely, filters keep their state
+
+    const bool highPass = (v > 0x80);
+    // Map either half onto 30 Hz .. 18 kHz, exponentially.
+    const float t = highPass ? (v - 0x80) / 127.0f      // 0..1 upward
+                             : (0x80 - v) / 128.0f;     // 0..1 downward
+    const float cutoff = highPass ? 30.0f * std::pow(600.0f, t)
+                                  : 18000.0f * std::pow(1.0f / 600.0f, t);
+
+    m_djfL.setParams(cutoff, 0.3f, kSampleRate);
+    m_djfR.setParams(cutoff, 0.3f, kSampleRate);
+    float hpL = 0.0f, hpR = 0.0f;
+    const float lpL = m_djfL.process(l, hpL);
+    const float lpR = m_djfR.process(r, hpR);
+    l = highPass ? hpL : lpL;
+    r = highPass ? hpR : lpR;
+}
+
+void Engine::publishMeters(int frames) {
+    (void)frames;
+    for (int i = 0; i < 9; ++i) {
+        m_meterHeldL[i] = std::max(m_meterBlockL[i], m_meterHeldL[i] * kMeterDecay);
+        m_meterHeldR[i] = std::max(m_meterBlockR[i], m_meterHeldR[i] * kMeterDecay);
+
+        const uint32_t pl = uint32_t(std::clamp(m_meterHeldL[i], 0.0f, 1.0f) * 255.0f);
+        const uint32_t pr = uint32_t(std::clamp(m_meterHeldR[i], 0.0f, 1.0f) * 255.0f);
+        const uint32_t packed = pl | (pr << 8) | (m_meterClip[i] ? (1u << 16) : 0u);
+
+        if (i < 8) m_trackLevel[i].store(packed, std::memory_order_release);
+        else       m_masterLevel.store(packed, std::memory_order_release);
+
+        m_meterBlockL[i] = 0.0f;
+        m_meterBlockR[i] = 0.0f;
+        m_meterClip[i] = false;
+    }
+}
+
 void Engine::render(float* buffer, int frames) {
     for (int i = 0; i < frames; ++i) {
         m_frameCounter++;
@@ -602,10 +747,23 @@ void Engine::render(float* buffer, int frames) {
             
             float panL = std::cos(pan * 1.5707963f);
             float panR = std::sin(pan * 1.5707963f);
-            
-            mixL += vSamp * dry * panL;
-            mixR += vSamp * dry * panR;
-            
+
+            const float outL = vSamp * dry * panL;
+            const float outR = vSamp * dry * panR;
+
+            mixL += outL;
+            mixR += outR;
+
+            // Track meter: post-volume, post-pan, pre-sends -- what this track
+            // actually contributes to the mix. Block maximum only; the decay
+            // and the atomic publish happen once per render() in
+            // publishMeters().
+            const float aL = std::fabs(outL);
+            const float aR = std::fabs(outR);
+            if (aL > m_meterBlockL[t]) m_meterBlockL[t] = aL;
+            if (aR > m_meterBlockR[t]) m_meterBlockR[t] = aR;
+            if (aL >= 1.0f || aR >= 1.0f) m_meterClip[t] = true;
+
             sendCho += vSamp * cho;
             sendDel += vSamp * del;
             sendRev += vSamp * rev;
@@ -645,19 +803,43 @@ void Engine::render(float* buffer, int frames) {
         mixL += choL * master_cho + delL * master_del + revL * master_rev;
         mixR += choR * master_cho + delR * master_del + revR * master_rev;
 
-        float master_vol = m_state.mixer.out_vol / 255.0f;
-        mixL *= master_vol;
-        mixR *= master_vol;
+        // ---- Master chain, in the manual's order (MIXER_SPEC.md §4) --------
+        // EQ would sit between OTT and the limiter; it isn't built.
+        applyOtt(mixL, mixR);
+        applyLimiter(mixL, mixR);
+        applyDjFilter(mixL, mixR);
+
+        // MIX: the song's master volume (the file's master_volume).
+        const float mixVol = m_state.mixer.mix_vol / 255.0f;
+        mixL *= mixVol;
+        mixR *= mixVol;
+
+        // SPEAKER VOL: this application's output level. Never persisted.
+        const float speakerVol = m_state.mixer.out_vol / 255.0f;
+        mixL *= speakerVol;
+        mixR *= speakerVol;
 
         mixL = dcBlock(mixL, m_dcMixL);
         mixR = dcBlock(mixR, m_dcMixR);
 
+        // Kept deliberately even though the limiter now exists: LIM is off at
+        // value 00, and nothing should be able to produce a hard-clipped buffer
+        // just because the user turned it off. Removing it is an audio change
+        // that wants a before/after render comparison, not a guess.
         mixL = std::tanh(mixL);
         mixR = std::tanh(mixR);
+
+        const float aL = std::fabs(mixL);
+        const float aR = std::fabs(mixR);
+        if (aL > m_meterBlockL[8]) m_meterBlockL[8] = aL;
+        if (aR > m_meterBlockR[8]) m_meterBlockR[8] = aR;
+        if (aL >= 1.0f || aR >= 1.0f) m_meterClip[8] = true;
 
         buffer[i * 2]     = std::clamp(mixL, -1.0f, 1.0f);
         buffer[i * 2 + 1] = std::clamp(mixR, -1.0f, 1.0f);
     }
+
+    publishMeters(frames);
 }
 
 void Engine::notifyTrigSource(uint8_t instrumentIndex) {
