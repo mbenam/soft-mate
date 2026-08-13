@@ -247,6 +247,7 @@ add_executable(m8_tests
     tests/test_output_stage.cpp
     tests/test_inst_pool_screen.cpp
     tests/test_mixer_bus.cpp
+    tests/test_eq.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp

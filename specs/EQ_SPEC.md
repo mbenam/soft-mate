@@ -233,8 +233,11 @@ view we don't have.
        taking however many the song carries. The packed type/mode byte is kept alongside the
        decoded fields and used as the base when writing back, so bits 3-4 survive untouched.
        Tests L16-L19 (`[io]`), the last of which diffs the EQ block byte-for-byte.
-3. [ ] **Biquads.** Seven types, five stereo modes, coefficients on change only, reset on
-       `LOAD_SONG`.
+3. [x] **Biquads.** Done 2026-08-13 — `src/engine/EqFilter.h`. RBJ cookbook forms for all
+       seven types, all five stereo modes, coefficients recomputed only when the bank changes,
+       and a true bypass when every band is flat. Tests `EQ1`-`EQ10` (`[eq]`) measure the
+       response rather than trusting it. The `LOAD_SONG` reset lands with step 4, when there is
+       an instance to reset.
 4. [ ] **Wire instrument EQ.** Per-voice, bank index from the instrument, applied in the voice
        chain.
 5. [ ] **Curve glyphs.** Seven dash glyphs, plus the response evaluation.
@@ -263,7 +266,18 @@ view we don't have.
   do not parse them. They survive a save because the writer only grows its buffer, but nothing
   tells us what they are.
 - Curve resolution is 7 sub-positions per cell; steep slopes will read as dots.
-- Q is stored as a plain byte and its mapping to an actual filter Q is not known. The values
-  seen in real files (50, 90) and on the device (69) suggest a range, not a scale. Step 3 has
-  to choose a mapping; pick something musical, document it as unverified, and expect to revise
-  it if a capture ever contradicts it.
+- **Q maps logarithmically over 0-99** — measured 2026-08-13 from the device's own curve
+  display, a bell at 1 kHz with +12 dB gain screenshotted at Q = 01, 10, 25, 50 and 99. The
+  field caps at 99, so the byte never exceeds it. At 01 the curve is a flat +12 dB across the
+  whole band (a bell so wide it boosts everything); at 25 a broad arch still lifted at both
+  ends; at 50 a clean hill back to 0 dB by the edges; at 99 a narrow spike back to 0 dB by
+  roughly 500 Hz and 2 kHz. That is about two decades of Q across the range, fitting:
+
+  ```
+  Q = 10 ^ ((byte - 50) / 50)      byte 0 -> 0.1,  50 -> 1.0,  99 -> ~9.8
+  ```
+
+  The default byte of 50 landing exactly on Q = 1.0 is what makes this credible rather than
+  merely fitted. **Still an approximation** — read off screenshots by eye, not measured from
+  audio. Validate it by drawing our own curve at those same five values and comparing shapes
+  against the captures; refine with a swept measurement if it ever matters.

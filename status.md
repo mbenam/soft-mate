@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 243 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- **Tests**: Catch2 v3 — 253 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -66,7 +66,7 @@ Targets:
   with verification. Cursor detection fixed for grid screens (`<` character marker). CLI modes:
   `--load-file`, `--goto-screen`, `--read-field`, `--dump-screen`, `--json`, `--keys`,
   `--record-frames`, `--pin-gestures`.
-- `m8_tests` — 243 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- `m8_tests` — 253 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -282,10 +282,10 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 243 cases
+### Tests — 253 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
-[output_stage] [inst_pool] [mixer] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
+[output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
 [confirmation_dialog] [file_browser] [clean_phrases] [clean_inst] [project_tempo]
 [project_transpose] [project_scale] [project_groove] [project_quantize]
 [project_inst_pool]`.
