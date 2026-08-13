@@ -251,3 +251,100 @@ TEST_CASE("EQ10 coefficients are recomputed only when the bank changes", "[eq]")
     eq.configure(bank, kSr);
     REQUIRE(eq.isBypass());
 }
+
+// ---------------------------------------------------------------------------
+// Instrument EQ wired into the voice path (EQ_SPEC.md step 4). These need the
+// engine, not just the filters.
+// ---------------------------------------------------------------------------
+
+#include "support/OfflineHost.h"
+#include <atomic>
+
+extern std::atomic<int> g_allocCount;
+
+using namespace m8::test;
+
+namespace {
+
+// Render one macrosynth note and return the audio. `bank` is the EQ bank index
+// to assign to the instrument -- 0 means none.
+std::vector<float> renderWithInstrumentEq(int bank, const EqBank* bankContents) {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    auto& m = state.instruments[0].macrosyn;
+    m.shape = 0x00;
+    m.timbre = 0xC0;
+    m.color = 0xC0;
+    m.amp = 0x20;
+    m.lim = 0;
+    m.filter_type = 0;
+    m.dry = 0xFF;
+    m.pan = 0x80;
+    m.eq = bank;
+
+    if (bankContents && bank > 0 && bank < kMaxEqBanks)
+        state.eqs[bank] = *bankContents;
+
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(6000);
+    return host.audio();
+}
+
+} // namespace
+
+TEST_CASE("EQ11 an unassigned instrument EQ changes nothing", "[eq]") {
+    // eq == 0 is "no EQ" on both instrument screens. The factory-default bank
+    // is three flat bands, so either way the render must be untouched -- this
+    // is what lets EQ ship without altering any existing song.
+    const auto none = renderWithInstrumentEq(0, nullptr);
+    EqBank flat;                       // factory defaults
+    const auto flatBank = renderWithInstrumentEq(4, &flat);
+
+    REQUIRE(none.size() == flatBank.size());
+    bool identical = true;
+    for (size_t i = 0; i < none.size(); ++i)
+        if (none[i] != flatBank[i]) { identical = false; break; }
+    REQUIRE(identical);
+}
+
+TEST_CASE("EQ12 an assigned instrument EQ shapes that track", "[eq]") {
+    EqBank cut;
+    // Kill everything below 2 kHz on the low band; the source is a bright saw,
+    // so this has to remove real energy.
+    cut.low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 70, 0x00 };
+
+    const auto dry = renderWithInstrumentEq(0, nullptr);
+    const auto eqd = renderWithInstrumentEq(7, &cut);
+
+    REQUIRE(dry.size() == eqd.size());
+    double dryEnergy = 0.0, eqEnergy = 0.0;
+    for (size_t i = 0; i < dry.size(); ++i) {
+        dryEnergy += double(dry[i]) * dry[i];
+        eqEnergy  += double(eqd[i]) * eqd[i];
+    }
+    REQUIRE(dryEnergy > 0.0);
+    REQUIRE(eqEnergy < dryEnergy * 0.9);
+}
+
+TEST_CASE("EQ13 instrument EQ allocates nothing on the audio thread", "[eq]") {
+    EqBank bank;
+    bank.mid = EqBand{ 2 /*BELL*/, 1 /*MID mode*/, 1200, 900, 80, 0x22 };
+
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    state.instruments[0].macrosyn.dry = 0xFF;
+    state.instruments[0].macrosyn.pan = 0x80;
+    state.instruments[0].macrosyn.eq = 5;
+    state.eqs[5] = bank;
+
+    g_allocCount = 0;
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(8000);
+
+    REQUIRE(g_allocCount == 0);
+}

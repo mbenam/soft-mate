@@ -238,8 +238,11 @@ view we don't have.
        and a true bypass when every band is flat. Tests `EQ1`-`EQ10` (`[eq]`) measure the
        response rather than trusting it. The `LOAD_SONG` reset lands with step 4, when there is
        an instance to reset.
-4. [ ] **Wire instrument EQ.** Per-voice, bank index from the instrument, applied in the voice
-       chain.
+4. [x] **Wire instrument EQ.** Done 2026-08-13. One `EqProcessor` per *track* rather than
+       per voice or per bank -- a track plays one instrument at a time, so eight cover all 128
+       banks. Reconfigured once per `render()` call from `Instrument::getEq()`; applied to the
+       track's dry stereo pair, the only point where a track has stereo at all. Reset on
+       `LOAD_SONG` with the rest of the DSP. Tests EQ11-EQ13.
 5. [ ] **Curve glyphs.** Seven dash glyphs, plus the response evaluation.
 6. [ ] **Editor screen.** Layout, navigation, the shortcuts listed above, entered from the
        Instrument and Instrument Pool screens.

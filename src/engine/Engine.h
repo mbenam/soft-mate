@@ -217,6 +217,21 @@ struct Instrument {
         default: return 0xFF;
         }
     }
+
+    // EQ bank index. 0 means "no EQ" -- both the Instrument and Instrument Pool
+    // screens already render it as "--" -- so bank 0 itself is unreachable from
+    // an instrument. That reading matches the existing UI; it has not been
+    // checked against hardware (EQ_SPEC.md §8).
+    int getEq() const {
+        switch (type) {
+        case InstType::INST_SAMPLER:  return sampler.eq;
+        case InstType::INST_MACROSYN: return macrosyn.eq;
+        case InstType::INST_HYPERSYN: return hyper.eq;
+        case InstType::INST_FMSYNTH:  return fm.eq;
+        case InstType::INST_WAVSYNTH: return wav.eq;
+        default: return 0;
+        }
+    }
 };
 
 struct ProjectSettings {
@@ -773,6 +788,14 @@ private:
     // Per-publish decay. ~0.75 per block gives a visible fall-off at any
     // sensible block size without the meter looking frozen.
     static constexpr float kMeterDecay = 0.75f;
+
+    // ---- Instrument EQ ------------------------------------------------------
+    // One per track, not one per bank: a track only ever plays one instrument at
+    // a time, so eight processors cover all 128 banks. Reconfigured once per
+    // render() call from whichever bank the track's current instrument names --
+    // configure() early-outs when the bank is unchanged, so that is cheap.
+    EqProcessor m_trackEq[8];
+    void configureTrackEqs();
 
     // ---- Master bus state ---------------------------------------------------
     // DJ filter: one ZDF SVF per channel. 0x80 is off and bypasses entirely.

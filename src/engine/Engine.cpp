@@ -170,6 +170,7 @@ void Engine::processCommands() {
                 // (ARCHITECTURE.md invariant 11).
                 m_djfL.reset(); m_djfR.reset();
                 m_limGain = 1.0f;
+                for (int i = 0; i < 8; ++i) m_trackEq[i].reset();
                 for (int i = 0; i < 2; ++i) { m_ottLpL[i] = 0.0f; m_ottLpR[i] = 0.0f; }
                 for (int i = 0; i < 3; ++i) { m_ottEnvL[i] = 0.0f; m_ottEnvR[i] = 0.0f; }
                 for (int i = 0; i < 9; ++i) {
@@ -666,6 +667,29 @@ void Engine::applyDjFilter(float& l, float& r) {
     r = highPass ? hpR : lpR;
 }
 
+// The factory-default bank -- three flat bands. Namespace scope rather than a
+// function-local static so the audio thread never touches a guard variable.
+static const EqBank kFlatEqBank{};
+
+// Point each track's EQ at whatever bank its current instrument names. Called
+// once per render() call rather than per sample: a bank change landing a few
+// milliseconds late is inaudible, and configure() does nothing at all when the
+// bank has not changed.
+void Engine::configureTrackEqs() {
+    for (int t = 0; t < 8; ++t) {
+        const int inst = m_trackInstrument[t];
+        int bank = 0;
+        if (inst >= 0 && inst < static_cast<int>(m_state.instruments.size()))
+            bank = m_state.instruments[inst].getEq();
+
+        // 0 is "no EQ" (drawn as "--" on both instrument screens), so an
+        // unassigned instrument gets the factory-default bank, which is three
+        // flat bands and therefore an exact bypass.
+        if (bank <= 0 || bank >= kMaxEqBanks) m_trackEq[t].configure(kFlatEqBank, kSampleRate);
+        else                                  m_trackEq[t].configure(m_state.eqs[bank], kSampleRate);
+    }
+}
+
 void Engine::publishMeters(int frames) {
     (void)frames;
     for (int i = 0; i < 9; ++i) {
@@ -686,6 +710,8 @@ void Engine::publishMeters(int frames) {
 }
 
 void Engine::render(float* buffer, int frames) {
+    configureTrackEqs();
+
     for (int i = 0; i < frames; ++i) {
         m_frameCounter++;
         processCommands();
@@ -750,8 +776,23 @@ void Engine::render(float* buffer, int frames) {
             float panL = std::cos(pan * 1.5707963f);
             float panR = std::sin(pan * 1.5707963f);
 
-            const float outL = vSamp * dry * panL;
-            const float outR = vSamp * dry * panR;
+            float outL = vSamp * dry * panL;
+            float outR = vSamp * dry * panR;
+
+            // Instrument EQ, on the track's dry stereo output. Placed here
+            // because this is the only point where a track has a stereo signal
+            // -- the voice path itself is mono, so running it any earlier would
+            // make the MID/SIDE/LEFT/RIGHT modes meaningless.
+            //
+            // KNOWN LIMITATION: the sends below are taken from vSamp, which is
+            // pre-EQ, so an instrument's EQ shapes what you hear dry but not
+            // what it feeds to chorus/delay/reverb. Moving the sends behind the
+            // EQ would change their levels on every existing song; doing it
+            // properly means the sends becoming stereo too (EQ_SPEC.md §8).
+            //
+            // A bypassed EQ returns immediately without touching either value,
+            // so a song with no EQ assigned renders bit-identically to before.
+            m_trackEq[t].process(outL, outR);
 
             mixL += outL;
             mixR += outR;
