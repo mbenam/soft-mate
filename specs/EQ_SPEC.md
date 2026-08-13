@@ -243,9 +243,16 @@ view we don't have.
        banks. Reconfigured once per `render()` call from `Instrument::getEq()`; applied to the
        track's dry stereo pair, the only point where a track has stereo at all. Reset on
        `LOAD_SONG` with the rest of the DSP. Tests EQ11-EQ13.
-5. [ ] **Curve glyphs.** Seven dash glyphs, plus the response evaluation.
-6. [ ] **Editor screen.** Layout, navigation, the shortcuts listed above, entered from the
-       Instrument and Instrument Pool screens.
+5. [x] **Curve glyphs.** Done 2026-08-13. Seven dashes at `0x08`-`0x0E` in `font.h`,
+       mapped to `a`-`g` by `dumpScreenText` (0x0A raw would have split every dump into extra
+       lines). Response comes from `EqBiquad::magnitudeAt` / `EqProcessor::responseDbAt`,
+       evaluated analytically so drawing costs no audio.
+6. [x] **Editor screen.** Done 2026-08-13 — `src/ui/screens/eq/`. Curve over a log axis
+       (20 Hz-20 kHz, +/-18 dB), 5x3 parameter table, OPTION exits. Entered by an X tap on the
+       Instrument screen's EQ field. Editing goes through new `EQ_*` ParamIDs so the mirror and
+       the engine receive the same mutation. **Not yet entered from the Instrument Pool**, and
+       there is no `.m8script` covering the entry path yet -- the unit tests cover the handler,
+       not the route to it.
 7. [ ] **Bank assignment.** Make the existing `eq` field editable on both screens.
 8. [ ] **Wire the main mix and effect EQs.** Their location is no longer unknown — see §4c;
        they are four 18-byte blocks at `Offsets::eq + instrument_eq_count * 18`. What remains is

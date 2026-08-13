@@ -66,7 +66,11 @@ enum class ParamID {
     MOD_TYPE, MOD_DEST, MOD_AMT, MOD_P1, MOD_P2, MOD_P3, MOD_P4,
 
     // Scale
-    SCALE_KEY, SCALE_TUNE, SCALE_NOTE_EN, SCALE_NOTE_OFFSET, SCALE_NAME
+    SCALE_KEY, SCALE_TUNE, SCALE_NOTE_EN, SCALE_NOTE_OFFSET, SCALE_NAME,
+
+    // EQ. targetId = bank index (0..kMaxEqBanks-1), row = band (0 low, 1 mid,
+    // 2 high), value = the new setting.
+    EQ_GAIN, EQ_FREQ, EQ_Q, EQ_TYPE, EQ_MODE
 };
 
 struct EngineCommand {

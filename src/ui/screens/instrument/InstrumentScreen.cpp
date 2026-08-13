@@ -267,6 +267,12 @@ void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
         fileBrowser.init("Samples", ".wav");
         fileBrowser.setTitle("LOAD SAMPLE");
         viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+    } else if (cursor_id == CursorId::EQ) {
+        // An X tap on EQ opens the editor for whichever bank this instrument
+        // names. X+arrows still changes the bank number, so the release only
+        // opens the editor when no arrow was pressed -- main.cpp applies that
+        // guard before calling here.
+        viewManager.pushModal(m8::ui::ViewType::EQ);
     }
 }
 

@@ -29,6 +29,7 @@
 #include "ui/screens/effects/EffectsScreenLayout.h"
 #include "ui/screens/render/RenderScreen.h"
 #include "ui/screens/render/RenderScreenLayout.h"
+#include "ui/screens/eq/EqScreen.h"
 #include "io/RenderAudio.h"
 #include "io/BundleExport.h"
 #include "engine/SongCleanup.h"
@@ -386,6 +387,7 @@ int main(int argc, char* argv[]) {
     enum class CharPickerTarget { PROJECT, SCALE, RENDER };
     CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
     m8::ui::render::RenderScreenState renderScreenState;
+    m8::ui::eq::EqScreenState eqScreenState;
 
     // Song persistence state
     m8::io::LoadResult currentLoadResult;
@@ -772,6 +774,11 @@ int main(int argc, char* argv[]) {
                     m8::ui::render::HandleRenderInput(event, editHeld, arrowPressedDuringEdit,
                                                       renderScreenState, uiSequencer, uiEngineState,
                                                       viewManager, charPicker);
+                } else if (viewManager.getCurrentView() == m8::ui::ViewType::EQ) {
+                    if (m8::ui::eq::HandleEqInput(event, editHeld, arrowPressedDuringEdit,
+                                                  uiEngineState, eqScreenState, commandSink)) {
+                        viewManager.popModal();
+                    }
                 }
 
                 if (event.key.key == SDLK_ESCAPE) {
@@ -807,6 +814,7 @@ int main(int argc, char* argv[]) {
                             case m8::ui::ViewType::SCALE: return "SCALE";
                             case m8::ui::ViewType::INST_POOL: return "POOL";
                             case m8::ui::ViewType::RENDER: return "RENDER";
+                            case m8::ui::ViewType::EQ: return "EQ";
                             case m8::ui::ViewType::FILE_BROWSER: return "BROWSER";
                             case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                             default: return "NONE";
@@ -868,7 +876,13 @@ int main(int argc, char* argv[]) {
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
-                            m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
+                            // Guarded: X+arrows on the EQ field changes the bank
+                            // number, and only a bare tap should open the editor.
+                            if (!arrowPressedDuringEdit) {
+                                eqScreenState.bank =
+                                    uiEngineState.instruments[currentInstIndex].getEq();
+                                m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
                             m8::ui::project::ProjectActionState projActions{
                                 browserForSongLoad, fileBrowser, viewManager, textInputActive,
@@ -993,6 +1007,8 @@ int main(int argc, char* argv[]) {
             m8::ui::effects::RenderEffectsScreen(renderer, uiEngineState, active_cursor_effects);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::RENDER) {
             m8::ui::render::RenderRenderScreen(renderer, renderScreenState);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::EQ) {
+            m8::ui::eq::RenderEqScreen(renderer, uiEngineState, eqScreenState);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
             fileBrowser.update(renderer, colorWhite, colorCyan, colorRed);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
@@ -1109,6 +1125,7 @@ int main(int argc, char* argv[]) {
                         case m8::ui::ViewType::SCALE: return "SCALE";
                         case m8::ui::ViewType::INST_POOL: return "INSTRUMENT POOL";
                         case m8::ui::ViewType::RENDER: return "RENDER AUDIO";
+                        case m8::ui::ViewType::EQ: return "EQ BANK";
                         case m8::ui::ViewType::FILE_BROWSER: return "FILE BROWSER";
                         case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                         case m8::ui::ViewType::CHAR_PICKER: return "CHAR PICKER";

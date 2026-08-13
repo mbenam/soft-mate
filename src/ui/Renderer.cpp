@@ -318,11 +318,13 @@ void Renderer::dumpScreenText(const char* path) const {
     for (int y = 0; y < kGridH; ++y) {
         for (int x = 0; x < kGridW; ++x) {
             char ch = m_vram[y][x].ch;
-            // Meter fill glyphs live at 0x01-0x07 (MIXER_SPEC.md §5.1). Writing
-            // them raw would put control codes in every dump; as digits, a
-            // meter reads as a column of 1-7 and can be asserted like any
-            // other text.
-            if (ch >= 0x01 && ch <= 0x07) ch = static_cast<char>('0' + ch);
+            // Meter fills live at 0x01-0x07 (MIXER_SPEC.md §5.1) and curve
+            // dashes at 0x08-0x0E (EQ_SPEC.md §6). Writing them raw would put
+            // control codes in every dump -- 0x0A would literally break the
+            // dump into extra lines. Mapped, a meter reads as a column of 1-7
+            // and a curve as a row of a-g, both assertable like any other text.
+            if (ch >= 0x01 && ch <= 0x07)      ch = static_cast<char>('0' + ch);
+            else if (ch >= 0x08 && ch <= 0x0E) ch = static_cast<char>('a' + (ch - 0x08));
             fputc(ch, f);
         }
         fputc('\n', f);

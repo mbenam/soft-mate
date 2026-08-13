@@ -157,6 +157,23 @@ public:
         return y;
     }
 
+    // Magnitude of the frequency response at one frequency, as a linear gain.
+    // Evaluates |H(z)| on the unit circle -- this is what draws the curve on
+    // the EQ editor, so it must not require running audio through the filter.
+    float magnitudeAt(float freqHz, float sampleRate) const {
+        const float w = 6.28318530718f * freqHz / sampleRate;
+        const float c1 = std::cos(w),  s1 = std::sin(w);
+        const float c2 = std::cos(2.0f * w), s2 = std::sin(2.0f * w);
+        // z^-1 = cos(w) - j sin(w)
+        const float numRe = m_b0 + m_b1 * c1 + m_b2 * c2;
+        const float numIm =      -(m_b1 * s1 + m_b2 * s2);
+        const float denRe = 1.0f + m_a1 * c1 + m_a2 * c2;
+        const float denIm =      -(m_a1 * s1 + m_a2 * s2);
+        const float den = std::sqrt(denRe * denRe + denIm * denIm);
+        if (den < 1e-12f) return 1.0f;
+        return std::sqrt(numRe * numRe + numIm * numIm) / den;
+    }
+
 private:
     float m_b0 = 1.0f, m_b1 = 0.0f, m_b2 = 0.0f, m_a1 = 0.0f, m_a2 = 0.0f;
     float m_z1 = 0.0f, m_z2 = 0.0f;
@@ -197,6 +214,18 @@ public:
 
     // True when every band is a no-op, so callers can skip the whole stage.
     bool isBypass() const { return !m_anyActive; }
+
+    // Combined response in dB at one frequency -- the curve the editor draws.
+    // Bands in series multiply, so their dB contributions add. Stereo mode is
+    // ignored: the display shows one curve, as the device's does.
+    float responseDbAt(float freqHz, float sampleRate) const {
+        float db = 0.0f;
+        for (const auto& band : m_bands) {
+            if (!band.active) continue;
+            db += 20.0f * std::log10(std::max(band.a.magnitudeAt(freqHz, sampleRate), 1e-9f));
+        }
+        return db;
+    }
 
     inline void process(float& l, float& r) {
         if (!m_anyActive) return;

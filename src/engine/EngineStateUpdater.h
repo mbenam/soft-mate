@@ -244,6 +244,30 @@ struct EngineStateUpdater {
                 break;
             }
 
+            // EQ. Bounds-checked the same way as the scale group above: an
+            // out-of-range bank or band drops the command rather than writing
+            // past the array (ARCHITECTURE.md §5.2 #3 is why this is a habit).
+            case ParamID::EQ_GAIN:
+            case ParamID::EQ_FREQ:
+            case ParamID::EQ_Q:
+            case ParamID::EQ_TYPE:
+            case ParamID::EQ_MODE: {
+                if (cmd.targetId < 0 || cmd.targetId >= kMaxEqBanks) break;
+                if (cmd.row < 0 || cmd.row > 2) break;
+                EqBank& bank = state.eqs[cmd.targetId];
+                EqBand& band = (cmd.row == 0) ? bank.low
+                             : (cmd.row == 1) ? bank.mid : bank.high;
+                switch (cmd.paramId) {
+                    case ParamID::EQ_GAIN: band.gain = cmd.value; break;
+                    case ParamID::EQ_FREQ: band.freq = cmd.value; break;
+                    case ParamID::EQ_Q:    band.q    = cmd.value; break;
+                    case ParamID::EQ_TYPE: band.type = cmd.value; break;
+                    case ParamID::EQ_MODE: band.mode = cmd.value; break;
+                    default: break;
+                }
+                break;
+            }
+
             default: break;
         }
     }

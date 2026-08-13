@@ -818,6 +818,76 @@ struct Font font[] = {
 "#####",
 "#####"}},
 
+/* ------------------------------------------------------------------
+   Curve plot glyphs, 0x08..0x0E (EQ_SPEC.md §6).
+
+   A dash at one of the seven pixel rows, so a graph N cells tall has
+   7N vertical positions to plot on. The EQ editor draws its response
+   curve one character per column with these -- not with line drawing,
+   which bypasses the shadow grid entirely and would make the curve
+   invisible to every dump, golden and assertion.
+
+   Same reservation logic as the meter fills above: nothing else in
+   the UI draws these, so a curve can never be confused with text.
+   dumpScreenText() maps them to 'a'..'g'.
+   ------------------------------------------------------------------ */
+{0x08, {
+"#####",
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"     "}},
+{0x09, {
+"     ",
+"#####",
+"     ",
+"     ",
+"     ",
+"     ",
+"     "}},
+{0x0A, {
+"     ",
+"     ",
+"#####",
+"     ",
+"     ",
+"     ",
+"     "}},
+{0x0B, {
+"     ",
+"     ",
+"     ",
+"#####",
+"     ",
+"     ",
+"     "}},
+{0x0C, {
+"     ",
+"     ",
+"     ",
+"     ",
+"#####",
+"     ",
+"     "}},
+{0x0D, {
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"#####",
+"     "}},
+{0x0E, {
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"     ",
+"#####"}},
+
 /* Fallback/end Char. If you don't know the
 font size, use this as the "null terminator" */
 {0, {

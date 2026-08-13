@@ -348,3 +348,137 @@ TEST_CASE("EQ13 instrument EQ allocates nothing on the audio thread", "[eq]") {
 
     REQUIRE(g_allocCount == 0);
 }
+
+// ---------------------------------------------------------------------------
+// EQ editor screen (EQ_SPEC.md step 6). Input handling and the response
+// evaluation the curve is drawn from. Rendering itself is exercised by the
+// screen's future .m8script; these cover the logic underneath it.
+// ---------------------------------------------------------------------------
+
+#include "ui/screens/eq/EqScreen.h"
+#include "ui/UiCommands.h"
+#include "engine/CommandRing.h"
+
+using namespace m8::ui;
+
+namespace {
+
+struct TestEqContext {
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+    EngineState state;
+    m8::ui::eq::EqScreenState st;
+    bool arrowPressedDuringEdit = false;
+
+    bool send(SDL_Keycode key, bool editHeld) {
+        SDL_Event ev{};
+        ev.type = SDL_EVENT_KEY_DOWN;
+        ev.key.key = key;
+        return m8::ui::eq::HandleEqInput(ev, editHeld, arrowPressedDuringEdit, state, st, sink);
+    }
+};
+
+} // namespace
+
+TEST_CASE("EQ14 the cursor walks the 5x3 grid and stops at the edges", "[eq]") {
+    TestEqContext ctx;
+    REQUIRE(ctx.st.param == 0);
+    REQUIRE(ctx.st.band == 0);
+
+    ctx.send(SDLK_UP, false);          // already at the top
+    REQUIRE(ctx.st.param == 0);
+    ctx.send(SDLK_LEFT, false);        // already at the left
+    REQUIRE(ctx.st.band == 0);
+
+    for (int i = 0; i < 10; ++i) ctx.send(SDLK_DOWN, false);
+    REQUIRE(ctx.st.param == m8::ui::eq::P_MODE);   // clamps at the last row
+
+    for (int i = 0; i < 10; ++i) ctx.send(SDLK_RIGHT, false);
+    REQUIRE(ctx.st.band == 2);                     // clamps at HIGH
+}
+
+TEST_CASE("EQ15 edits reach the engine, not just the mirror", "[eq]") {
+    // Every screen must push the same mutation it applies locally
+    // (ARCHITECTURE.md invariant 4). If this only wrote the mirror, the ring
+    // would be empty and the audio thread would never see the change.
+    TestEqContext ctx;
+    ctx.st.bank = 3;
+    ctx.st.band = 1;          // MID
+    ctx.st.param = m8::ui::eq::P_GAIN;
+
+    const int before = ctx.state.eqs[3].mid.gain;
+    ctx.send(SDLK_RIGHT, true);
+
+    REQUIRE(ctx.state.eqs[3].mid.gain != before);   // mirror updated
+    REQUIRE(ctx.arrowPressedDuringEdit);
+
+    EngineCommand cmd{};
+    REQUIRE(ctx.ring.pop(cmd));                     // and a command was queued
+    REQUIRE(cmd.type == CommandType::UPDATE_PARAM);
+    REQUIRE(cmd.paramId == ParamID::EQ_GAIN);
+    REQUIRE(cmd.targetId == 3);
+    REQUIRE(cmd.row == 1);
+}
+
+TEST_CASE("EQ16 each parameter edits with a sensible step and range", "[eq]") {
+    TestEqContext ctx;
+    ctx.st.bank = 1;
+    ctx.st.band = 0;
+
+    SECTION("gain steps a quarter dB, or a whole dB held vertically") {
+        ctx.st.param = m8::ui::eq::P_GAIN;
+        ctx.send(SDLK_RIGHT, true);
+        REQUIRE(ctx.state.eqs[1].low.gain == 25);
+        ctx.send(SDLK_UP, true);
+        REQUIRE(ctx.state.eqs[1].low.gain == 125);
+    }
+    SECTION("Q stays inside 0..99") {
+        ctx.st.param = m8::ui::eq::P_Q;
+        for (int i = 0; i < 200; ++i) ctx.send(SDLK_UP, true);
+        REQUIRE(ctx.state.eqs[1].low.q == 99);
+        for (int i = 0; i < 200; ++i) ctx.send(SDLK_DOWN, true);
+        REQUIRE(ctx.state.eqs[1].low.q == 0);
+    }
+    SECTION("type wraps through all seven") {
+        ctx.st.param = m8::ui::eq::P_TYPE;
+        const int start = ctx.state.eqs[1].low.type;
+        for (int i = 0; i < 7; ++i) ctx.send(SDLK_RIGHT, true);
+        REQUIRE(ctx.state.eqs[1].low.type == start);   // full cycle
+        ctx.send(SDLK_RIGHT, true);
+        REQUIRE(ctx.state.eqs[1].low.type != start);
+    }
+    SECTION("mode wraps through all five") {
+        ctx.st.param = m8::ui::eq::P_MODE;
+        for (int i = 0; i < 5; ++i) ctx.send(SDLK_RIGHT, true);
+        REQUIRE(ctx.state.eqs[1].low.mode == 0);
+    }
+}
+
+TEST_CASE("EQ17 OPTION asks to close the editor", "[eq]") {
+    TestEqContext ctx;
+    REQUIRE(ctx.send(SDLK_Z, false));       // Z is OPTION
+    REQUIRE_FALSE(ctx.send(SDLK_DOWN, false));
+}
+
+TEST_CASE("EQ18 the drawn curve follows the bands", "[eq]") {
+    // The editor plots responseDbAt() per column, so that function is what the
+    // picture is. A bell at 1 kHz must read as a peak there and as nothing an
+    // octave-and-a-half away.
+    EqBank bank;
+    bank.mid = EqBand{ 2 /*BELL*/, 0, 1000, 1200, 60, 0x02 };
+    EqProcessor eq;
+    eq.configure(bank, 48000.0f);
+
+    const float atPeak = eq.responseDbAt(1000.0f, 48000.0f);
+    const float wayOff = eq.responseDbAt(60.0f, 48000.0f);
+    REQUIRE(atPeak > 11.0f);
+    REQUIRE(atPeak < 13.0f);
+    REQUIRE(std::fabs(wayOff) < 1.0f);
+
+    // A flat bank must plot as a flat line, or the editor would show a curve
+    // for an EQ that does nothing.
+    EqProcessor flat;
+    flat.configure(EqBank{}, 48000.0f);
+    REQUIRE(flat.responseDbAt(100.0f, 48000.0f) == 0.0f);
+    REQUIRE(flat.responseDbAt(5000.0f, 48000.0f) == 0.0f);
+}
