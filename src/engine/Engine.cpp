@@ -149,7 +149,7 @@ void Engine::processCommands() {
                 m_state.bpm_frac  = data->state.bpm_frac;
                 for (int i = 0; i < 16; ++i)
                     m_state.scales[i] = data->state.scales[i];
-                for (int i = 0; i < kMaxEqBanks; ++i)
+                for (int i = 0; i < kEqTotal; ++i)
                     m_state.eqs[i] = data->state.eqs[i];
                 // Reset effects DSP state so the new song starts clean — without
                 // this, chorus/delay/reverb buffers and DC blockers carry audio
@@ -171,6 +171,7 @@ void Engine::processCommands() {
                 m_djfL.reset(); m_djfR.reset();
                 m_limGain = 1.0f;
                 for (int i = 0; i < 8; ++i) m_trackEq[i].reset();
+                m_mixEq.reset();
                 for (int i = 0; i < 2; ++i) { m_ottLpL[i] = 0.0f; m_ottLpR[i] = 0.0f; }
                 for (int i = 0; i < 3; ++i) { m_ottEnvL[i] = 0.0f; m_ottEnvR[i] = 0.0f; }
                 for (int i = 0; i < 9; ++i) {
@@ -711,6 +712,7 @@ void Engine::publishMeters(int frames) {
 
 void Engine::render(float* buffer, int frames) {
     configureTrackEqs();
+    m_mixEq.configure(m_state.eqs[kEqMix], kSampleRate);
 
     for (int i = 0; i < frames; ++i) {
         m_frameCounter++;
@@ -847,8 +849,8 @@ void Engine::render(float* buffer, int frames) {
         mixR += choR * master_cho + delR * master_del + revR * master_rev;
 
         // ---- Master chain, in the manual's order (MIXER_SPEC.md §4) --------
-        // EQ would sit between OTT and the limiter; it isn't built.
         applyOtt(mixL, mixR);
+        m_mixEq.process(mixL, mixR);   // main mix EQ (EQ_SPEC.md step 8)
         applyLimiter(mixL, mixR);
         applyDjFilter(mixL, mixR);
 

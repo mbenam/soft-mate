@@ -152,6 +152,10 @@ void RenderMixerScreen(Renderer& renderer,
     }
 }
 
+bool HandleMixerEditRelease(CursorId cursor_id) {
+    return cursor_id == CursorId::EQ;
+}
+
 void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                        engine::EngineState& uiEngineState, CursorId& cursor_id,
                        CommandSink& commandSink) {
@@ -189,6 +193,9 @@ void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
     auto bump = [&](m8::engine::ParamID id, int current, int target = 0, int row = 0) {
         PushParam(commandSink, uiEngineState, id, std::clamp(current + step, 0, 255), target, row);
     };
+
+    // EQ has no value of its own -- it is a doorway, handled on release.
+    if (cursor_id == C::EQ) return;
 
     if (cursor_id == C::SPEAKER_VOL) {
         bump(m8::engine::ParamID::MIX_OUT_VOL, mx.out_vol);

@@ -59,11 +59,17 @@ static std::string ValueText(const engine::EqBand& b, int param) {
 void RenderEqScreen(Renderer& renderer,
                     const engine::EngineState& engState,
                     const EqScreenState& st) {
-    const int bankIdx = std::clamp(st.bank, 0, engine::kMaxEqBanks - 1);
+    const int bankIdx = std::clamp(st.bank, 0, engine::kEqTotal - 1);
     const engine::EqBank& bank = engState.eqs[bankIdx];
 
+    // The four bus EQs live past the instrument banks and are named, not
+    // numbered -- the device titles the main mix one "MIX EQ" (EQ_SPEC.md §4c).
     char title[24];
-    std::snprintf(title, sizeof(title), "EQ BANK %02X", bankIdx);
+    if (bankIdx == engine::kEqMix)         std::snprintf(title, sizeof(title), "MIX EQ");
+    else if (bankIdx == engine::kEqModFx)  std::snprintf(title, sizeof(title), "MODFX EQ");
+    else if (bankIdx == engine::kEqDelay)  std::snprintf(title, sizeof(title), "DELAY EQ");
+    else if (bankIdx == engine::kEqReverb) std::snprintf(title, sizeof(title), "REVERB EQ");
+    else std::snprintf(title, sizeof(title), "EQ BANK %02X", bankIdx);
     renderer.drawString(title, 0, 0, GetColorFromString("TITLE"));
 
     for (const auto& cell : GetEqStaticText())
@@ -138,7 +144,7 @@ bool HandleEqInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuri
 
     arrowPressedDuringEdit = true;
 
-    const int bankIdx = std::clamp(st.bank, 0, engine::kMaxEqBanks - 1);
+    const int bankIdx = std::clamp(st.bank, 0, engine::kEqTotal - 1);
     const engine::EqBand& band = BandOf(uiEngineState.eqs[bankIdx], st.band);
 
     // Every edit goes through PushParam, which applies it to the UI mirror AND

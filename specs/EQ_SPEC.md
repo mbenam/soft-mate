@@ -258,12 +258,14 @@ view we don't have.
        file would otherwise vanish on save. The pool's EQ column opens the editor rather than
        the instrument. Covered by IP6 and `tests/ui/eq_editor.m8script`, which drives the whole
        route through the app.
-8. [ ] **Wire the main mix and effect EQs.** Their location is no longer unknown — see §4c;
-       they are four 18-byte blocks at `Offsets::eq + instrument_eq_count * 18`. What remains is
-       reading them into engine state, applying them (mix EQ into the master chain where the
-       chain diagram already reserves a slot, the other three on their send returns), and making
-       the mixer's EQ label a cursor stop that opens the editor. Confirm the ModFX/Delay/Reverb
-       ordering first with one more device diff if it matters.
+8. [x] **Wire the main mix and effect EQs.** Done 2026-08-13. All four load and save as raw
+       bytes at `Offsets::eq + instrument_eq_count * 18` -- the library does not model them, so
+       `saveBusEqs` patches them into the image after `write_over`. They live on the end of
+       `EngineState::eqs`, so one editor and one set of ParamIDs serve every EQ in the machine,
+       and the editor titles them by name rather than by number. The **main mix EQ is applied**,
+       in the master chain between OTT and the limiter; the mixer's EQ label is now a cursor
+       stop that opens it. Tests EQ19-EQ22.
+       **The three send EQs are loaded, saved and editable but NOT applied** -- see §8.
 9. [ ] **Fold findings into reference docs, then archive this spec.** Cannot be ticked while any
        step above is unticked (`AGENTS.md` §9).
 
@@ -273,9 +275,13 @@ view we don't have.
 
 - Which of the three effect EQ blocks is ModFX, Delay and Reverb is an inference from their
   default frequencies and the Effects screen's ordering (§4c). Block 0, the main mix, is
-  confirmed. One more device save-and-diff would settle the rest.
-- The main mix EQ and the three effect EQs are located but not yet built; their bytes are
-  preserved untouched meanwhile.
+  confirmed. One more device save-and-diff would settle the rest -- and should, before the
+  send EQs are applied, or two of them could end up on the wrong effect.
+- **The three send EQs are not applied to audio.** They round-trip and can be edited, but the
+  sends are mono floats inside the mix loop, so four of the five stereo modes would be
+  meaningless on them; the device calls these "INPUT EQ", so they belong on the send *before*
+  its effect. Doing it properly means the sends becoming stereo, which is the same change the
+  instrument EQ's send limitation needs. Until then they are stored, not heard.
 - Files from firmware 6.5.0 carry 32 bytes past the four EQ blocks that 4.x files do not. We
   do not parse them. They survive a save because the writer only grows its buffer, but nothing
   tells us what they are.

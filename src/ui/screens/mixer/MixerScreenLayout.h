@@ -24,7 +24,7 @@ enum class CursorId : uint8_t {
     SPEAKER_VOL,
     TRK_VOL_0, TRK_VOL_1, TRK_VOL_2, TRK_VOL_3, TRK_VOL_4, TRK_VOL_5, TRK_VOL_6, TRK_VOL_7,
     MST_CHO, MST_DEL, MST_REV,
-    MIX_VOL, LIM_VAL, DJF, OTT,
+    EQ, MIX_VOL, LIM_VAL, DJF, OTT,
 };
 
 // TRK_VOL_0..TRK_VOL_7 are contiguous, so the track index is subtraction rather
@@ -71,9 +71,8 @@ inline std::vector<UI_GridCell> GetMixerStaticText() {
         {"DE", kSendCol(1), kSendLabelRow, "LABEL_DIM", "", "static", false, 0},
         {"RE", kSendCol(2), kSendLabelRow, "LABEL_DIM", "", "static", false, 0},
 
-        // Master strip. EQ is a label only: the EQ itself and its editor view
-        // are not built, so it is deliberately not a cursor stop -- a control
-        // that does nothing when you press it is worse than no control.
+        // EQ is a cursor stop now that there is an EQ behind it (EQ_SPEC.md
+        // step 8); tapping X on it opens the editor on the main mix EQ.
         {"EQ", kMasterMeterCol, kTrackValueRow, "LABEL_DIM", "", "static", false, 0},
         {"MIX", kMasterLabelCol, kMasterFirstRow + 0, "LABEL_DIM", "", "static", false, 0},
         {"LIM", kMasterLabelCol, kMasterFirstRow + 1, "LABEL_DIM", "", "static", false, 0},
@@ -118,13 +117,14 @@ inline std::unordered_map<CursorId, NavNode<CursorId>> GetMixerNavMap() {
         {C::TRK_VOL_4, {/*U*/C::SPEAKER_VOL, /*D*/C::MIX_VOL,   /*L*/C::TRK_VOL_3, /*R*/C::TRK_VOL_5}},
         {C::TRK_VOL_5, {/*U*/C::SPEAKER_VOL, /*D*/C::MIX_VOL,   /*L*/C::TRK_VOL_4, /*R*/C::TRK_VOL_6}},
         {C::TRK_VOL_6, {/*U*/C::SPEAKER_VOL, /*D*/C::MIX_VOL,   /*L*/C::TRK_VOL_5, /*R*/C::TRK_VOL_7}},
-        {C::TRK_VOL_7, {/*U*/C::SPEAKER_VOL, /*D*/C::MIX_VOL,   /*L*/C::TRK_VOL_6, /*R*/C::MIX_VOL}},
+        {C::TRK_VOL_7, {/*U*/C::SPEAKER_VOL, /*D*/C::EQ,        /*L*/C::TRK_VOL_6, /*R*/C::EQ}},
 
         {C::MST_CHO,   {/*U*/C::TRK_VOL_0,   /*D*/C::NONE,      /*L*/C::NONE,      /*R*/C::MST_DEL}},
         {C::MST_DEL,   {/*U*/C::TRK_VOL_1,   /*D*/C::NONE,      /*L*/C::MST_CHO,   /*R*/C::MST_REV}},
         {C::MST_REV,   {/*U*/C::TRK_VOL_2,   /*D*/C::NONE,      /*L*/C::MST_DEL,   /*R*/C::MIX_VOL}},
 
-        {C::MIX_VOL,   {/*U*/C::TRK_VOL_7,   /*D*/C::LIM_VAL,   /*L*/C::MST_REV,   /*R*/C::NONE}},
+        {C::EQ,        {/*U*/C::TRK_VOL_7,   /*D*/C::MIX_VOL,   /*L*/C::MST_REV,   /*R*/C::NONE}},
+        {C::MIX_VOL,   {/*U*/C::EQ,          /*D*/C::LIM_VAL,   /*L*/C::MST_REV,   /*R*/C::NONE}},
         {C::LIM_VAL,   {/*U*/C::MIX_VOL,     /*D*/C::DJF,       /*L*/C::MST_REV,   /*R*/C::NONE}},
         {C::DJF,       {/*U*/C::LIM_VAL,     /*D*/C::OTT,       /*L*/C::MST_REV,   /*R*/C::NONE}},
         {C::OTT,       {/*U*/C::DJF,         /*D*/C::NONE,      /*L*/C::MST_REV,   /*R*/C::NONE}},

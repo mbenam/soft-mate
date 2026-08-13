@@ -58,9 +58,20 @@ struct EqBank {
     EqBand high { 4, 0, 5000, 0, 50, 0x04 };   // HI.SHELF
 };
 
-// The file holds 32 banks on V4 and 128 on V4.1+. We always carry 128 and only
-// load/save as many as the song actually has, so the count never needs storing.
+// Instrument EQ banks. The file holds 32 on V4 and 128 on V4.1+; we always
+// carry 128 and only load/save as many as the song actually has.
 inline constexpr int kMaxEqBanks = 128;
+
+// Immediately after the bank array the file carries four more EQs of the same
+// shape -- the main mix and one for each send effect (EQ_SPEC.md §4c). They are
+// kept on the end of the same array so one editor, one set of ParamIDs and one
+// piece of DSP serve every EQ in the machine.
+inline constexpr int kEqMix    = kMaxEqBanks + 0;
+inline constexpr int kEqModFx  = kMaxEqBanks + 1;   // ordering inferred, §4c
+inline constexpr int kEqDelay  = kMaxEqBanks + 2;
+inline constexpr int kEqReverb = kMaxEqBanks + 3;
+inline constexpr int kBusEqCount = 4;
+inline constexpr int kEqTotal  = kMaxEqBanks + kBusEqCount;
 
 // Q byte -> filter Q. Measured from the device's own curve display: the byte
 // runs 0..99 and spans about two decades, with the factory default of 50

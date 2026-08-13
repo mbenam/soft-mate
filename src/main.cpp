@@ -920,6 +920,12 @@ int main(int argc, char* argv[]) {
                                 fileBrowser, viewManager, scaleBrowserMode
                             };
                             m8::ui::scale::HandleScaleEditRelease(scale_cursor_id, currentScaleIndex, uiEngineState, commandSink, scaleActions);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::MIXER) {
+                            if (!arrowPressedDuringEdit &&
+                                m8::ui::mixer::HandleMixerEditRelease(active_cursor_mixer)) {
+                                eqScreenState.bank = m8::engine::kEqMix;
+                                viewManager.pushModal(m8::ui::ViewType::EQ);
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
                             // X tap (no arrows) = open the instrument under the
                             // cursor. The guard matters more here than on most

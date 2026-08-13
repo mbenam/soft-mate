@@ -252,7 +252,7 @@ struct EngineStateUpdater {
             case ParamID::EQ_Q:
             case ParamID::EQ_TYPE:
             case ParamID::EQ_MODE: {
-                if (cmd.targetId < 0 || cmd.targetId >= kMaxEqBanks) break;
+                if (cmd.targetId < 0 || cmd.targetId >= kEqTotal) break;
                 if (cmd.row < 0 || cmd.row > 2) break;
                 EqBank& bank = state.eqs[cmd.targetId];
                 EqBand& band = (cmd.row == 0) ? bank.low

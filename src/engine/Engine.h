@@ -362,9 +362,11 @@ struct EngineState {
     MixerState mixer;
     EffectsState effects;
     Scale scales[16];
-    // Instrument EQ banks. An instrument's `eq` byte indexes this array; 0 is
-    // shown as "--" on the Instrument screen.
-    EqBank eqs[kMaxEqBanks];
+    // Every EQ in the machine. 0..kMaxEqBanks-1 are the instrument banks, which
+    // an instrument's `eq` byte indexes (0 shows as "--"); the last four are the
+    // main mix and the three send effects, which live in their own part of the
+    // file (EQ_SPEC.md §4c) but share this array so one editor serves all.
+    EqBank eqs[kEqTotal];
     // How many of those the loaded song actually carries -- 32 on a V4 file,
     // 128 on V4.1+. We always allocate the maximum, but only this many round
     // trip through the file, so the UI must not let a bank be assigned beyond
@@ -799,6 +801,7 @@ private:
     // render() call from whichever bank the track's current instrument names --
     // configure() early-outs when the bank is unchanged, so that is cheap.
     EqProcessor m_trackEq[8];
+    EqProcessor m_mixEq;          // master bus, between OTT and the limiter
     void configureTrackEqs();
 
     // ---- Master bus state ---------------------------------------------------

@@ -258,7 +258,11 @@ TEST_CASE("EQ10 coefficients are recomputed only when the bank changes", "[eq]")
 // ---------------------------------------------------------------------------
 
 #include "support/OfflineHost.h"
+#include "io/SongIO.h"
 #include <atomic>
+#include <fstream>
+#include <iterator>
+#include <cstdio>
 
 extern std::atomic<int> g_allocCount;
 
@@ -481,4 +485,100 @@ TEST_CASE("EQ18 the drawn curve follows the bands", "[eq]") {
     flat.configure(EqBank{}, 48000.0f);
     REQUIRE(flat.responseDbAt(100.0f, 48000.0f) == 0.0f);
     REQUIRE(flat.responseDbAt(5000.0f, 48000.0f) == 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// The four EQs the file library doesn't model (EQ_SPEC.md step 8): main mix
+// plus ModFX/Delay/Reverb, living past the instrument banks.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("EQ19 the bus EQs load from their own part of the file", "[eq]") {
+    auto result = m8::io::loadSong(
+        std::string(THIRD_PARTY_DIR) + "/m8-files-cxx/examples/songs/V4-1EMPTY.m8s", "");
+    REQUIRE(result.ok);
+
+    // Factory defaults for the four, read off real files (EQ_SPEC.md §4c). They
+    // differ from each other, which is what identifies which block is which.
+    REQUIRE(result.state.eqs[kEqMix].low.type == 1);      // LOWSHELF 100
+    REQUIRE(result.state.eqs[kEqMix].low.freq == 100);
+    REQUIRE(result.state.eqs[kEqModFx].low.type == 0);    // LOWCUT 100
+    REQUIRE(result.state.eqs[kEqModFx].high.freq == 5000);
+    REQUIRE(result.state.eqs[kEqDelay].low.freq == 500);  // LOWCUT 500 / HI.CUT 10k
+    REQUIRE(result.state.eqs[kEqDelay].high.freq == 10000);
+    REQUIRE(result.state.eqs[kEqReverb].low.freq == 200); // LOWCUT 200 / HI.CUT 8.8k
+    REQUIRE(result.state.eqs[kEqReverb].high.freq == 8800);
+}
+
+TEST_CASE("EQ20 an edited mix EQ survives save and reload", "[eq]") {
+    const std::string src = std::string(THIRD_PARTY_DIR)
+                          + "/m8-files-cxx/examples/songs/V4-1EMPTY.m8s";
+    auto result = m8::io::loadSong(src, "");
+    REQUIRE(result.ok);
+
+    // The same distinctive values the hardware experiment used, so a failure
+    // here is directly comparable to the bytes recorded in the spec.
+    auto edited = result.state;
+    edited.eqs[kEqMix].low = EqBand{ 1, 0, 137, 1200, 3, 0x01 };
+    edited.eqs[kEqDelay].mid = EqBand{ 3, 2, 4353, -900, 7, 0x42 };
+
+    std::string err;
+    REQUIRE(m8::io::saveSong("buseq_rt.m8s", result, result.sequencer, edited, err));
+    auto again = m8::io::loadSong("buseq_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    REQUIRE(again.state.eqs[kEqMix].low.freq == 137);
+    REQUIRE(again.state.eqs[kEqMix].low.gain == 1200);
+    REQUIRE(again.state.eqs[kEqMix].low.q == 3);
+    REQUIRE(again.state.eqs[kEqDelay].mid.type == 3);
+    REQUIRE(again.state.eqs[kEqDelay].mid.mode == 2);
+    REQUIRE(again.state.eqs[kEqDelay].mid.gain == -900);
+    std::remove("buseq_rt.m8s");
+}
+
+TEST_CASE("EQ21 untouched bus EQs round-trip byte-identically", "[eq]") {
+    // These bytes are outside everything the file library knows about, so if
+    // the patch-in is wrong it corrupts a region nothing else would catch.
+    const std::string src = std::string(THIRD_PARTY_DIR)
+                          + "/m8-files-cxx/examples/songs/V4-1EMPTY.m8s";
+    auto result = m8::io::loadSong(src, "");
+    REQUIRE(result.ok);
+
+    std::string err;
+    REQUIRE(m8::io::saveSong("buseq_id.m8s", result, result.sequencer, result.state, err));
+
+    std::ifstream a(src, std::ios::binary), b("buseq_id.m8s", std::ios::binary);
+    std::vector<char> av((std::istreambuf_iterator<char>(a)), std::istreambuf_iterator<char>());
+    std::vector<char> bv((std::istreambuf_iterator<char>(b)), std::istreambuf_iterator<char>());
+    a.close(); b.close();
+    REQUIRE(av.size() == bv.size());
+
+    size_t diffs = 0;
+    for (size_t i = 0; i < av.size(); ++i) if (av[i] != bv[i]) ++diffs;
+    REQUIRE(diffs == 0);
+    std::remove("buseq_id.m8s");
+}
+
+TEST_CASE("EQ22 the mix EQ is applied to the master bus", "[eq]") {
+    auto render = [](bool withEq) {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        state.instruments[0].macrosyn.dry = 0xFF;
+        state.instruments[0].macrosyn.pan = 0x80;
+        state.instruments[0].macrosyn.amp = 0x20;
+        if (withEq)  // cut everything below 2 kHz on the whole mix
+            state.eqs[kEqMix].low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 70, 0x00 };
+
+        setStep(host.sequencer(), 0, 0, 60, 127, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(6000);
+        double energy = 0.0;
+        for (float v : host.audio()) energy += double(v) * v;
+        return energy;
+    };
+
+    const double dry = render(false);
+    const double cut = render(true);
+    REQUIRE(dry > 0.0);
+    REQUIRE(cut < dry * 0.9);
 }

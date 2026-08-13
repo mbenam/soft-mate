@@ -39,6 +39,69 @@ static bool writeFile(const std::string& path, const std::vector<uint8_t>& data)
     return f.good();
 }
 
+
+// ---- The four EQs the file library does not model ----
+// Main mix + ModFX/Delay/Reverb, sitting immediately after the instrument bank
+// array in the same 18-byte format (EQ_SPEC.md §4c). The library stops at the
+// banks, so these are read and written as raw bytes at a computed offset.
+static size_t busEqOffset(const m8::Song& song) {
+    const m8::Offsets& o = song.version.at_least(4, 1) ? m8::V4_1_OFFSETS : m8::V4_OFFSETS;
+    return o.eq + o.instrument_eq_count * m8::Equ::V4_SIZE;
+}
+
+static void decodeEqBand(const uint8_t* src, engine::EqBand& dst) {
+    dst.rawModeType = src[0];
+    dst.type = src[0] & 0x7;
+    dst.mode = (src[0] >> 5) & 0x7;
+    dst.freq = (int(src[2]) << 8) | int(src[1]);
+    dst.gain = static_cast<int16_t>((uint16_t(src[4]) << 8) | uint16_t(src[3]));
+    dst.q    = src[5];
+}
+
+static void encodeEqBand(const engine::EqBand& src, uint8_t* dst) {
+    const uint8_t base = static_cast<uint8_t>(src.rawModeType);
+    dst[0] = static_cast<uint8_t>((base & ~0xE7) | (src.type & 0x7) | ((src.mode & 0x7) << 5));
+    dst[1] = static_cast<uint8_t>(src.freq & 0xFF);
+    dst[2] = static_cast<uint8_t>((src.freq >> 8) & 0xFF);
+    const uint16_t g = static_cast<uint16_t>(static_cast<int16_t>(src.gain));
+    dst[3] = static_cast<uint8_t>(g & 0xFF);
+    dst[4] = static_cast<uint8_t>((g >> 8) & 0xFF);
+    dst[5] = static_cast<uint8_t>(src.q);
+}
+
+static void loadBusEqs(const m8::Song& song, const std::vector<uint8_t>& bytes,
+                       engine::EngineState& state) {
+    if (!song.version.at_least(4, 0)) return;
+    const size_t off = busEqOffset(song);
+    const size_t need = off + engine::kBusEqCount * m8::Equ::V4_SIZE;
+    if (bytes.size() < need) return;
+    for (int b = 0; b < engine::kBusEqCount; ++b) {
+        engine::EqBank& bank = state.eqs[engine::kEqMix + b];
+        const uint8_t* p = bytes.data() + off + b * m8::Equ::V4_SIZE;
+        decodeEqBand(p + 0,  bank.low);
+        decodeEqBand(p + 6,  bank.mid);
+        decodeEqBand(p + 12, bank.high);
+    }
+}
+
+// Patch the four bus EQs back into an already-serialised file image. Called
+// after Song::write_over, which does not know these bytes exist and therefore
+// leaves whatever the original had.
+static void saveBusEqs(const m8::Song& song, const engine::EngineState& state,
+                       std::vector<uint8_t>& bytes) {
+    if (!song.version.at_least(4, 0)) return;
+    const size_t off = busEqOffset(song);
+    const size_t need = off + engine::kBusEqCount * m8::Equ::V4_SIZE;
+    if (bytes.size() < need) return;
+    for (int b = 0; b < engine::kBusEqCount; ++b) {
+        const engine::EqBank& bank = state.eqs[engine::kEqMix + b];
+        uint8_t* p = bytes.data() + off + b * m8::Equ::V4_SIZE;
+        encodeEqBand(bank.low,  p + 0);
+        encodeEqBand(bank.mid,  p + 6);
+        encodeEqBand(bank.high, p + 12);
+    }
+}
+
 // ---- FxCmd mapping ----
 // Library file bytes:  0xFF = none; 0x00..0x08 = VOL,PIT,DEL,REV,HOP,KIL,TBL,GRV,TIC;
 //                      0x09.. = ARP and the rest of the M8 FX set (NOT modeled here).
@@ -894,6 +957,9 @@ LoadResult loadSong(const std::string& path, const std::string& sampleRoot) {
         res.writable = song.version.at_least(4, 0);
 
         convertSongToEngine(song, res.sequencer, res.state);
+        // The main mix and effect EQs are not part of the parsed Song, so they
+        // come straight from the file bytes (EQ_SPEC.md §4c).
+        loadBusEqs(song, data, res.state);
 
         // Collect sample paths
         for (size_t i = 0; i < song.instruments.size(); ++i) {
@@ -961,6 +1027,7 @@ bool saveSong(const std::string& path, const LoadResult& origin,
         convertEngineToSong(seq, state, song);
 
         auto out = song.write_over(origin.original);
+        saveBusEqs(song, state, out);   // not modeled by the library; patched in
         if (!writeFile(path, out)) {
             error = "cannot write file";
             return false;

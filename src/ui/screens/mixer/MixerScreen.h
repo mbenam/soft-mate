@@ -28,6 +28,10 @@ void HandleMixerInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
                        engine::EngineState& uiEngineState, CursorId& cursor_id,
                        CommandSink& commandSink);
 
+// X-tap action: on EQ, open the editor on the main mix EQ. Returns true if the
+// editor should be opened. Call only when no arrow was pressed during the hold.
+bool HandleMixerEditRelease(CursorId cursor_id);
+
 } // namespace mixer
 } // namespace ui
 } // namespace m8
