@@ -354,6 +354,28 @@ static void convertSongToEngine(const m8::Song& song,
     fx.rev_mod_freq = song.effects_settings.reverb_mod_freq;
     fx.rev_width = song.effects_settings.reverb_width;
 
+    // EQ banks (EQ_SPEC.md §3-4). The library gives us however many the song's
+    // version carries -- 32 on V4, 128 on V4.1+ -- so take what is there and
+    // leave the rest at their factory defaults.
+    for (size_t i = 0; i < song.eqs.size() && i < static_cast<size_t>(engine::kMaxEqBanks); ++i) {
+        const auto& src = song.eqs[i];
+        auto& dst = state.eqs[i];
+        const m8::EqBand* srcBands[3] = { &src.low, &src.mid, &src.high };
+        engine::EqBand* dstBands[3] = { &dst.low, &dst.mid, &dst.high };
+        for (int b = 0; b < 3; ++b) {
+            dstBands[b]->rawModeType = srcBands[b]->mode.value;
+            // Decode the packed byte ourselves rather than via eq_type(): that
+            // accessor clamps anything above 5 to Bell, which would silently
+            // rewrite an ALLPASS band (EQ_SPEC.md §3).
+            dstBands[b]->type = srcBands[b]->mode.value & 0x7;
+            dstBands[b]->mode = (srcBands[b]->mode.value >> 5) & 0x7;
+            dstBands[b]->freq = (int(srcBands[b]->freq) << 8) | int(srcBands[b]->freq_fin);
+            dstBands[b]->gain = static_cast<int16_t>(
+                (uint16_t(srcBands[b]->level) << 8) | uint16_t(srcBands[b]->level_fin));
+            dstBands[b]->q = srcBands[b]->q;
+        }
+    }
+
     // Instruments
     for (size_t i = 0; i < song.instruments.size() && i < 128; ++i) {
         const auto& libInst = song.instruments[i];
@@ -592,6 +614,30 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     fx.reverb_mod_depth = state.effects.rev_mod_depth;
     fx.reverb_mod_freq = state.effects.rev_mod_freq;
     fx.reverb_width = state.effects.rev_width;
+
+    // EQ banks. Overlay onto the song's own array so its size (32 or 128, by
+    // version) is preserved -- never resize it.
+    for (size_t i = 0; i < song.eqs.size() && i < static_cast<size_t>(engine::kMaxEqBanks); ++i) {
+        auto& dst = song.eqs[i];
+        const auto& src = state.eqs[i];
+        m8::EqBand* dstBands[3] = { &dst.low, &dst.mid, &dst.high };
+        const engine::EqBand* srcBands[3] = { &src.low, &src.mid, &src.high };
+        for (int b = 0; b < 3; ++b) {
+            // Rebuild the packed byte on top of the original so bits 3-4 --
+            // which have no known meaning -- survive untouched. Rebuilding it
+            // from type|mode alone would zero them and break the byte-identical
+            // round-trip on any file that uses them (EQ_SPEC.md §3).
+            const uint8_t base = static_cast<uint8_t>(srcBands[b]->rawModeType);
+            dstBands[b]->mode.value = static_cast<uint8_t>(
+                (base & ~0xE7) | (srcBands[b]->type & 0x7) | ((srcBands[b]->mode & 0x7) << 5));
+            dstBands[b]->freq     = static_cast<uint8_t>((srcBands[b]->freq >> 8) & 0xFF);
+            dstBands[b]->freq_fin = static_cast<uint8_t>(srcBands[b]->freq & 0xFF);
+            const uint16_t g = static_cast<uint16_t>(static_cast<int16_t>(srcBands[b]->gain));
+            dstBands[b]->level     = static_cast<uint8_t>((g >> 8) & 0xFF);
+            dstBands[b]->level_fin = static_cast<uint8_t>(g & 0xFF);
+            dstBands[b]->q = static_cast<uint8_t>(srcBands[b]->q);
+        }
+    }
 
     // Instruments — overlay the fields our engine models onto the ORIGINAL song
     // instruments. We only touch modeled/screen-exposed fields; every other byte

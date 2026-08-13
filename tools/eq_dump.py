@@ -131,6 +131,24 @@ def dump(path):
     print("    modes seen: " + ", ".join(
         f"{MODES[m] if m < len(MODES) else '?'+str(m)}={n}" for m, n in sorted(modes_seen.items())))
 
+    # The four EQs the file library does not model -- main mix, then the three
+    # send effects -- sit immediately after the bank array in the same format
+    # (EQ_SPEC.md §4c). Located by saving one project twice on a real M8,
+    # identical but for the mix EQ, and diffing.
+    extra = EQ_OFFSET + count * BANK_SIZE
+    names = ("MIX     ", "ModFX?  ", "Delay?  ", "Reverb? ")
+    print(f"    --- unmodeled EQs at 0x{extra:X} ({len(data) - extra} bytes follow) ---")
+    for k, label in enumerate(names):
+        base = extra + k * BANK_SIZE
+        if base + BANK_SIZE > len(data):
+            print(f"    {label} (past end of file)")
+            continue
+        cells = []
+        for i in range(3):
+            d = decode_band(data[base + i * BAND_SIZE: base + (i + 1) * BAND_SIZE])
+            cells.append(f"{d['type_name']:<9}{d['freq_hz']:>6}Hz {d['gain_db']:+6.2f}dB Q{d['q']:>3}")
+        print(f"    {label} " + " | ".join(cells))
+
     for b, bands in nondefault[:4]:
         print(f"    bank {b:02X}:")
         for name, d in zip(("LOW ", "MID ", "HIGH"), bands):

@@ -149,6 +149,8 @@ void Engine::processCommands() {
                 m_state.bpm_frac  = data->state.bpm_frac;
                 for (int i = 0; i < 16; ++i)
                     m_state.scales[i] = data->state.scales[i];
+                for (int i = 0; i < kMaxEqBanks; ++i)
+                    m_state.eqs[i] = data->state.eqs[i];
                 // Reset effects DSP state so the new song starts clean — without
                 // this, chorus/delay/reverb buffers and DC blockers carry audio
                 // from whatever was previously loaded (e.g. the demo song), causing

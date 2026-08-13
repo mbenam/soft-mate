@@ -226,6 +226,38 @@ struct ProjectSettings {
     int live_quantize = 0;
 };
 
+// ---- EQ (EQ_SPEC.md) --------------------------------------------------------
+// One band of a 3-band parametric EQ. Six bytes in the file; the encoding is
+// confirmed, not guessed -- see EQ_SPEC.md §4.
+struct EqBand {
+    int type = 1;        // 0 LOWCUT, 1 LOWSHELF, 2 BELL, 3 BANDPASS,
+                         // 4 HI.SHELF, 5 HI.CUT, 6 ALLPASS
+                         // (all seven read off a real M8, firmware 6.5.0)
+    int mode = 0;        // 0 STEREO, 1 MID, 2 SIDE, 3 LEFT, 4 RIGHT
+    int freq = 100;      // Hz, straight from the file's coarse/fine pair
+    int gain = 0;        // HUNDREDTHS of a dB, signed. 600 = +6.00 dB
+    int q = 50;          // raw byte; its mapping to a filter Q is not known
+
+    // The file packs type into bits 0-2 and mode into bits 5-7 of one byte.
+    // Bits 3-4 have no known meaning, so the original byte is kept and used as
+    // the base when writing back -- rebuilding it from type|mode alone would
+    // zero those bits and break the byte-identical round-trip on any file that
+    // uses them.
+    int rawModeType = 0x01;
+};
+
+// A bank of three bands. Defaults are the M8's factory values, identical in
+// every song file examined (EQ_SPEC.md §4) -- also what EDIT+OPTION resets to.
+struct EqBank {
+    EqBand low  { 1, 0,  100, 0, 50, 0x01 };   // LOWSHELF
+    EqBand mid  { 2, 0, 1000, 0, 50, 0x02 };   // BELL
+    EqBand high { 4, 0, 5000, 0, 50, 0x04 };   // HI.SHELF
+};
+
+// The file holds 32 banks on V4 and 128 on V4.1+. We always carry 128 and only
+// load/save as many as the song actually has, so the count never needs storing.
+inline constexpr int kMaxEqBanks = 128;
+
 struct ScaleNote {
     bool enable = true;
     float offset = 0.0f; // Range usually -99.99 to 99.99
@@ -343,6 +375,10 @@ struct EngineState {
     MixerState mixer;
     EffectsState effects;
     Scale scales[16];
+    // Instrument EQ banks. An instrument's `eq` byte indexes this array; 0 is
+    // shown as "--" on the Instrument screen. Loaded and saved; not yet applied
+    // to audio (EQ_SPEC.md step 4).
+    EqBank eqs[kMaxEqBanks];
 
     EngineState() {
         instruments.resize(128);

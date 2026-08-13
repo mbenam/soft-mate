@@ -17,15 +17,19 @@ and the mixer already has the label. That is wrong, and the file format is why:
 - **Instrument EQ banks are fully modeled.** `Song::eqs` is a flat array of `Equ`, read at
   `Offsets::eq`, and each instrument's existing `eq` byte is an index into it. We already load,
   display and preserve that byte on both the Instrument and Instrument Pool screens.
-- **The main mix EQ and the three effect EQs are not modeled at all.** There is no `master_eq`
-  field, nothing EQ-shaped in `MixerSettings`, and the offsets table carries only `eq` (the
-  instrument banks) and an optional `.m8i` equivalent. `EffectsSettings`' `delay_hp`/`delay_lp`/
-  `reverb_hp`/`reverb_lp` are simple corner filters, not the 3-band EQ. Wherever those four EQs
-  live in the file, we do not parse it — they survive today only because save-by-overlay
-  preserves bytes it doesn't understand.
+- **The main mix EQ and the three effect EQs are not modeled by the library.** There is no
+  `master_eq` field, nothing EQ-shaped in `MixerSettings`, and the offsets table carries only
+  `eq` (the instrument banks) and an optional `.m8i` equivalent. `EffectsSettings`'
+  `delay_hp`/`delay_lp`/`reverb_hp`/`reverb_lp` are simple corner filters, not the 3-band EQ.
 
-So building the mix EQ first means a control that either doesn't persist or persists to a
-guessed offset. Instrument banks first; the other four wait on §6.
+That was the original reason to start with instrument banks: building the mix EQ first would
+have meant a control that either didn't persist or persisted to a guessed offset.
+
+**§4c has since located all four**, so they are no longer blocked — they sit immediately after
+the instrument bank array and we can read and write them directly. The order stands anyway,
+because it was never only about persistence: the editor screen, the curve and the biquads get
+built once regardless, and the instrument path is the one whose bank-index plumbing already
+exists. The other four become wiring once those parts work.
 
 ---
 
@@ -64,11 +68,11 @@ firmware only. Read the count from the song's version, as the library does.
 **The mode byte packs two fields.** `type = value & 0x7`, `mode = (value >> 5) & 0x7`. Bits 3-4
 are unused as far as we can tell.
 
-**Do not trust `EqModeType::eq_type()`.** It clamps anything above 5 to `Bell`
-(`types.cpp:131`). If ALLPASS is type 6 — as §5 assumes — the accessor will silently report it
-as a bell. Decode `mode.value & 0x7` ourselves. The raw byte *is* preserved on write
-(`EqBand::write` writes `mode.value` untouched), so no data is lost either way; only the
-interpretation is wrong.
+**Do not use `EqModeType::eq_type()`.** It clamps anything above 5 to `Bell`
+(`types.cpp:131`), and ALLPASS is type 6 — confirmed on hardware, §4b — so an ALLPASS band read
+through that accessor comes back as a bell. Decode `mode.value & 0x7` ourselves. The raw byte
+*is* preserved on write (`EqBand::write` writes `mode.value` untouched), so the file is never
+damaged; only the interpretation would be.
 
 ---
 
@@ -109,10 +113,56 @@ the EDIT+OPTION reset:
 | MID | BELL (2) | 1000 Hz | 0.00 dB | 50 | STEREO |
 | HIGH | HI.SHELF (4) | 5000 Hz | 0.00 dB | 50 | STEREO |
 
-**4b. ALLPASS — STILL OPEN.** No band anywhere in the tree uses a type other than 1, 2 or 4, so
-there is no evidence for or against type 6. Implement it as 6 and treat it as an inference. The
-risk is contained: the raw byte round-trips untouched either way, so a wrong guess mislabels a
-band rather than corrupting a file.
+**4b. ALLPASS — CONFIRMED on hardware 2026-08-13.** Read directly off a real M8 (firmware
+6.5.0) by cycling the TYPE field with EDIT+RIGHT and noting each value. Seven types, in this
+order, so ALLPASS is index 6 as assumed:
+
+```
+0 LOWCUT   1 LOWSHELF   2 BELL   3 BANDPASS   4 HI.SHELF   5 HI.CUT   6 ALLPASS
+```
+
+MODE was read the same way and matches the manual exactly: five entries,
+`0 STEREO  1 MID  2 SIDE  3 LEFT  4 RIGHT`.
+
+Note this makes `EqModeType::eq_type()` actively wrong rather than merely suspect — it clamps 6
+to Bell, so an ALLPASS band read through that accessor becomes a bell. Decode the raw byte.
+
+**4c. Where the main mix and effect EQs live — FOUND 2026-08-13.** Established by saving the
+same project twice on a real M8, identical but for the mix EQ, and diffing (§7 step 8's method,
+executed early because the hardware was available). The two files differ in 17 bytes: one
+18-byte EQ block, plus the project name and what appears to be a save counter.
+
+**Four more EQ blocks sit immediately after the instrument bank array**, in the same 18-byte
+format:
+
+```
+mix_eq_offset = Offsets::eq + instrument_eq_count * 18
+```
+
+which is `0x1AF9E` on a 32-bank V4 file and `0x1B65E` on a 128-bank one. Verified on V4EMPTY
+(4.0.1), V4-1EMPTY (4.2.0) and a hardware save (6.5.0) — in every one, exactly 72 bytes of EQ
+follow the banks.
+
+| Block | Offset | Purpose | Default bands |
+|---|---|---|---|
+| 0 | `+0` | **Main mix** — confirmed by the diff | LOWSHELF 100 / BELL 1k / HI.SHELF 5k |
+| 1 | `+18` | ModFX *(inferred)* | LOWCUT 100 / BELL 1k / HI.SHELF 5k |
+| 2 | `+36` | Delay *(inferred)* | LOWCUT 500 / BELL 1k / HI.CUT 10k |
+| 3 | `+54` | Reverb *(inferred)* | LOWCUT 200 / BELL 1k / HI.CUT 8.8k |
+
+Block 0 is fact — it is the one that changed. The other three are an inference from their
+defaults and from the order the Effects screen lists them: a send rolled off at 10 kHz and cut
+below 500 Hz reads as a delay, one rolled off at 8.8 kHz as a reverb. Confirm the same way if
+it matters — set a distinctive EQ on the delay from Effects Settings, save, diff.
+
+The confirming values also re-prove §4a on a different EQ instance entirely: `+12.00 dB / 137 Hz
+/ Q 3` came back as `01 89 00 B0 04 03`, where `0x0089` is 137 and `0x04B0` is 1200.
+
+**Version reach.** The hardware save reports **6.5.0** and decodes cleanly at the V4.1 offsets,
+so this layout has been stable from 4.1 through at least 6.5. It also carries **32 bytes past
+the four EQ blocks** that 4.x files do not — fields added since, which we do not parse. They are
+safe: `BinaryWriter` only ever grows its buffer and `finish()` returns the whole thing, so
+anything past what the library writes survives a save untouched.
 
 **Incidental confirmations.** The bank offset and version-dependent count are right — V4EMPTY
 (4.0.1) decodes cleanly as 32 banks and V4-1EMPTY (4.2.0) as 128, both at `0x1AD5E`. Note that
@@ -179,8 +229,10 @@ view we don't have.
 
 1. [x] **Settle the encoding offline.** Done 2026-08-13 — see §4. Frequency, gain and Q are
        confirmed; ALLPASS remains an inference. `tools/eq_dump.py` reproduces it.
-2. [ ] **Load and save EQ banks.** `Song::eqs` ⇄ engine state, bank count from the song version.
-       Byte-identical round-trip must still hold.
+2. [x] **Load and save EQ banks.** Done 2026-08-13. `Song::eqs` ⇄ `EngineState::eqs[128]`,
+       taking however many the song carries. The packed type/mode byte is kept alongside the
+       decoded fields and used as the base when writing back, so bits 3-4 survive untouched.
+       Tests L16-L19 (`[io]`), the last of which diffs the EQ block byte-for-byte.
 3. [ ] **Biquads.** Seven types, five stereo modes, coefficients on change only, reset on
        `LOAD_SONG`.
 4. [ ] **Wire instrument EQ.** Per-voice, bank index from the instrument, applied in the voice
@@ -189,9 +241,12 @@ view we don't have.
 6. [ ] **Editor screen.** Layout, navigation, the shortcuts listed above, entered from the
        Instrument and Instrument Pool screens.
 7. [ ] **Bank assignment.** Make the existing `eq` field editable on both screens.
-8. [ ] **Find where the main mix and effect EQs live in the file.** Write a known EQ on the
-       device, save, and diff the bytes against a copy saved without it. Until this lands, those
-       four EQs stay unbuilt — a control that doesn't persist is worse than no control.
+8. [ ] **Wire the main mix and effect EQs.** Their location is no longer unknown — see §4c;
+       they are four 18-byte blocks at `Offsets::eq + instrument_eq_count * 18`. What remains is
+       reading them into engine state, applying them (mix EQ into the master chain where the
+       chain diagram already reserves a slot, the other three on their send returns), and making
+       the mixer's EQ label a cursor stop that opens the editor. Confirm the ModFX/Delay/Reverb
+       ordering first with one more device diff if it matters.
 9. [ ] **Fold findings into reference docs, then archive this spec.** Cannot be ticked while any
        step above is unticked (`AGENTS.md` §9).
 
@@ -199,10 +254,14 @@ view we don't have.
 
 ## 8. Known limitations to carry forward
 
-- ALLPASS as type 6 is an inference — no file in the tree uses any type but 1, 2 or 4. The raw
-  byte round-trips untouched, so a wrong guess mislabels a band rather than corrupting a file.
-- The main mix EQ and the three effect EQs are not built; their bytes are preserved blind, as
-  they are today. Step 8 is what unblocks them.
+- Which of the three effect EQ blocks is ModFX, Delay and Reverb is an inference from their
+  default frequencies and the Effects screen's ordering (§4c). Block 0, the main mix, is
+  confirmed. One more device save-and-diff would settle the rest.
+- The main mix EQ and the three effect EQs are located but not yet built; their bytes are
+  preserved untouched meanwhile.
+- Files from firmware 6.5.0 carry 32 bytes past the four EQ blocks that 4.x files do not. We
+  do not parse them. They survive a save because the writer only grows its buffer, but nothing
+  tells us what they are.
 - Curve resolution is 7 sub-positions per cell; steep slopes will read as dots.
 - Q is stored as a plain byte and its mapping to an actual filter Q is not known. The values
   seen in real files (50, 90) and on the device (69) suggest a range, not a scale. Step 3 has

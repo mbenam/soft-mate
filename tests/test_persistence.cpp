@@ -860,3 +860,99 @@ TEST_CASE("L15 SPEAKER VOL is never written to the song", "[io]") {
     std::remove("spk_a.m8s");
     std::remove("spk_b.m8s");
 }
+
+// ---------------------------------------------------------------------------
+// EQ banks (EQ_SPEC.md step 2). The encoding is confirmed in EQ_SPEC.md §4;
+// these pin that we decode it the same way and give the bytes back unchanged.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("L16 EQ banks load at their factory defaults", "[io]") {
+    auto result = loadSong(songPath("V4EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    // Every song file in the tree carries the M8's factory EQ: a low shelf at
+    // 100 Hz, a bell at 1 kHz, a high shelf at 5 kHz, all flat, Q 50, stereo.
+    const auto& bank = result.state.eqs[0];
+    REQUIRE(bank.low.type  == 1);      // LOWSHELF
+    REQUIRE(bank.mid.type  == 2);      // BELL
+    REQUIRE(bank.high.type == 4);      // HI.SHELF
+    REQUIRE(bank.low.freq  == 100);
+    REQUIRE(bank.mid.freq  == 1000);
+    REQUIRE(bank.high.freq == 5000);
+    REQUIRE(bank.low.gain  == 0);
+    REQUIRE(bank.mid.q     == 50);
+    REQUIRE(bank.high.mode == 0);      // STEREO
+}
+
+TEST_CASE("L17 EQ bank count follows the song version", "[io]") {
+    // V4 carries 32 banks, V4.1+ carries 128. Banks past the file's count stay
+    // at their defaults rather than reading garbage.
+    auto v4 = loadSong(songPath("V4EMPTY.m8s"), "");
+    auto v41 = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(v4.ok);
+    REQUIRE(v41.ok);
+
+    // Bank 100 exists only in the larger file; in both cases it must decode to
+    // something sane rather than to noise.
+    REQUIRE(v4.state.eqs[100].low.freq == 100);
+    REQUIRE(v41.state.eqs[100].low.freq == 100);
+    REQUIRE(v4.state.eqs[100].mid.type == 2);
+    REQUIRE(v41.state.eqs[100].mid.type == 2);
+}
+
+TEST_CASE("L18 edited EQ survives save and reload", "[io]") {
+    auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    // Values chosen to exercise the whole encoding: a negative gain (two's
+    // complement across both bytes), a frequency needing both bytes, a
+    // non-default type and a non-stereo mode.
+    auto edited = result.state;
+    edited.eqs[3].mid.type = 3;         // BANDPASS
+    edited.eqs[3].mid.mode = 2;         // SIDE
+    edited.eqs[3].mid.freq = 1547;
+    edited.eqs[3].mid.gain = -500;      // -5.00 dB
+    edited.eqs[3].mid.q    = 69;
+
+    std::string err;
+    REQUIRE(saveSong("eq_rt.m8s", result, result.sequencer, edited, err));
+    auto again = loadSong("eq_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    const auto& band = again.state.eqs[3].mid;
+    REQUIRE(band.type == 3);
+    REQUIRE(band.mode == 2);
+    REQUIRE(band.freq == 1547);
+    REQUIRE(band.gain == -500);
+    REQUIRE(band.q    == 69);
+
+    std::remove("eq_rt.m8s");
+}
+
+TEST_CASE("L19 untouched EQ banks round-trip byte-identically", "[io]") {
+    // The whole point of decoding into ints and re-packing is that it must be
+    // lossless. L4 covers the file as a whole; this narrows it to the EQ block
+    // so a failure here names the culprit directly.
+    auto path = songPath("V4-1EMPTY.m8s");
+    auto result = loadSong(path, "");
+    REQUIRE(result.ok);
+
+    std::string err;
+    REQUIRE(saveSong("eq_identity.m8s", result, result.sequencer, result.state, err));
+
+    auto orig = readFile(path);
+    auto rt   = readFile("eq_identity.m8s");
+    REQUIRE(orig.size() == rt.size());
+
+    // 0x1AD5E, 128 banks of 18 bytes -- see EQ_SPEC.md §4.
+    constexpr size_t kEqOffset = 0x1AD5A + 4;
+    constexpr size_t kEqBytes  = 128 * 18;
+    REQUIRE(orig.size() >= kEqOffset + kEqBytes);
+
+    size_t diffs = 0;
+    for (size_t i = kEqOffset; i < kEqOffset + kEqBytes; ++i)
+        if (orig[i] != rt[i]) ++diffs;
+    REQUIRE(diffs == 0);
+
+    std::remove("eq_identity.m8s");
+}
