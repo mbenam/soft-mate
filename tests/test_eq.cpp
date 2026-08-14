@@ -318,7 +318,7 @@ TEST_CASE("EQ12 an assigned instrument EQ shapes that track", "[eq]") {
     EqBank cut;
     // Kill everything below 2 kHz on the low band; the source is a bright saw,
     // so this has to remove real energy.
-    cut.low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 70, 0x00 };
+    cut.low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 50, 0x00 };  // Q 1.0: no resonant peak
 
     const auto dry = renderWithInstrumentEq(0, nullptr);
     const auto eqd = renderWithInstrumentEq(7, &cut);
@@ -567,7 +567,7 @@ TEST_CASE("EQ22 the mix EQ is applied to the master bus", "[eq]") {
         state.instruments[0].macrosyn.pan = 0x80;
         state.instruments[0].macrosyn.amp = 0x20;
         if (withEq)  // cut everything below 2 kHz on the whole mix
-            state.eqs[kEqMix].low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 70, 0x00 };
+            state.eqs[kEqMix].low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 50, 0x00 };  // Q 1.0
 
         setStep(host.sequencer(), 0, 0, 60, 127, 0);
         host.push(playPhrase(0, 0, 0));
@@ -581,4 +581,85 @@ TEST_CASE("EQ22 the mix EQ is applied to the master bus", "[eq]") {
     const double cut = render(true);
     REQUIRE(dry > 0.0);
     REQUIRE(cut < dry * 0.9);
+}
+
+TEST_CASE("EQ23 sends are stereo and carry pan", "[eq]") {
+    // A hard-panned track used to reach the effects dead centre, because the
+    // send was taken before panning. Now the reverb hears it on one side.
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    auto& m = state.instruments[0].macrosyn;
+    m.dry = 0x00;          // reverb return only, so the dry path can't mask it
+    m.rev = 0xFF;
+    m.pan = 0x00;          // hard left
+    m.amp = 0x20;
+    state.mixer.rev_vol = 0xFF;
+
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(8000);
+
+    double l = 0.0, r = 0.0;
+    const auto& a = host.audio();
+    for (size_t i = 0; i + 1 < a.size(); i += 2) { l += std::fabs(a[i]); r += std::fabs(a[i + 1]); }
+    REQUIRE(l > 0.0);
+    REQUIRE(l > r * 1.5);   // clearly weighted left, not centred
+}
+
+TEST_CASE("EQ24 a send's input EQ shapes that send only", "[eq]") {
+    // Measures the reverb return ALONE (dry = 0). An earlier version of this
+    // left the dry path in and asserted that a low cut lowered total energy;
+    // it did not, twice. With dry present, most of what is measured is the dry
+    // signal plus its interference with a diffuse reverb tail, and the sign of
+    // that is not something to reason about -- the failures were the test's
+    // prediction being wrong, not the EQ. (They did prove the wiring: an
+    // unwired send EQ would have given identical numbers, not different ones.)
+    //
+    // So: isolate the return, and cut hard enough that direction cannot be in
+    // doubt. A low-pass at 30 Hz leaves the reverb essentially nothing to work
+    // with, whatever its own frequency response happens to be.
+    auto render = [](bool killReverbSend) {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        auto& m = state.instruments[0].macrosyn;
+        m.dry = 0x00;          // reverb return only
+        m.rev = 0xFF;
+        m.pan = 0x80;
+        m.amp = 0x20;
+        state.mixer.rev_vol = 0xFF;
+        if (killReverbSend)    // the reverb's INPUT EQ, not the delay's or the mix's
+            state.eqs[kEqReverb].low = EqBand{ 5 /*HICUT*/, 0, 30, 0, 50, 0x00 };
+
+        setStep(host.sequencer(), 0, 0, 60, 127, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(8000);
+        double e = 0.0;
+        for (float v : host.audio()) e += double(v) * v;
+        return e;
+    };
+    const double open = render(false);
+    const double killed = render(true);
+    REQUIRE(open > 0.0);
+    REQUIRE(killed < open * 0.1);   // the send is gone, so the return is too
+}
+
+TEST_CASE("EQ25 stereo sends allocate nothing on the audio thread", "[eq]") {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    state.instruments[0].macrosyn.dry = 0x80;
+    state.instruments[0].macrosyn.cho = 0x80;
+    state.instruments[0].macrosyn.del = 0x80;
+    state.instruments[0].macrosyn.rev = 0x80;
+    state.eqs[kEqModFx].mid  = EqBand{ 2, 1, 900,  600, 60, 0x22 };
+    state.eqs[kEqDelay].mid  = EqBand{ 2, 2, 1500, -400, 70, 0x42 };
+    state.eqs[kEqReverb].low = EqBand{ 0, 0, 400,  0, 55, 0x00 };
+
+    g_allocCount = 0;
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(8000);
+    REQUIRE(g_allocCount == 0);
 }

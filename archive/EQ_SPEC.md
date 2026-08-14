@@ -2,9 +2,10 @@
 
 > **COMPLETE / ARCHIVED 2026-08-13.** All nine steps done; suite green at 265 cases.
 > Findings folded into `hw_findings.md` §UI-5, `AGENTS.md` §7 and `status.md`.
-> Carried forward and not scheduled: the three send EQs are stored and editable but not
-> applied (§8) — they need the sends to become stereo first. The ModFX/Delay/Reverb block
-> ordering was confirmed on hardware 2026-08-13 (§4c) and is no longer a blocker.
+> Both items this spec carried forward are now closed: the block ordering was confirmed on
+> hardware (§4c), and the send EQs are applied on stereo send buses (§8). What remains open is
+> only a question nobody has measured — whether hardware taps a send before or after the
+> instrument's own EQ.
 
 A 3-band parametric EQ, its editor screen, and the bank system instruments use to share
 settings. Decided 2026-08-13 from the M8 manual's EQ section, a photo of the EQ Editor view,
@@ -283,11 +284,19 @@ view we don't have.
 
 ## 8. Known limitations to carry forward
 
-- **The three send EQs are not applied to audio.** They round-trip and can be edited, but the
-  sends are mono floats inside the mix loop, so four of the five stereo modes would be
-  meaningless on them; the device calls these "INPUT EQ", so they belong on the send *before*
-  its effect. Doing it properly means the sends becoming stereo, which is the same change the
-  instrument EQ's send limitation needs. Until then they are stored, not heard.
+- ~~The three send EQs are not applied to audio.~~ **Done 2026-08-13.** The sends are stereo
+  pairs now, taken post-pan, with each send's INPUT EQ applied to its own bus before the
+  effect. Two incidental fixes came with it: a hard-panned track now reaches the effects on
+  its own side, and the delay's two lines get separate channels rather than the same signal
+  twice. One send is still summed to mono at the very end -- DaisySP's Chorus takes a mono
+  input by design and makes its own stereo spread.
+  *Behaviour change:* send levels fall roughly 3 dB for centred material, since a post-pan
+  send gives each side 0.707 instead of feeding 1.0 to both. The previous arrangement
+  double-counted; this one preserves power.
+- **Whether hardware taps a send before or after the instrument's own EQ is unknown.** Ours
+  taps before, so an instrument's EQ shapes its dry path but not what it feeds the effects.
+  Routing it through would also need a second filter instance per track, since two different
+  signals cannot share one filter's state. Not guessed.
 - Files from firmware 6.5.0 carry 32 bytes past the four EQ blocks that 4.x files do not. We
   do not parse them. They survive a save because the writer only grows its buffer, but nothing
   tells us what they are.

@@ -172,6 +172,7 @@ void Engine::processCommands() {
                 m_limGain = 1.0f;
                 for (int i = 0; i < 8; ++i) m_trackEq[i].reset();
                 m_mixEq.reset();
+                for (int i = 0; i < 3; ++i) m_sendEq[i].reset();
                 for (int i = 0; i < 2; ++i) { m_ottLpL[i] = 0.0f; m_ottLpR[i] = 0.0f; }
                 for (int i = 0; i < 3; ++i) { m_ottEnvL[i] = 0.0f; m_ottEnvR[i] = 0.0f; }
                 for (int i = 0; i < 9; ++i) {
@@ -713,6 +714,9 @@ void Engine::publishMeters(int frames) {
 void Engine::render(float* buffer, int frames) {
     configureTrackEqs();
     m_mixEq.configure(m_state.eqs[kEqMix], kSampleRate);
+    m_sendEq[0].configure(m_state.eqs[kEqModFx],  kSampleRate);
+    m_sendEq[1].configure(m_state.eqs[kEqDelay],  kSampleRate);
+    m_sendEq[2].configure(m_state.eqs[kEqReverb], kSampleRate);
 
     for (int i = 0; i < frames; ++i) {
         m_frameCounter++;
@@ -725,9 +729,11 @@ void Engine::render(float* buffer, int frames) {
 
         float mixL = 0.0f;
         float mixR = 0.0f;
-        float sendCho = 0.0f;
-        float sendDel = 0.0f;
-        float sendRev = 0.0f;
+        // Sends are stereo and taken post-pan, so a hard-panned track reaches
+        // the effects on the side it actually sits on (EQ_SPEC.md §8).
+        float sendChoL = 0.0f, sendChoR = 0.0f;
+        float sendDelL = 0.0f, sendDelR = 0.0f;
+        float sendRevL = 0.0f, sendRevR = 0.0f;
 
         for (int t = 0; t < 8; ++t) {
             float vSamp = m_voices[t].renderSample(m_envCtx);
@@ -786,11 +792,12 @@ void Engine::render(float* buffer, int frames) {
             // -- the voice path itself is mono, so running it any earlier would
             // make the MID/SIDE/LEFT/RIGHT modes meaningless.
             //
-            // KNOWN LIMITATION: the sends below are taken from vSamp, which is
-            // pre-EQ, so an instrument's EQ shapes what you hear dry but not
-            // what it feeds to chorus/delay/reverb. Moving the sends behind the
-            // EQ would change their levels on every existing song; doing it
-            // properly means the sends becoming stereo too (EQ_SPEC.md §8).
+            // The sends below are post-pan but still pre-EQ: an instrument's
+            // EQ shapes what you hear dry, not what it feeds to the effects.
+            // Whether hardware puts the instrument EQ before or after the send
+            // tap is not known, and this is deliberately not guessed -- routing
+            // it through would need a second filter instance per track anyway,
+            // since two different signals cannot share one filter's state.
             //
             // A bypassed EQ returns immediately without touching either value,
             // so a song with no EQ assigned renders bit-identically to before.
@@ -809,16 +816,27 @@ void Engine::render(float* buffer, int frames) {
             if (aR > m_meterBlockR[t]) m_meterBlockR[t] = aR;
             if (aL >= 1.0f || aR >= 1.0f) m_meterClip[t] = true;
 
-            sendCho += vSamp * cho;
-            sendDel += vSamp * del;
-            sendRev += vSamp * rev;
+            // Post-pan, but NOT through the instrument EQ -- see the note at
+            // m_trackEq[t].process above.
+            sendChoL += vSamp * cho * panL;  sendChoR += vSamp * cho * panR;
+            sendDelL += vSamp * del * panL;  sendDelR += vSamp * del * panR;
+            sendRevL += vSamp * rev * panL;  sendRevR += vSamp * rev * panR;
         }
+
+        // Each send's INPUT EQ, applied to the send bus before its effect --
+        // which is what the device calls it and where it belongs.
+        m_sendEq[0].process(sendChoL, sendChoR);
+        m_sendEq[1].process(sendDelL, sendDelR);
+        m_sendEq[2].process(sendRevL, sendRevR);
 
         m_smoothChoFreq += ((m_state.effects.cho_mod_freq / 255.0f) * 10.0f - m_smoothChoFreq) * 0.005f;
         m_smoothChoDepth += (m_state.effects.cho_mod_depth / 255.0f - m_smoothChoDepth) * 0.005f;
         m_chorus.SetLfoFreq(m_smoothChoFreq);
         m_chorus.SetLfoDepth(m_smoothChoDepth);
-        m_chorus.Process(sendCho);
+        // DaisySP's Chorus takes a mono input and produces its own stereo
+        // spread, so this one send is summed back down. Delay and reverb below
+        // take both channels.
+        m_chorus.Process(0.5f * (sendChoL + sendChoR));
         float choL = m_chorus.GetLeft();
         float choR = m_chorus.GetRight();
 
@@ -831,13 +849,16 @@ void Engine::render(float* buffer, int frames) {
         float delFeed = std::min(m_state.effects.del_feedback / 255.0f, 0.98f);
         float delL = dcBlock(m_delayL.Read(), m_dcDelL);
         float delR = dcBlock(m_delayR.Read(), m_dcDelR);
-        m_delayL.Write(sendDel + delL * delFeed);
-        m_delayR.Write(sendDel + delR * delFeed);
+        // Both lines now get their own channel. They always had independently
+        // smoothed times, but were fed the identical signal, so the width and
+        // time offset did far less than they looked like they did.
+        m_delayL.Write(sendDelL + delL * delFeed);
+        m_delayR.Write(sendDelR + delR * delFeed);
 
         float fb = m_state.effects.rev_decay / 255.0f; if(fb > 0.98f) fb = 0.98f; m_reverb.SetFeedback(fb);
         m_reverb.SetLpFreq(10000.0f);
         float revL = 0.0f, revR = 0.0f;
-        m_reverb.Process(sendRev, sendRev, &revL, &revR);
+        m_reverb.Process(sendRevL, sendRevR, &revL, &revR);
         revL = dcBlock(revL, m_dcRevL);
         revR = dcBlock(revR, m_dcRevR);
 

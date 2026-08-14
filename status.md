@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 266 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- **Tests**: Catch2 v3 — 269 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -66,7 +66,7 @@ Targets:
   with verification. Cursor detection fixed for grid screens (`<` character marker). CLI modes:
   `--load-file`, `--goto-screen`, `--read-field`, `--dump-screen`, `--json`, `--keys`,
   `--record-frames`, `--pin-gestures`.
-- `m8_tests` — 266 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- `m8_tests` — 269 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -137,8 +137,16 @@ the mixer's EQ label. Tests: `[eq]` (22 cases).
 (hundredths of a dB), and the location of the four bus EQs — main mix plus ModFX/Delay/Reverb,
 immediately after the bank array. Q's curve is measured from the device's own response display,
 `Q = 10^((byte-50)/50)`, which puts the default of 50 on exactly 1.0.
-*Not applied:* the three send EQs load, save and edit but do not affect audio — the sends are
-mono, and these are input EQs that want stereo sends first.
+**All four bus EQs are applied** (2026-08-13): the main mix EQ in the master chain, and each
+send's INPUT EQ on its own send bus before the effect. That needed the sends to become stereo,
+which also fixed two things that were quietly wrong — sends are now taken post-pan, so a
+hard-panned track reaches the effects on the side it sits on, and the delay's two lines get
+their own channel instead of the identical signal, so its width and time offset finally do
+what they look like they do.
+*Behaviour change:* send levels drop about 3 dB for centred material, because a post-pan send
+gives each side 0.707 rather than feeding 1.0 to both. The old arrangement double-counted.
+*Still unknown:* whether hardware taps the send before or after the instrument's own EQ. Ours
+taps before, and does not guess.
 
 ### Synth engines — all four are now audible (2026-07-17)
 The M8's four synth instrument types each render their own sound; none is the old shared saw.
@@ -299,7 +307,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 266 cases
+### Tests — 269 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]

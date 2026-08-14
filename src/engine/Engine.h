@@ -802,6 +802,9 @@ private:
     // configure() early-outs when the bank is unchanged, so that is cheap.
     EqProcessor m_trackEq[8];
     EqProcessor m_mixEq;          // master bus, between OTT and the limiter
+    // Input EQ for each send, applied to the send bus before its effect --
+    // ModFX, Delay, Reverb, in the order confirmed on hardware (EQ_SPEC.md §4c).
+    EqProcessor m_sendEq[3];
     void configureTrackEqs();
 
     // ---- Master bus state ---------------------------------------------------
