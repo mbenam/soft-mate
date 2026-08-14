@@ -158,6 +158,19 @@ JsonResult assertFirmware(M8Device& dev, int major, int minor, int patch);
 JsonResult dismissModal(M8Device& dev, bool confirm,
                         int holdMs = 15, int maxRetries = 5);
 
+// ---- Grid geometry ---------------------------------------------------------
+
+// Left-edge X of every column on a grid screen, read off its column-header row.
+//
+// Each run of consecutive non-space header cells is one column -- single digits
+// "1".."8" on SONG, multi-character labels like "FX1" on PHRASE -- so a gap
+// wider than one glyph (8px) starts a new column. Exposed for testing because
+// this arithmetic is the part of moveCursorToGrid most prone to off-by-one, and
+// the rest of that function needs a live device.
+//
+// Returns an empty vector if the header row has no readable cells.
+std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY);
+
 // ---- Recovery --------------------------------------------------------------
 
 // Escape an unknown or stuck UI state without human help, and report where we

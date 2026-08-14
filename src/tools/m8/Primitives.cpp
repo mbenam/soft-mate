@@ -124,6 +124,20 @@ JsonResult dismissModal(M8Device& dev, bool confirm, int holdMs, int maxRetries)
                             dev.grid());
 }
 
+// ---- gridColumnEdges -------------------------------------------------------
+
+std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY) {
+    std::vector<int> xs;
+    for (auto& [pos, c] : grid.cells)
+        if (pos.first == headerY && c.ch != ' ' && pos.second < ScreenGrid::MAIN_X_MAX)
+            xs.push_back(pos.second);
+    std::sort(xs.begin(), xs.end());
+    std::vector<int> edges;
+    for (size_t i = 0; i < xs.size(); ++i)
+        if (i == 0 || xs[i] - xs[i - 1] > 8) edges.push_back(xs[i]);
+    return edges;
+}
+
 // ---- panicHome -------------------------------------------------------------
 
 JsonResult panicHome(M8Device& dev, int holdMs, int maxUp, bool confirmModals) {
@@ -509,21 +523,11 @@ static int detectCellPitch(const ScreenGrid& grid) {
 }
 
 // Detect the pixel pitch (gap between data columns) from the grid cells.
-static int detectColPitch(const ScreenGrid& grid) {
-    std::set<int> xs;
-    for (auto& [pos, c] : grid.cells) {
-        if (pos.first >= 0 && c.ch != ' ')
-            xs.insert(pos.second);
-    }
-    if (xs.size() < 3) return 8;  // default M8 pitch
-    int minGap = 999, prev = *xs.begin();
-    for (auto it = std::next(xs.begin()); it != xs.end(); ++it) {
-        int gap = *it - prev;
-        if (gap > 1 && gap < minGap) minGap = gap;
-        prev = *it;
-    }
-    return (minGap < 999) ? minGap : 8;
-}
+// detectColPitch() was removed here. It returned the smallest gap between any
+// two non-space cells on the screen -- 8px, the pitch of adjacent glyphs inside
+// a single cell -- not the pitch between grid columns (24px on SONG), which is
+// what its one caller needed. moveCursorToGrid now derives column edges from the
+// column-header row instead. See M8_DRIVER_BUGS.md #23.
 
 // Find the row/col label cell reading exactly `text` in the leftmost label
 // column (x < 16). Layout-based, not cursor-state-based: on a real device
@@ -583,7 +587,6 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
     }
 
     int rowPitch = detectCellPitch(dev.grid());
-    int colPitch = detectColPitch(dev.grid());
 
     // Calibrate step 0's Y from its row label ("0"), not from cursor state --
     // this is fixed screen layout, unaffected by where the cursor is now.
@@ -592,29 +595,71 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
         return JsonResult::fail("moveCursorToGrid: cannot find step-0 row label", dev.grid());
     }
 
-    // Column 0's X: from the current cursor cell if visible now (floored to
-    // the data area so the header's cyan column label can't be mistaken for
-    // it), else from the step-0 label's own column (both share the left edge).
-    int firstColX = -1;
-    int cy = -1, cx = -1;
-    if (findCursorCell(dev.grid(), firstStepY, cy, cx)) {
-        firstColX = cx;
-    } else {
-        for (auto& [pos, c] : dev.grid().cells) {
-            if (pos.first == firstStepY && pos.second < 16) { firstColX = pos.second; break; }
-        }
+    // Column geometry comes from the COLUMN-HEADER row, one row above step 0.
+    //
+    // The three things this replaces were each independently wrong, and the
+    // combination made every call fail (M8_DRIVER_BUGS.md #23):
+    //   - detectColPitch() returned the smallest gap between any two non-space
+    //     cells on the screen, i.e. 8px -- the pitch of adjacent glyphs INSIDE
+    //     one cell, not the 24px pitch between SONG's track columns.
+    //   - column 0's X was taken from wherever the cursor happened to be, so
+    //     the current column always computed as 0.
+    //   - findCursorCell() returns the LEFTMOST accent cell on the cursor's
+    //     row, which is the row-number label. Its X does not change when the
+    //     cursor moves sideways, so the column reading was pinned.
+    // With pitch 8, "col 2" meant 16px right of the cursor -- inside the
+    // current cell, where RIGHT (a full 24px hop) can never land. The loop
+    // oscillated 0 -> 3 -> 0 until maxSteps ran out.
+    //
+    // Header runs are the honest source: each run of consecutive non-space
+    // header cells is exactly one column ("1".."8" on SONG, "FX1" etc. on
+    // PHRASE), and its start X is that column's left edge.
+    const int headerY = firstStepY - rowPitch;
+    const std::vector<int> colX = gridColumnEdges(dev.grid(), headerY);
+    if (colX.empty()) {
+        return JsonResult::fail("moveCursorToGrid: cannot read the column header row",
+                                dev.grid());
     }
-    if (firstColX < 0) {
-        return JsonResult::fail("moveCursorToGrid: cannot detect column position", dev.grid());
+    if (targetCol < 0 || targetCol >= static_cast<int>(colX.size())) {
+        return JsonResult::fail("moveCursorToGrid: col " + std::to_string(targetCol)
+                                + " out of range; this screen has "
+                                + std::to_string(colX.size()) + " columns", dev.grid());
     }
 
-    // Calculate current position from the accent-colored cursor cell only.
-    int curStepY = cy, curColX = cx;
-    if (curStepY < 0 && !findCursorCell(dev.grid(), firstStepY, curStepY, curColX)) {
+    // Current column: the M8 accent-highlights the header cell of the column
+    // the cursor is on (confirmed fw 6.5.2 -- `m8drv inspect` showed the track-6
+    // header digit accent-coloured while the cursor sat in track 6). That is a
+    // direct readout, not a measurement. Fall back to measuring the cursor's
+    // own data-area X against the column edges if no header cell is accented,
+    // since header highlighting is only verified on SONG.
+    auto readCol = [&](void) -> int {
+        for (auto& [pos, c] : dev.grid().cells)
+            if (pos.first == headerY && dev.grid().isCursor(c) && c.ch != ' ') {
+                int best = -1;
+                for (size_t i = 0; i < colX.size(); ++i)
+                    if (colX[i] <= pos.second) best = static_cast<int>(i);
+                if (best >= 0) return best;
+            }
+        // Fallback: rightmost accent cell on the cursor's row, which skips the
+        // row-number label and lands in the data area.
+        int cursorY = dev.grid().cursorRowY(), bestX = -1;
+        for (auto& [pos, c] : dev.grid().cells)
+            if (pos.first == cursorY && dev.grid().isCursor(c) && c.ch != ' '
+                && pos.second >= colX.front() && pos.second < ScreenGrid::MAIN_X_MAX)
+                bestX = std::max(bestX, pos.second);
+        if (bestX < 0) return -1;
+        int best = -1;
+        for (size_t i = 0; i < colX.size(); ++i)
+            if (colX[i] <= bestX) best = static_cast<int>(i);
+        return best;
+    };
+
+    int curStepY = -1, curColX = -1;
+    if (!findCursorCell(dev.grid(), firstStepY, curStepY, curColX)) {
         return JsonResult::fail("moveCursorToGrid: cannot detect cursor position", dev.grid());
     }
     int curStep = (curStepY - firstStepY) / rowPitch;
-    int curCol = (curColX - firstColX) / colPitch;
+    int curCol = readCol();
 
     // Navigate to target.
     int lastStep = curStep, lastCol = curCol;
@@ -625,7 +670,7 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
         int actualStepY = -1, actualColX = -1;
         if (findCursorCell(dev.grid(), firstStepY, actualStepY, actualColX)) {
             curStep = (actualStepY - firstStepY) / rowPitch;
-            curCol = (actualColX - firstColX) / colPitch;
+            curCol = readCol();
         }
 
         if (curStep == targetStep && curCol == targetCol) {

@@ -14,6 +14,7 @@
 
 #include "m8/M8Device.h"
 #include "m8/ScreenModel.h"
+#include "m8/Primitives.h"
 #include "m8/DeviceScriptRunner.h"
 #include "m8/Semantic.h"
 #include "m8/UiCapture.h"
@@ -134,6 +135,49 @@ TEST_CASE("cursorRowY prefers the row label over the column header", "[hwdecode]
     // real label is still 110 -- what matters is that the ' ' at col 3 never
     // becomes the answer on its own.
     REQUIRE(grid.cursorRowY() == 110);
+}
+
+// M8_DRIVER_BUGS.md #23. Column edges must come from the header row's runs, not
+// from the smallest glyph gap on screen -- the old code measured 8px (adjacent
+// glyphs inside one cell) where SONG's track columns are 24px apart.
+TEST_CASE("gridColumnEdges reads SONG's eight track columns", "[hwdecode]") {
+    ScreenGrid grid;
+    // SONG header at y=50: single digits 1..8, 24px apart starting at x=32.
+    for (int i = 0; i < 8; ++i)
+        grid.handleFrame(makeCharFrame('1' + i, 32 + i * 24, 50, 255, 255, 255, 0, 0, 0));
+    // A data row below must not contribute columns.
+    grid.handleFrame(makeCharFrame('0', 8, 60, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('0', 16, 60, 255, 255, 255, 0, 0, 0));
+
+    auto edges = m8::dev::gridColumnEdges(grid, 50);
+    REQUIRE(edges.size() == 8);
+    REQUIRE(edges.front() == 32);
+    REQUIRE(edges[1] == 56);
+    REQUIRE(edges.back() == 32 + 7 * 24);
+}
+
+TEST_CASE("gridColumnEdges groups multi-character column labels", "[hwdecode]") {
+    ScreenGrid grid;
+    // PHRASE-style header: "N" then "FX1" as a 3-glyph run, then "FX2".
+    grid.handleFrame(makeCharFrame('N', 32, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('F', 80, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('X', 88, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('1', 96, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('F', 128, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('X', 136, 50, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('2', 144, 50, 255, 255, 255, 0, 0, 0));
+
+    auto edges = m8::dev::gridColumnEdges(grid, 50);
+    REQUIRE(edges.size() == 3);      // N, FX1, FX2 -- not 7 separate glyphs
+    REQUIRE(edges[0] == 32);
+    REQUIRE(edges[1] == 80);
+    REQUIRE(edges[2] == 128);
+}
+
+TEST_CASE("gridColumnEdges returns empty for a blank header row", "[hwdecode]") {
+    ScreenGrid grid;
+    grid.handleFrame(makeCharFrame('0', 8, 60, 255, 255, 255, 0, 0, 0));
+    REQUIRE(m8::dev::gridColumnEdges(grid, 50).empty());
 }
 
 TEST_CASE("cursorRowY still finds a form-screen cursor label", "[hwdecode]") {
