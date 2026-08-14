@@ -514,6 +514,64 @@ class M8Driver:
             "settled": st.get("settled"),
         }
 
+    def rects(self, key: Optional[str | int] = None) -> Dict[str, Any]:
+        """Show the screen's rect fills (0xFE highlights), which the semantic
+        state does not expose at all.
+
+        This is the missing view for grid screens. `cursorRowY()`
+        (M8Device.cpp:188) finds the cursor by scanning for accent-COLOURED
+        text and explicitly skips any cell inside a highlight
+        (`!isInHighlight(...)`). If the M8 draws a grid cursor as a rect fill
+        rather than as coloured text, that scan can never see it -- so knowing
+        whether a rect sits on the cursor cell decides where grid-cursor
+        tracking has to read from.
+
+        Pass `key` to also report which rects move when that key is pressed:
+        a rect that follows the key IS the cursor.
+        """
+        import tempfile
+
+        def snap() -> Dict[str, Any]:
+            fd, path = tempfile.mkstemp(suffix=".json", prefix="m8drv_cap_")
+            os.close(fd)
+            try:
+                self.send("CAPTURE", path=path)
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            finally:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+        a = snap()
+        out: Dict[str, Any] = {
+            "screen": a.get("screen"),
+            "settled": a.get("settled"),
+            "pitch": [a.get("pitch_x"), a.get("pitch_y")],
+            "palette": a.get("palette"),
+            "rect_count": len(a.get("rects") or []),
+            "rects": a.get("rects"),
+        }
+        if key is not None:
+            self.press(key)
+            b = snap()
+            before = {(r["col"], r["row"], r["w_px"], r["h_px"]) for r in (a.get("rects") or [])}
+            after = {(r["col"], r["row"], r["w_px"], r["h_px"]) for r in (b.get("rects") or [])}
+            out["after_key"] = str(key)
+            out["rects_after"] = b.get("rects")
+            out["rects_gone"] = sorted(before - after)
+            out["rects_new"] = sorted(after - before)
+            moved = (before - after) or (after - before)
+            out["verdict"] = (
+                "a rect MOVED with the key -- the grid cursor is a rect fill, and "
+                "cursorRowY()'s colour scan can never see it (it skips "
+                "highlighted cells). Grid cursor tracking must read `highlights`."
+                if moved else
+                "no rect moved. The cursor is not a rect fill on this screen, so "
+                "the press itself is not landing or does nothing here.")
+        return out
+
     def probe(self, key: str | int, times: int = 3,
               hold: Optional[int] = None) -> Dict[str, Any]:
         """Press a key repeatedly and report exactly what moved.
@@ -682,6 +740,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("keyjazz"); sp.add_argument("note", type=int)
     sp.add_argument("--vel", type=int, default=0x7F)
     sp = sub.add_parser("fields"); sp.add_argument("screen", nargs="?")
+    sp = sub.add_parser("rects", help="show rect fills (highlights); --key to see which move")
+    sp.add_argument("--key", default=None)
     sp = sub.add_parser("cursor-grid", help="move the cursor on a grid screen")
     sp.add_argument("step", type=int); sp.add_argument("col", type=int)
     sp = sub.add_parser("probe", help="press a key N times and report what moved")
@@ -725,6 +785,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "fields":
                 for f in d.fields(a.screen):
                     print(f)
+            elif a.cmd == "rects":
+                print(json.dumps(d.rects(a.key), indent=2))
             elif a.cmd == "cursor-grid":
                 d.cursor_grid(a.step, a.col); _print_screen(d)
             elif a.cmd == "probe":

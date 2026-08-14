@@ -101,10 +101,16 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   true and every field lookup returns `nullopt`
   ([ScreenModel.h:564](../../src/tools/m8/ScreenModel.h:564)), so `cursor <FIELD>`
   cannot reach them at all. Use `cursor-grid <step> <col>`.
-- **`cursor_row`/`cursor_field` are unreliable on grid screens** — see bug #22 in
-  [`M8_DRIVER_BUGS.md`](../../specs/M8_DRIVER_BUGS.md). Confirmed working on PROJECT
-  (cursor tracked 50→60→70→80 through TRANSPOSE/GROOVE/SCALE with
-  `baseline_drift: 0`); confirmed *not* tracking on SONG.
+- **`cursor_row`/`cursor_field` are wrong on grid screens, and `cursor-grid` fails
+  because of it** — bug #22 in [`M8_DRIVER_BUGS.md`](../../specs/M8_DRIVER_BUGS.md).
+  On SONG the reported cursor row is y=50, which is the *track-number header*, not
+  a data row (data starts at y=60). Confirmed working on PROJECT (cursor tracked
+  50→60→70→80 through TRANSPOSE/GROOVE/SCALE, `baseline_drift: 0`), confirmed
+  broken on SONG. Use `rects --key DOWN` to see whether the grid cursor is a rect
+  fill — if it is, `cursorRowY()` cannot see it by construction, since it skips
+  highlighted cells.
+- **Rect fills are invisible to the semantic state.** `state`/`dump` show only
+  cells; the `highlights` array is not in `SemanticState` at all. Use `rects`.
 - **Never compare whole-screen snapshots to detect a change.** `settled` flaps
   between reads, so any comparison including it differs whether or not anything
   moved. This produced a false "keys reach the device" in the first `doctor`
