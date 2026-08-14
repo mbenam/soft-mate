@@ -144,12 +144,17 @@ class M8Driver:
     # one -- do not carry it over as this client's default.
     def __init__(self, port: str = DEFAULT_PORT, exe: str = DEFAULT_EXE,
                  hold_ms: int = 40, verbose: bool = False,
-                 auto_recover: bool = True):
+                 auto_recover: bool = True, unfence: bool = False):
         self.port = port
         self.exe = exe
         self.hold_ms = hold_ms
         self.verbose = verbose
         self.auto_recover = auto_recover
+        # Diagnosis escape hatch for FENCED_FIELDS. The fence exists because a
+        # fixed key sequence was shown not to reach those fields reliably -- but
+        # that finding was made with position reads that we now know were wrong
+        # (bugs #22/#23/#24), so it needs re-testing rather than trusting.
+        self.unfence = unfence
         self.proc: Optional[subprocess.Popen] = None
         self._q: "queue.Queue[Dict[str, Any]]" = queue.Queue()
         self._noise: List[str] = []
@@ -460,10 +465,13 @@ class M8Driver:
     def _guard(self, field: str) -> None:
         key = field.strip().upper()
         if key in FENCED_FIELDS:
-            raise FencedField(
-                f"{key} is not drivable: {FENCED_FIELDS[key]}. "
-                f"Refusing up front rather than thrashing; see "
-                f"specs/M8_DRIVER_BUGS.md.")
+            if not self.unfence:
+                raise FencedField(
+                    f"{key} is not drivable: {FENCED_FIELDS[key]}. "
+                    f"Refusing up front rather than thrashing; see "
+                    f"specs/M8_DRIVER_BUGS.md. Pass --unfence to try anyway.")
+            self._log(f"{key}: fence overridden ({FENCED_FIELDS[key]}) -- "
+                      f"expect this to take a while or fail")
         if key in HOME_FIRST_FIELDS:
             # Bug #21 only bites from a dirty cursor position, so establish a
             # known one first.
@@ -789,6 +797,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--no-recover", action="store_true",
                    help="do not kill/restart/HOME on timeout (debugging only)")
+    p.add_argument("--unfence", action="store_true",
+                   help="attempt fields refused by FENCED_FIELDS (diagnosis only)")
 
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor", help="prove the loop works end to end")
@@ -833,7 +843,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         with M8Driver(port=a.port, exe=a.exe, hold_ms=a.hold_ms,
-                      verbose=a.verbose, auto_recover=not a.no_recover) as d:
+                      verbose=a.verbose, auto_recover=not a.no_recover,
+                      unfence=a.unfence) as d:
             if a.cmd == "doctor":
                 print(json.dumps(d.doctor(), indent=2))
             elif a.cmd == "dump":
