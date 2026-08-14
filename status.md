@@ -63,9 +63,40 @@ Targets:
   a text grid and drives the device closed-loop. **Tiers 0–2 complete:** `M8Device` library (serial +
   SLIP + ScreenGrid), screen identity + nav graph (`ScreenModel.h`), all 16 direction/edit gesture
   masks pinned on firmware 6.5.2 via `--pin-gestures`, `editValue`/`enterNote`/`clearCell` implemented
-  with verification. Cursor detection fixed for grid screens (`<` character marker). CLI modes:
+  with verification. CLI modes:
   `--load-file`, `--goto-screen`, `--read-field`, `--dump-screen`, `--json`, `--keys`,
-  `--record-frames`, `--pin-gestures`.
+  `--record-frames`, `--pin-gestures`, `--serve`.
+- `m8drv` (`tools/m8drv/m8drv.py`, docs: `docs/tools/m8drv.md`) — **Python supervision layer over
+  `m8_nav --serve`, and the way to drive the device unattended.** One process, one connection, many
+  commands, with per-command timeouts and automatic recovery (kill → restart → key release →
+  `panicHome`). Not a second driver: it adds lifecycle and recovery around the existing
+  `m8_device` primitives, and reaches nothing the C++ side cannot.
+
+  Why it exists: every one-shot `m8_nav --flag` invocation is its own process, and
+  `M8Device::open`/`close` do `'E'` → 500 ms → `'R'` (full display reset) … `'D'`. So N commands
+  were N connect/reset/disconnect cycles, every read landed on a freshly reset framebuffer, and
+  per-connection state died between presses — which presents as a device that has stopped
+  accepting keys when nothing is wrong with it.
+
+  **Holding the connection open exposed four real driver bugs that one-shot use structurally could
+  not see** (`M8_DRIVER_BUGS.md` #22–#25, all FIXED and hardware-verified 2026-08-14 on fw 6.5.2):
+  grid-screen cursor row read the *column header* (#22); `moveCursorToGrid`'s column axis was wrong
+  three independent ways, including a pitch measured from glyph spacing rather than column spacing
+  (#23); `findCursorCell` latched onto the accent-coloured blank the M8 leaves at a vacated row, so
+  positions went stale **within** a connection while reading correctly in any fresh process, since
+  `'R'` repaints ghosts away (#24); and `editValue` single-stepped values up to 256 times at a
+  ~320 ms floor each, making `set` present as a hang (#25 — now coarse-steps using the long-pinned
+  `value_inc16`/`value_dec16`, with the step size *measured at runtime* rather than assumed).
+  Verified working: form-screen and grid-screen navigation, `(step, col)` grid addressing
+  (`cursor-grid 7 5`), value read with the field label stripped, and `set` in both directions over
+  a 128-step gap on PROJECT/TRANSPOSE and INSTRUMENT/AMP.
+
+  Diagnostics that found those: `probe <KEY>` (press N times, report cursor + grid coordinates per
+  press) and `inspect` (accent cells as foreground **and** background, plus rect fills — the only
+  view of colour in the toolchain; `SemanticState` carries no colour at all).
+
+  `MIXER`'s compound widget and Instrument `TYPE` are refused up front rather than thrashed at
+  (`FENCED_FIELDS`), for bugs #20/#21, which remain **OPEN**. See Known issues.
 - `m8_tests` — 269 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
@@ -695,6 +726,20 @@ Future captures use the C++ `m8_capture`.
 
 ## Known issues
 
+- **Device driver bugs #20/#21 are OPEN and fenced, and #20 deserves re-testing.**
+  `M8_DRIVER_BUGS.md` #20 concluded that MIXER's compound widget (`MST_CHO`, `MST_DEL`, `MST_REV`,
+  `MIX_VOL`, `LIM_VAL`, `DJF_FREQ`, `DJF_RES`, `DJF_TYP`) cannot be reached by any fixed key
+  sequence, because navigation there depends on hidden device state — evidenced by an isolated
+  hop-by-hop path producing a different result on identical re-test. **That evidence rests on
+  reading the cursor position after each hop, and three separate bugs in exactly that were fixed on
+  2026-08-14** (#22/#23/#24). #24 in particular made positions go stale *within* a connection while
+  reading correctly in any fresh process, which is precisely what "identical re-test, different
+  result" looks like. The finding may still hold, but it was never tested with instruments that
+  worked. Re-test with `m8drv probe`/`inspect` and `--unfence` before treating #20 as permanent.
+  #21 (Instrument `TYPE`'s row carries an unmapped LOAD/SAVE pair, so `identifyCursorField` can
+  report "already on target" without checking the column) is a DATA bug of the same class as
+  #9/#11/#17 and is fixable by measuring those columns — `inspect` can do that now. `m8drv`
+  currently mitigates it by forcing a known cursor position first, which is not the fix.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked
