@@ -897,6 +897,22 @@ void Engine::render(float* buffer, int frames) {
 
         float fb = m_state.effects.rev_decay / 255.0f; if(fb > 0.98f) fb = 0.98f; m_reverb.SetFeedback(fb);
         m_reverb.SetLpFreq(10000.0f);
+        // ROOM SIZE / MOD DEPTH / MOD FREQ. These went from silent to live on
+        // 2026-08-14, once ReverbSc was vendored and given setters for them.
+        //
+        // Each mapping is anchored so that the engine's own default byte lands
+        // on exactly the stock tuning the reverb had when these were fixed
+        // constants -- rev_size 0xFF, rev_mod_depth 0x20, rev_mod_freq 0xFF all
+        // map to 1.0. A song that never touched them therefore renders
+        // unchanged, which test A9 pins bit-for-bit.
+        //
+        // The curves themselves are NOT hardware-verified. They are chosen to
+        // be sensible and to keep that anchor; they are approximations in the
+        // same class as the LIM/DJF/OTT curves (MIXER_SPEC.md §8), and a
+        // capture could well move them.
+        m_reverb.SetRoomSize(0.25f + 0.75f * (m_state.effects.rev_size / 255.0f));
+        m_reverb.SetPitchMod(m_state.effects.rev_mod_depth / 32.0f);
+        m_reverb.SetModRate(0.1f + 0.9f * (m_state.effects.rev_mod_freq / 255.0f));
         float revL = 0.0f, revR = 0.0f;
         m_reverb.Process(sendRevL, sendRevR, &revL, &revR);
         revL = dcBlock(revL, m_dcRevL);

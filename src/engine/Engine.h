@@ -8,6 +8,7 @@
 #include "Envelopes.h"
 #include "ZdfFilter.h"
 #include "EqFilter.h"
+#include "ReverbScM8.h"
 #include <atomic>
 #include <vector>
 #include <cmath>
@@ -780,7 +781,10 @@ private:
     daisysp::Chorus m_chorus;
     daisysp::DelayLine<float, 96000> m_delayL;
     daisysp::DelayLine<float, 96000> m_delayR;
-    daisysp::ReverbSc m_reverb;
+    // Our modified copy, not daisysp::ReverbSc -- the stock class exposes only
+    // feedback and damping, and the M8 needs ROOM SIZE / MOD DEPTH / MOD FREQ
+    // as well. See ReverbScM8.h for the change list and the LGPL notice.
+    ReverbScM8 m_reverb;
 
     // ---- Meters -------------------------------------------------------------
     std::atomic<uint32_t> m_trackLevel[8]{};

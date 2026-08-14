@@ -183,10 +183,12 @@ static constexpr size_t kMixerBlockSize  = 32;
 // against a screen showing modfx 40:80 / FF / 00, delay 30:30 / 80 / FF / 00,
 // reverb FF / C0 / 10:FF / FF.
 //
-// Gaps are deliberate. +4 is MODFX MOD TYPE (chorus/phaser/flanger), which the
-// engine does not model -- it is left alone so it survives a save. +5..+8,
-// +14..+16 and everything from +22 (which probably includes reverb SHIMMER,
-// though that byte reads 00 and so is unproven) are likewise untouched.
+// The gaps are deliberate and carry real device data, so they are left alone
+// and survive a save. +4..+8 and +14..+16 read `FD AF 26 40 FF` and `41 10 E0`
+// in V4EMPTY.m8s, a genuine M8-authored file -- not padding, and not something
+// to zero. MODFX MOD TYPE and reverb SHIMMER are in there somewhere but are
+// NOT located: +4 was the obvious guess for MOD TYPE and is wrong, since FD is
+// not one of the three valid types. Do not assign these without a device diff.
 static constexpr size_t kFxModDepth   = 0;
 static constexpr size_t kFxModFreq    = 1;
 static constexpr size_t kFxModWidth   = 2;

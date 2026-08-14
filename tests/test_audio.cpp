@@ -599,3 +599,62 @@ TEST_CASE("A8 ModFX and Delay reach the reverb through their own sends", "[audio
     // OfflineHost already gates NaN/Inf and |s| <= 1 on every chunk it renders,
     // so there is no per-sample assertion here -- AGENTS.md §2.
 }
+
+// ---------------------------------------------------------------------------
+// A9-A10 -- reverb ROOM SIZE / MOD DEPTH / MOD FREQ, live since ReverbSc was
+// vendored and given setters (see src/engine/ReverbScM8.h).
+//
+// A9 is the guard, same job A6 does for the returns: the engine's default
+// bytes (size 0xFF, mod depth 0x20, mod freq 0xFF) are anchored to the stock
+// tuning these had as constants, so an untouched song must render bit-for-bit
+// as before.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A9 reverb defaults reproduce the stock tuning exactly", "[audio]") {
+    auto base = renderWithEffects([](EffectsState& fx) { fx.rev_decay = 0xE0; });
+    auto same = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay     = 0xE0;
+        fx.rev_size      = 0xFF;   // -> room scale 1.0
+        fx.rev_mod_depth = 0x20;   // -> pitch mod 1.0
+        fx.rev_mod_freq  = 0xFF;   // -> mod rate 1.0
+    });
+
+    REQUIRE(base.size() == same.size());
+    bool identical = true;
+    for (size_t i = 0; i < base.size(); ++i)
+        if (base[i] != same[i]) { identical = false; break; }
+    REQUIRE(identical);
+}
+
+TEST_CASE("A10 each reverb control changes the output", "[audio]") {
+    // Reverb reached via the modfx/delay sends (the helper leaves the
+    // instrument's own reverb send at 0), so the tail is genuinely present.
+    auto ref = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xE0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+    });
+
+    auto differsFrom = [&](const std::vector<float>& other) {
+        REQUIRE(ref.size() == other.size());
+        float maxDiff = 0.0f;
+        for (size_t i = 0; i < ref.size(); ++i)
+            maxDiff = std::max(maxDiff, std::fabs(ref[i] - other[i]));
+        return maxDiff;
+    };
+
+    auto smallRoom = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xE0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+        fx.rev_size = 0x10;
+    });
+    auto deepMod = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xE0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+        fx.rev_mod_depth = 0xC0;
+    });
+    auto slowMod = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xE0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+        fx.rev_mod_freq = 0x08;
+    });
+
+    REQUIRE(differsFrom(smallRoom) > 0.001f);
+    REQUIRE(differsFrom(deepMod)   > 0.001f);
+    REQUIRE(differsFrom(slowMod)   > 0.001f);
+}

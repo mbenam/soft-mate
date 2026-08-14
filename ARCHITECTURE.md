@@ -387,15 +387,16 @@ specifically built to catch.
   REV is a stub everywhere. Many M8 FX commands (ARP/RET/RND/scale/arp/mixer sends...) absent —
   see `FX_COMMANDS_SPEC.md`.
 - Mixer: input/USB channels, DJ filter, limiter value, `mix_vol`.
-- Effects: reverb **size / mod depth / mod freq** only (reverb LP is hardcoded
-  10 kHz). These three are engine-limited, not unwired: DaisySP's `ReverbSc`
-  exposes just `SetFeedback` and `SetLpFreq`, and size/mod live in a
-  `static const` table inside a FetchContent dependency — reaching them means
-  vendoring LGPL source or replacing the reverb (`hw_findings.md` §UI-8).
-  The ModFX/Delay/Reverb **stereo widths** and the ModFX/Delay **reverb sends**
-  became live 2026-08-14 (tests A6–A8). Also unmodelled: ModFX **MOD TYPE** —
-  hardware offers Chorus/Phaser/Flanger and the engine hardcodes a chorus — and
-  reverb **SHIMMER**.
+- Effects: **the whole screen is live as of 2026-08-14** except ModFX
+  **MOD TYPE** (hardware offers Chorus/Phaser/Flanger; the engine hardcodes a
+  chorus) and reverb **SHIMMER**, neither of which has an engine field, and
+  neither of which is located in the file yet (`hw_findings.md` §UI-8). The
+  reverb LP is still hardcoded at 10 kHz. Stereo widths and the ModFX/Delay
+  reverb sends landed with tests A6–A8; reverb SIZE / MOD DEPTH / MOD FREQ
+  landed with A9–A10, which required vendoring DaisySP's `ReverbSc` as
+  `src/engine/ReverbScM8.{h,cpp}` — the stock class exposes only `SetFeedback`
+  and `SetLpFreq`, and those three parameters are columns of a `static const`
+  table with no accessor. LGPL 2.1; change list in the header.
 - Instrument params: `tbl_tic`, `eq`, `slice`, sampler `transp` flag, `pan`
   mod destination.
 - `INST_MIDI` type.

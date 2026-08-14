@@ -78,7 +78,11 @@ add_library(m8_engine STATIC
     src/io/RenderAudio.cpp
     src/io/BundleExport.cpp
     src/analysis/AudioMetrics.cpp
-    ${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source/Effects/reverbsc.cpp
+    # Was ${daisysp_SOURCE_DIR}/DaisySP-LGPL/Source/Effects/reverbsc.cpp.
+    # Now a modified vendored copy: the stock class exposes only feedback and
+    # damping, while the M8 also has ROOM SIZE / MOD DEPTH / MOD FREQ, which are
+    # compile-time constants upstream. LGPL 2.1, change list in ReverbScM8.h.
+    src/engine/ReverbScM8.cpp
     src/engine/braids/analog_oscillator.cc
     src/engine/braids/digital_oscillator.cc
     src/engine/braids/macro_oscillator.cc

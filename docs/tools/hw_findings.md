@@ -945,7 +945,21 @@ survived. L26 pins the unmodelled bytes.
   field at all. Phaser and Flanger are not implemented; the clone hardcodes a
   chorus.
 
-**+22 is `00` and so is much of the block, so SHIMMER's position is a guess and
-is recorded as one.** The rest above is measured.
+**The unknown runs carry real data, and MOD TYPE is NOT at +4.** That was the
+obvious guess and it is wrong: V4EMPTY.m8s, a genuine M8-authored file, reads
+`FD AF 26 40 FF` at +4..+8 and `41 10 E0` at +14..+16, and `FD` is not one of
+the three valid mod types (00 Chorus / 01 Phaser / 02 Flanger). So MOD TYPE and
+reverb SHIMMER are somewhere in those runs but remain unlocated. They are
+preserved untouched on save (test L26); do not assign them without a diff.
+
+**The layout also holds for V4.0 files, so the library was always wrong** --
+this is not a newer-firmware drift. V4EMPTY.m8s reads `30 30 80 FF 00` for
+delay and `FF C0 10 FF FF` for reverb at the measured offsets, matching the
+6.5.2 device screen exactly.
+
+**Consequence for our own files:** every .m8s this project authored before
+2026-08-14 has its effects written at the library's offsets, because
+`saveNewSong` used `EffectsSettings::write`. `songs/sunrise.m8s` was
+regenerated; `songs/opening.m8s` still carries the defect.
 
 - **Date:** 2026-08-14

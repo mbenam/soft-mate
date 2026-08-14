@@ -301,7 +301,28 @@ sends `0x00`), and test **A6** asserts bit-for-bit equality at those defaults so
 song is untouched; A7 and A8 prove the controls do something. *Unmeasured assumption:* the
 reverb's INPUT EQ is applied after the ModFX/Delay sends fold in, so it EQs everything entering
 the reverb — whether hardware taps those before or after wants the §UI-6 treatment.
-The remaining three (reverb SIZE / MOD DEPTH / MOD FREQ) are engine-limited, not unwired.
+**And the last three (2026-08-14): reverb SIZE / MOD DEPTH / MOD FREQ.** These needed DaisySP's
+`ReverbSc` vendored as `src/engine/ReverbScM8.{h,cpp}` — the stock class exposes only
+`SetFeedback`/`SetLpFreq`, while the three M8 controls are columns of a `static const` table
+with no accessor. LGPL 2.1, modification notice and full change list in the header. Room size
+and mod rate take effect at each delay line's next random segment, so the existing
+interpolation glides to the new delay rather than clicking; no re-`Init`, no lost tail. A
+pre-existing upstream allocation bug was fixed on the way (`Init` advanced its offset into a
+`float` array by a *byte* count, spacing the eight lines 4× apart and all but exhausting the
+buffer) — no audio change, but it is what freed the headroom to size buffers for deeper
+modulation. Mappings are anchored so the engine's defaults (`rev_size FF`, `rev_mod_depth 20`,
+`rev_mod_freq FF`) land on exactly the old fixed tuning; **A9** pins that bit-for-bit, A10 shows
+each control does something. *The curves are not hardware-verified* — approximations in the
+LIM/DJF/OTT class.
+**That leaves the Effects screen fully live except ModFX MOD TYPE and reverb SHIMMER**, neither
+of which has an engine field or a located file byte.
+**`songs/sunrise.m8s` was regenerated (2026-08-14)** and picked up three fixes at once: its
+effects block now sits at the correct offsets; the template's real bytes in the unknown runs
+are preserved instead of zeroed; and it stopped carrying `LIM 40 / OTT 80`. That last one
+matters — `OTT 0x80` is fully wet, the exact value `MIXER_SPEC.md` §3 identified as wrong when
+`djf_res` was renamed. The engine defaults were fixed 2026-08-12 but the committed song was
+never regenerated, so **the startup song had been playing through a fully-wet multiband
+compressor since then**. `songs/opening.m8s` still carries the old effects layout.
 Tests: L23 (round-trip), **L25** (loaded values match the device screen — the one that breaks
 the load/save symmetry a round-trip test cannot), L26 (unmodelled bytes preserved).
 
