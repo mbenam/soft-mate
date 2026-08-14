@@ -146,12 +146,22 @@ class M8Driver:
     # 40ms is m8_nav's own CLI default for --hold-ms. The Primitives signatures
     # default to 15, but that is the value --load-file clamps to, not a general
     # one -- do not carry it over as this client's default.
+    # min_ms/settle_ms/max_ms are m8_nav's read-timing flags. Its own defaults are
+    # 700/250/2000, which put a 700ms floor on the FIRST read of every process --
+    # on top of open()'s 500ms 'E'-then-'R' sleep. That is ~1.2s of dead time per
+    # invocation, which is invisible when you run one command and dominant when a
+    # script runs a dozen. Lower defaults here; raise them if reads come back
+    # unsettled.
     def __init__(self, port: str = DEFAULT_PORT, exe: str = DEFAULT_EXE,
                  hold_ms: int = 40, verbose: bool = False,
-                 auto_recover: bool = True, unfence: bool = False):
+                 auto_recover: bool = True, unfence: bool = False,
+                 min_ms: int = 250, settle_ms: int = 200, max_ms: int = 1500):
         self.port = port
         self.exe = exe
         self.hold_ms = hold_ms
+        self.min_ms = min_ms
+        self.settle_ms = settle_ms
+        self.max_ms = max_ms
         self.verbose = verbose
         self.auto_recover = auto_recover
         # Diagnosis escape hatch for FENCED_FIELDS. The fence exists because a
@@ -192,7 +202,11 @@ class M8Driver:
 
     def start(self, wait_ready: float = 20.0) -> None:
         exe = self._resolve_exe()
-        cmd = [exe, "--port", self.port, "--serve", "--hold-ms", str(self.hold_ms)]
+        cmd = [exe, "--port", self.port, "--serve",
+               "--hold-ms", str(self.hold_ms),
+               "--min-ms", str(self.min_ms),
+               "--settle-ms", str(self.settle_ms),
+               "--max-ms", str(self.max_ms)]
         self._log(f"starting: {' '.join(cmd)} (cwd={REPO_ROOT})")
         self.banner = {}
         self.gestures_ready: Optional[bool] = None
@@ -847,6 +861,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("keyjazz"); sp.add_argument("note", type=int)
     sp.add_argument("--vel", type=int, default=0x7F)
     sp = sub.add_parser("fields"); sp.add_argument("screen", nargs="?")
+    sp = sub.add_parser("batch",
+                        help="run several commands in ONE process (avoids per-call handshake)")
+    sp.add_argument("script", nargs="?",
+                    help="file of 'verb k=v' lines; reads stdin if omitted")
     sp = sub.add_parser("inspect",
                         help="show accent cells (fg and bg) and rects; --key to see which move")
     sp.add_argument("--key", default=None)
@@ -894,6 +912,34 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "fields":
                 for f in d.fields(a.screen):
                     print(f)
+            elif a.cmd == "batch":
+                # One connection, many commands -- the whole point of --serve.
+                # Lines are "VERB k=v ...", '#' comments and blanks skipped.
+                src = (open(a.script, encoding="utf-8").read()
+                       if a.script else sys.stdin.read())
+                failed = 0
+                for raw in src.splitlines():
+                    line = raw.split("#", 1)[0].strip()
+                    if not line:
+                        continue
+                    verb, *rest = line.split()
+                    kv = dict(x.split("=", 1) for x in rest if "=" in x)
+                    try:
+                        r = d.send(verb, **kv)
+                        st = r.get("state", {})
+                        ok = "ok " if r.get("ok") else "ERR"
+                        print(f"[{ok}] {line}"
+                              f"  -> {st.get('cursor_field')} = "
+                              f"{st.get('cursor_value')!r}"
+                              f"  (row {st.get('cursor_row')} col {st.get('cursor_col')})")
+                        if not r.get("ok"):
+                            failed += 1
+                            print(f"        error: {r.get('error')}")
+                    except M8Error as e:
+                        failed += 1
+                        print(f"[ERR] {line}\n        {e}")
+                print(f"batch: {failed} failed")
+                return 1 if failed else 0
             elif a.cmd == "inspect":
                 print(json.dumps(d.inspect(a.key), indent=2))
             elif a.cmd == "cursor-grid":
