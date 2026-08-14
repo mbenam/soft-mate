@@ -122,6 +122,19 @@ resonance; SPEAKER VOL is app-level and never persisted; INPUT/USB are gone from
 longer written on save (which also stops discarding a stereo analog input's right channel).
 Tests: `[mixer]` (5 cases). *The LIM/DJF/OTT curves are reference approximations, not
 hardware-verified* — see `MIXER_SPEC.md` §8.
+**SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the
+M8's SOFT CLIP — on hardware a switchable parameter in the Limiter & Mix Scope view, applied
+after the limiter and after MIX, which is where ours sits. We have no Scope view and store no
+value for it, so every song renders as if it were switched ON. It is not a bug and it is not
+being changed on a guess, but a capture from a device with SOFT CLIP OFF will not match our
+render, so it matters for the parity gate.
+**The Scope view itself is still deferred** (`MIXER_SPEC.md` §2). Its stated blocker — "needs
+the same live-audio feed as the meters" — is gone now that the meters ship, but the six
+parameters it hosts (limiter ATK/REL, DJF TYPE/RES, OTT TIME/COLOR) are all hardcoded
+constants in `Engine.cpp` today, and it is not known which file bytes carry them: the mixer
+block ends with four bytes the file library discards on read, non-zero on real files
+(`40 70 12 32` on V4EMPTY, `00 10 00 00` on a 6.5.0 device save). Identify those on hardware
+before building controls for them.
 
 ### EQ (`archive/EQ_SPEC.md`, 2026-08-13)
 3-band parametric EQ — 7 filter types (LOWCUT/LOWSHELF/BELL/BANDPASS/HI.SHELF/HI.CUT/ALLPASS)
@@ -228,6 +241,20 @@ degrade/transpose/table_tick + the synth-params subset + DETUNE via `fine_pitch`
 on save, overlaying only modeled fields so the byte-identical round-trip still holds (tests S-RT1,
 S-DET2). Previously the `engine→file` mappers were dead code and instrument edits were silently
 discarded on save. (MacroSynth `shape/timbre/color` now round-trip too — groundwork for Braids.)
+**Tempo, mixer, groove and effects edits now persist (2026-08-13):** the same class of bug as
+the instrument one above, one layer down. `Song::write` seeks straight to the song steps and
+only emits the data sections from there on, so the whole header region (tempo, mixer, the 32
+grooves) and the effects block were left as whatever the original file said.
+`convertEngineToSong` had been filling all four in for as long as it has existed and
+`write_over` discarded every one — an edited tempo, mixer level, groove or effect saved
+"successfully" and reloaded unchanged. Now patched into the serialised image by
+`saveUnwrittenBlocks`, the same way the bus EQs already were. Patched **field by field**, not
+via the library's `MixerSettings::write`/`EffectsSettings::write`, because those rebuild a
+whole block and would zero three things we must not touch: the analog/USB input pair (whose
+right channel our engine cannot represent — `hw_findings.md` §UI-4e), the reserved bytes in
+the effects block, and the four unidentified bytes ending the mixer block, which are non-zero
+on real files. Tempo is only rewritten when it changed at the engine's own hundredths
+resolution, so an untouched song keeps its exact f32 bits and L4 still holds. Tests L20–L24.
 
 ### Analysis + capture tooling (`M8_AUDIO_ANALYSIS_SPEC.md` Parts A–D, `M8_CAPTURE_SPEC.md`)
 - **kissfft** vendored; `magnitudeSpectrum()` with a baked-in Hann window.
@@ -308,7 +335,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 269 cases
+### Tests — 274 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -320,28 +347,24 @@ L4, L7, M2, M12, A3, A5. Engine tags: `[macrosynth]` (all 44 Braids shapes), `[f
 (12 algos), `[wavsynth]` (9 shapes), `[hypersynth]`, `[tables]` (6 cases). `[hwdecode]`
 (44 cases) covers the M8 device control decode layer.
 
-**Count provenance (2026-08-12):** 232 is a *static* count — `TEST_CASE` macros across the
-31 files in `tests/*.cpp`, not a suite run (223 before this session added four
-`[output_stage]` cases and five `[inst_pool]` ones). It replaces the "147 cases" and "130 cases"
-figures this document carried in three places, both of which predate the screen-test work
-(`[project_*]`, `[scale]`, `[render]`, `[bundle]`, `[char_picker]`,
-`[confirmation_dialog]`, `[file_browser]`, `[clean_*]`) and the growth of
-`test_device_decode.cpp` from 17 to 44 `[hwdecode]` cases. Note the unit: Catch2 counts one
-`TEST_CASE` as one case regardless of how many `SECTION`/`DYNAMIC_SECTION` blocks it
-contains, so the runner's reported total will match this only if every case is compiled in.
-**Three different numbers are all correct, so quote the right one.** The 2026-08-12 run
-reported **226 cases / 892,818 assertions, all passing**, which reconciles with the 232 static
-count exactly:
+**Count provenance (2026-08-13):** 274 is a *static* count — `TEST_CASE` macros across the
+32 files in `tests/*.cpp`, not a suite run. Note the unit: Catch2 counts one `TEST_CASE` as
+one case regardless of how many `SECTION`/`DYNAMIC_SECTION` blocks it contains, so the
+runner's reported total will match this only if every case is compiled in.
+**Three different numbers are all correct, so quote the right one:**
 
 | | count | why |
 |---|---|---|
-| `TEST_CASE` macros in `tests/*.cpp` | 232 | the static count above |
-| runnable by default | 231 | `test_ui_fuzz.cpp`'s case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| actually run on 2026-08-12 | 226 | that binary predates `tests/test_inst_pool_screen.cpp`; its five `[inst_pool]` cases have **not** been run yet |
+| `TEST_CASE` macros in `tests/*.cpp` | 274 | the static count above |
+| runnable by default | 273 | `test_ui_fuzz.cpp`'s case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| last recorded run | 268 | 2026-08-13 (commit `b2ebe1b`), **268 cases / 893,305 assertions, all passing**, against that day's tree — before this session's five `[io]` cases (L20–L24) |
 
-So: the engine and screen suites are green as of 2026-08-12, `[inst_pool]` is unverified, and
-`[fuzz]` only runs when you ask for it. The previous run on record was 2026-07-17 (147/147
-under x64 ASan) against that day's tree.
+So: the suite was green at 268/268 on 2026-08-13, `[fuzz]` only runs when you ask for it, and
+L20–L24 have **not** been run yet.
+
+This table previously carried 232/231/226 from 2026-08-12 and was not updated as the suite
+grew past it — the three figures were stale by 42 cases while the heading above said 269. If
+you add cases, re-derive all three here rather than editing the heading alone.
 
 ### UI test harness — Task 3 (`M8_UI_HARNESS_SPEC.md`)
 Shadow grid (`VirtualCell[30][40]`) inside `Renderer`. Every draw call also stamps the

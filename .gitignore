@@ -23,6 +23,18 @@ manual/
 /test_shape_*_events.csv
 /test_output.txt
 
+# Scratch .m8s files the [io] tests write into the repo root. Each test removes
+# its own file on the way out, but a REQUIRE that fails aborts the case before
+# the cleanup runs -- so a red suite leaves them behind, and `git add -A` then
+# sweeps them into a commit.
+/T0_probe.m8s
+/should_not_exist.m8s
+/eq_identity.m8s
+/*_rt.m8s
+/mixer_tail.m8s
+/spk_[ab].m8s
+/temp_*.m8s
+
 # Full upstream Mutable Instruments source (56MB nested git repo). Only the
 # vendored subset in src/engine/braids/ is built; keep the full clone local.
 third_party/eurorack/

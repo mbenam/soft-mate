@@ -102,6 +102,147 @@ static void saveBusEqs(const m8::Song& song, const engine::EngineState& state,
     }
 }
 
+// ---- Blocks the library reads but never writes back -------------------------
+//
+// `Song::write` only emits the sections it seeks to: song steps, phrases,
+// chains, tables, instruments, EQ banks. Everything else the reader parses is
+// left exactly as the original file had it. For most of the file that is the
+// point -- it is how unmodeled data survives (ARCHITECTURE.md invariant 8) --
+// but four blocks are modeled, are editable on their own screens, and were
+// being dropped on every save-in-place: the tempo, the mixer, the 32 grooves
+// and the effects. `convertEngineToSong` sets all four on the Song object and
+// `write_over` then never emits them, so the edit went nowhere.
+//
+// They are patched into the serialised image here, the same way the bus EQs
+// are -- and, like the bus EQs, field by field rather than through the
+// library's own `MixerSettings::write` / `EffectsSettings::write`. Those two
+// rebuild a whole block and would clobber bytes we must not touch:
+//   - the four unidentified bytes at the end of the mixer block, which
+//     `MixerSettings::from_reader` discards and its writer emits as zeros.
+//     They are not padding: V4EMPTY.m8s and V4-1EMPTY.m8s both carry
+//     `40 70 12 32` there, and a 6.5.0 device save (artifacts/EQTEST1.m8s)
+//     carries `00 10 00 00`. What they mean is unknown — the Limiter & Mix
+//     Scope view hosts six parameters we cannot otherwise account for
+//     (limiter ATK/REL, DJF TYPE/RES, OTT TIME/COLOR), which makes this the
+//     obvious place to look, but nothing here is measured. Do not assign
+//     them meanings without a device diff.
+//   - the reserved bytes inside the effects block, zeroed the same way.
+//   - the analog/USB input pair, whose right channel the library cannot
+//     represent -- rebuilding it is the data loss closed in hw_findings.md
+//     §UI-4e, and it stays closed by not writing those bytes at all.
+
+// Offsets into the file image, derived from the read order in the library's
+// `Song::from_reader` and confirmed against real files in this tree:
+//   0x8F  tempo -- decodes to 120.0 in V4EMPTY.m8s and 128.0 in songs/sunrise.m8s
+//   0xCE  mixer -- 14 header + 128 directory + 1 transpose + 4 tempo + 1
+//                  quantize + 12 name + 27 MidiSettings + 1 key + 18 skip.
+//                  Cross-checked on the data: the analog right-channel marker
+//                  at +14 reads 0xFF on every .m8s in this tree, and
+//                  `dj_filter` at +25 reads 0x80 -- the documented "off" -- on
+//                  both round-trip fixtures, songs/sunrise.m8s and a 6.5.0
+//                  device save. (It reads 0x00 in device_golden/MacroSynth.m8s,
+//                  which is a real value, not a misalignment.)
+// Groove and effects come from the library's own offset table. `from_reader`
+// uses `V4_OFFSETS` for the effects block regardless of version, and both
+// tables agree on the groove offset, so this matches the reader exactly.
+static constexpr size_t kTempoOffset = 0x8F;
+static constexpr size_t kMixerOffset = 0xCE;
+
+// Field offsets inside the 32-byte mixer block. The gaps are deliberate:
+// +13..+24 are the analog/USB inputs and +28..+31 the unidentified tail.
+static constexpr size_t kMixMasterVolume = 0;
+static constexpr size_t kMixMasterLimit  = 1;
+static constexpr size_t kMixTrackVolume  = 2;   // 8 bytes
+static constexpr size_t kMixChorusVolume = 10;
+static constexpr size_t kMixDelayVolume  = 11;
+static constexpr size_t kMixReverbVolume = 12;
+static constexpr size_t kMixDjFilter     = 25;
+static constexpr size_t kMixDjPeak       = 26;  // OTT
+static constexpr size_t kMixDjFilterType = 27;
+static constexpr size_t kMixerBlockSize  = 32;
+
+// Field offsets inside the effects block, in its V4+ shape (the pre-4.0 layout
+// carries delay_hp/lp and reverb_hp/lp; save refuses pre-4.0 files anyway).
+// +3..+5 and +11 are reserved and left alone.
+static constexpr size_t kFxChorusModDepth   = 0;
+static constexpr size_t kFxChorusModFreq    = 1;
+static constexpr size_t kFxChorusReverbSend = 2;
+static constexpr size_t kFxDelayTimeL       = 6;
+static constexpr size_t kFxDelayTimeR       = 7;
+static constexpr size_t kFxDelayFeedback    = 8;
+static constexpr size_t kFxDelayWidth       = 9;
+static constexpr size_t kFxDelayReverbSend  = 10;
+static constexpr size_t kFxReverbSize       = 12;
+static constexpr size_t kFxReverbDamping    = 13;
+static constexpr size_t kFxReverbModDepth   = 14;
+static constexpr size_t kFxReverbModFreq    = 15;
+static constexpr size_t kFxReverbWidth      = 16;
+static constexpr size_t kFxBlockSize        = 17;
+
+static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& bytes) {
+    if (!song.version.at_least(4, 0)) return;
+    const m8::Offsets& o = m8::V4_OFFSETS;
+
+    // --- Tempo ---------------------------------------------------------------
+    // Only rewritten when it actually changed. The engine holds tempo as
+    // bpm + bpm_frac (hundredths), a lossy decomposition of the file's f32:
+    // reassembling it can land a bit or two off the original for a tempo the
+    // engine cannot represent exactly. Comparing at the engine's own resolution
+    // leaves an untouched song bit-for-bit alone -- which the byte-identical
+    // round-trip (L4) requires -- while a real edit still gets written.
+    if (bytes.size() >= kTempoOffset + 4) {
+        float original = 0.0f;
+        std::memcpy(&original, bytes.data() + kTempoOffset, 4);
+        if (std::round(original * 100.0f) != std::round(song.tempo * 100.0f)) {
+            float t = song.tempo;
+            std::memcpy(bytes.data() + kTempoOffset, &t, 4);
+        }
+    }
+
+    // --- Mixer ---------------------------------------------------------------
+    if (bytes.size() >= kMixerOffset + kMixerBlockSize) {
+        uint8_t* p = bytes.data() + kMixerOffset;
+        const auto& m = song.mixer_settings;
+        p[kMixMasterVolume] = m.master_volume;
+        p[kMixMasterLimit]  = m.master_limit;
+        for (int i = 0; i < 8; ++i)
+            p[kMixTrackVolume + i] = m.track_volume[i];
+        p[kMixChorusVolume] = m.chorus_volume;
+        p[kMixDelayVolume]  = m.delay_volume;
+        p[kMixReverbVolume] = m.reverb_volume;
+        p[kMixDjFilter]     = m.dj_filter;
+        p[kMixDjPeak]       = m.dj_peak;
+        p[kMixDjFilterType] = m.dj_filter_type;
+    }
+
+    // --- Grooves (32 x 16 raw bytes) -----------------------------------------
+    if (bytes.size() >= o.groove + song.grooves.size() * 16) {
+        for (size_t g = 0; g < song.grooves.size(); ++g) {
+            uint8_t* p = bytes.data() + o.groove + g * 16;
+            for (int i = 0; i < 16; ++i) p[i] = song.grooves[g].steps[i];
+        }
+    }
+
+    // --- Effects -------------------------------------------------------------
+    if (bytes.size() >= o.effect_settings + kFxBlockSize) {
+        uint8_t* p = bytes.data() + o.effect_settings;
+        const auto& fx = song.effects_settings;
+        p[kFxChorusModDepth]   = fx.chorus_mod_depth;
+        p[kFxChorusModFreq]    = fx.chorus_mod_freq;
+        p[kFxChorusReverbSend] = fx.chorus_reverb_send;
+        p[kFxDelayTimeL]       = fx.delay_time_l;
+        p[kFxDelayTimeR]       = fx.delay_time_r;
+        p[kFxDelayFeedback]    = fx.delay_feedback;
+        p[kFxDelayWidth]       = fx.delay_width;
+        p[kFxDelayReverbSend]  = fx.delay_reverb_send;
+        p[kFxReverbSize]       = fx.reverb_size;
+        p[kFxReverbDamping]    = fx.reverb_damping;
+        p[kFxReverbModDepth]   = fx.reverb_mod_depth;
+        p[kFxReverbModFreq]    = fx.reverb_mod_freq;
+        p[kFxReverbWidth]      = fx.reverb_width;
+    }
+}
+
 // ---- FxCmd mapping ----
 // Library file bytes:  0xFF = none; 0x00..0x08 = VOL,PIT,DEL,REV,HOP,KIL,TBL,GRV,TIC;
 //                      0x09.. = ARP and the rest of the M8 FX set (NOT modeled here).
@@ -1027,6 +1168,7 @@ bool saveSong(const std::string& path, const LoadResult& origin,
         convertEngineToSong(seq, state, song);
 
         auto out = song.write_over(origin.original);
+        saveUnwrittenBlocks(song, out); // modeled, but Song::write never emits them
         saveBusEqs(song, state, out);   // not modeled by the library; patched in
         if (!writeFile(path, out)) {
             error = "cannot write file";

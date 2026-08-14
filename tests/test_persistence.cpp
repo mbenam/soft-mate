@@ -956,3 +956,184 @@ TEST_CASE("L19 untouched EQ banks round-trip byte-identically", "[io]") {
 
     std::remove("eq_identity.m8s");
 }
+
+// ---------------------------------------------------------------------------
+// L20-L24 -- the blocks Song::write never emits.
+//
+// `Song::write` seeks straight to the song steps and only writes the data
+// sections from there on, so everything in the header region (tempo, mixer,
+// grooves) and the effects block further down survived save-by-overlay as
+// whatever the original file said. `convertEngineToSong` had been filling all
+// four in on the Song object for as long as it has existed, and `write_over`
+// silently discarded every one of them: an edited tempo, mixer level, groove
+// or effect saved successfully and came back unchanged.
+//
+// These tests are written against the observable contract (edit -> save ->
+// reload -> value survived), not against the patch, so they stay meaningful if
+// the library ever grows a real writer for these blocks.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("L20 edited mixer settings survive save and reload", "[io]") {
+    auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    auto edited = result.state;
+    edited.mixer.mix_vol      = 0x77;
+    edited.mixer.lim_val      = 0x42;
+    edited.mixer.djf_freq     = 0x30;
+    edited.mixer.ott          = 0x64;
+    edited.mixer.djf_typ      = 0x02;
+    edited.mixer.cho_vol      = 0x11;
+    edited.mixer.del_vol      = 0x22;
+    edited.mixer.rev_vol      = 0x33;
+    for (int i = 0; i < 8; ++i) edited.mixer.track_vol[i] = 0x10 + i;
+
+    std::string err;
+    REQUIRE(saveSong("mixer_rt.m8s", result, result.sequencer, edited, err));
+    auto again = loadSong("mixer_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    REQUIRE(again.state.mixer.mix_vol  == 0x77);
+    REQUIRE(again.state.mixer.lim_val  == 0x42);
+    REQUIRE(again.state.mixer.djf_freq == 0x30);
+    REQUIRE(again.state.mixer.ott      == 0x64);
+    REQUIRE(again.state.mixer.djf_typ  == 0x02);
+    REQUIRE(again.state.mixer.cho_vol  == 0x11);
+    REQUIRE(again.state.mixer.del_vol  == 0x22);
+    REQUIRE(again.state.mixer.rev_vol  == 0x33);
+    for (int i = 0; i < 8; ++i)
+        REQUIRE(again.state.mixer.track_vol[i] == 0x10 + i);
+
+    std::remove("mixer_rt.m8s");
+}
+
+TEST_CASE("L21 edited tempo survives save and reload", "[io]") {
+    auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    // 138.50 is exactly representable once reassembled from bpm + bpm_frac,
+    // so this asserts the write happened, not the float's rounding behaviour.
+    auto edited = result.state;
+    edited.bpm      = 138;
+    edited.bpm_frac = 50;
+
+    std::string err;
+    REQUIRE(saveSong("tempo_rt.m8s", result, result.sequencer, edited, err));
+    auto again = loadSong("tempo_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    REQUIRE(again.state.bpm      == 138);
+    REQUIRE(again.state.bpm_frac == 50);
+
+    std::remove("tempo_rt.m8s");
+}
+
+TEST_CASE("L22 edited grooves survive save and reload", "[io]") {
+    auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    auto seq = result.sequencer;
+    // A 7/5 swing in groove 1, and a value in the last slot of groove 31 so the
+    // whole 32 x 16 block is covered, not just the first row.
+    seq.grooves[1].steps[0]  = 7;
+    seq.grooves[1].steps[1]  = 5;
+    seq.grooves[31].steps[15] = 9;
+
+    std::string err;
+    REQUIRE(saveSong("groove_rt.m8s", result, seq, result.state, err));
+    auto again = loadSong("groove_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    REQUIRE(again.sequencer.grooves[1].steps[0]   == 7);
+    REQUIRE(again.sequencer.grooves[1].steps[1]   == 5);
+    REQUIRE(again.sequencer.grooves[31].steps[15] == 9);
+
+    std::remove("groove_rt.m8s");
+}
+
+TEST_CASE("L23 edited effects settings survive save and reload", "[io]") {
+    auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
+    REQUIRE(result.ok);
+
+    auto edited = result.state;
+    edited.effects.cho_mod_depth = 0x21;
+    edited.effects.cho_mod_freq  = 0x22;
+    edited.effects.cho_width     = 0x23;
+    edited.effects.del_time_l    = 0x24;
+    edited.effects.del_time_r    = 0x25;
+    edited.effects.del_feedback  = 0x26;
+    edited.effects.del_width     = 0x27;
+    edited.effects.del_reverb    = 0x28;
+    edited.effects.rev_size      = 0x29;
+    edited.effects.rev_decay     = 0x2A;
+    edited.effects.rev_mod_depth = 0x2B;
+    edited.effects.rev_mod_freq  = 0x2C;
+    edited.effects.rev_width     = 0x2D;
+
+    std::string err;
+    REQUIRE(saveSong("fx_rt.m8s", result, result.sequencer, edited, err));
+    auto again = loadSong("fx_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    const auto& fx = again.state.effects;
+    REQUIRE(fx.cho_mod_depth == 0x21);
+    REQUIRE(fx.cho_mod_freq  == 0x22);
+    REQUIRE(fx.cho_width     == 0x23);
+    REQUIRE(fx.del_time_l    == 0x24);
+    REQUIRE(fx.del_time_r    == 0x25);
+    REQUIRE(fx.del_feedback  == 0x26);
+    REQUIRE(fx.del_width     == 0x27);
+    REQUIRE(fx.del_reverb    == 0x28);
+    REQUIRE(fx.rev_size      == 0x29);
+    REQUIRE(fx.rev_decay     == 0x2A);
+    REQUIRE(fx.rev_mod_depth == 0x2B);
+    REQUIRE(fx.rev_mod_freq  == 0x2C);
+    REQUIRE(fx.rev_width     == 0x2D);
+
+    std::remove("fx_rt.m8s");
+}
+
+TEST_CASE("L24 patching the mixer leaves the bytes we do not model alone", "[io]") {
+    // The mixer block has twelve bytes of analog/USB input and a four-byte tail
+    // the file library discards on read and zeroes on write. Neither is ours to
+    // touch: the inputs cannot represent a right channel in our engine
+    // (hw_findings.md §UI-4e) and the tail is unidentified but demonstrably not
+    // padding -- V4EMPTY and V4-1EMPTY both carry 40 70 12 32 there. This is why
+    // saveUnwrittenBlocks patches field by field instead of calling the
+    // library's MixerSettings::write, and this test is what stops someone
+    // "simplifying" it into that call.
+    auto path = songPath("V4-1EMPTY.m8s");
+    auto result = loadSong(path, "");
+    REQUIRE(result.ok);
+
+    auto edited = result.state;
+    edited.mixer.mix_vol = 0x55;   // force the patch to run
+
+    std::string err;
+    REQUIRE(saveSong("mixer_tail.m8s", result, result.sequencer, edited, err));
+
+    auto orig = readFile(path);
+    auto rt   = readFile("mixer_tail.m8s");
+    REQUIRE(orig.size() == rt.size());
+
+    constexpr size_t kMixerOffset = 0xCE;
+    REQUIRE(orig.size() >= kMixerOffset + 32);
+
+    // The tail must be untouched, and must not have been zeros to begin with --
+    // otherwise this test would pass without proving anything.
+    bool tailNonZero = false;
+    for (size_t i = 28; i < 32; ++i) {
+        if (orig[kMixerOffset + i] != 0) tailNonZero = true;
+        REQUIRE(rt[kMixerOffset + i] == orig[kMixerOffset + i]);
+    }
+    REQUIRE(tailNonZero);
+
+    // Analog + USB input bytes, +13..+24, likewise untouched.
+    for (size_t i = 13; i <= 24; ++i)
+        REQUIRE(rt[kMixerOffset + i] == orig[kMixerOffset + i]);
+
+    // And the edit we did ask for landed.
+    REQUIRE(rt[kMixerOffset + 0] == 0x55);
+
+    std::remove("mixer_tail.m8s");
+}
