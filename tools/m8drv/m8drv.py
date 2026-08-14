@@ -532,7 +532,11 @@ class M8Driver:
     def _snapshot(self) -> Dict[str, Any]:
         st = self.state()
         return {
-            "cursor": (st.get("cursor_field"), st.get("cursor_row")),
+            # Column included: on a form screen it is the only way to tell a
+            # sideways move from a jump into a different block, since two blocks
+            # can share a row and report different fields.
+            "cursor": (st.get("cursor_field"), st.get("cursor_row"),
+                       st.get("cursor_col", -1)),
             "grid": (st.get("grid_step", -1), st.get("grid_col", -1)),
             "rows": {r.get("y"): r.get("text") for r in (st.get("rows") or [])},
             "settled": st.get("settled"),
@@ -758,7 +762,8 @@ class M8Driver:
         # row and would read as a false "keys not arriving".
         def cur() -> tuple:
             st = self.state()
-            return (st.get("cursor_field"), st.get("cursor_row"))
+            return (st.get("cursor_field"), st.get("cursor_row"),
+                    st.get("cursor_col", -1))
 
         before = cur()
         self.press("DOWN")
@@ -790,7 +795,7 @@ def _print_screen(d: M8Driver) -> None:
     st = d.state()
     print(f"screen  : {st.get('screen')}")
     print(f"cursor  : {st.get('cursor_field')} = {st.get('cursor_value')!r}"
-          f"  (row {st.get('cursor_row')})")
+          f"  (row {st.get('cursor_row')} col {st.get('cursor_col')})")
     if st.get("grid_step", -1) >= 0:
         print(f"grid    : step {st.get('grid_step')} col {st.get('grid_col')}"
               f" of {st.get('grid_columns')} columns")

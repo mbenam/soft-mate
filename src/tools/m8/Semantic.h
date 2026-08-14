@@ -16,6 +16,12 @@ struct SemanticState {
     std::string cursorField;
     std::string cursorValue;
     int         cursorRow     = -1;
+    // Pixel X of the cursor's leading cell. cursorField() has always computed
+    // this and it was never reported, which left form-screen layout unreadable:
+    // on MIXER, RIGHT and DOWN visit the same ROWS but different fields, and
+    // without a column there is no way to tell whether a press moved sideways or
+    // to a different block entirely.
+    int         cursorCol     = -1;
     // Grid screens only (-1 elsewhere). Without these, a caller on SONG/CHAIN/
     // PHRASE/TABLE could not tell where the cursor was: `cursorField` there is
     // just the row label concatenated with the cell text ("04 --"), which names

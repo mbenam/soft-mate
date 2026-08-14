@@ -27,6 +27,7 @@ SemanticState semanticState(M8Device& dev) {
     if (cf) {
         state.cursorField = cf->name;
         state.cursorRow = cf->row;
+        state.cursorCol = cf->col;
         // NOT valueOf(*cf): cf->col is the x of the FIRST accent cell on the row,
         // which is the field's LABEL, and valueAt() reads forward from whatever
         // column it is given -- so it returned the label ("TEMPO   120" reported
@@ -60,6 +61,7 @@ std::string SemanticState::toJson() const {
     ss << "  \"cursor_field\": \"" << escapeJson(cursorField) << "\",\n";
     ss << "  \"cursor_value\": \"" << escapeJson(cursorValue) << "\",\n";
     ss << "  \"cursor_row\": " << cursorRow << ",\n";
+    ss << "  \"cursor_col\": " << cursorCol << ",\n";
     ss << "  \"grid_step\": " << gridStep << ",\n";
     ss << "  \"grid_col\": " << gridCol << ",\n";
     ss << "  \"grid_columns\": " << gridColumns << ",\n";
