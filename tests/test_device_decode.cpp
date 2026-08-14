@@ -104,6 +104,49 @@ TEST_CASE("ScreenGrid cursor detection", "[hwdecode]") {
     CHECK_FALSE(grid.isCursor(grid.cells[{30, 60}]));
 }
 
+// M8_DRIVER_BUGS.md #22. Layout and colours taken from a real fw 6.5.2 SONG
+// screen (2026-08-14, COM3, captured with `m8drv inspect --key DOWN`): the
+// column-header row carries an accent-coloured track indicator, and the cursor
+// marks its own row by recolouring that row's leading row-number.
+TEST_CASE("cursorRowY prefers the row label over the column header", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;   // accent == cursorColor
+
+    // Column-header row at y=50: the track-6 indicator, accent, at col 19.
+    grid.handleFrame(makeCharFrame('6', 19 * 8, 50, A0, A1, A2, 0, 0, 0));
+    // Cursor's row at y=110: row number "05" accent in the left label columns,
+    // plus the cell itself accent out in the body.
+    grid.handleFrame(makeCharFrame('0', 1 * 8, 110, A0, A1, A2, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('5', 2 * 8, 110, A0, A1, A2, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('-', 19 * 8, 110, A0, A1, A2, 0, 0, 0));
+
+    // Topmost-accent would answer 50, the header. The row label must win.
+    REQUIRE(grid.cursorRowY() == 110);
+
+    // A stale accent-coloured blank at the vacated row must not be picked up --
+    // the M8 skips redrawing trailing blanks, and (row 11, col 3, ' ') was
+    // observed surviving exactly this transition on hardware.
+    grid.handleFrame(makeCharFrame(' ', 3 * 8, 110, A0, A1, A2, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('0', 1 * 8, 120, A0, A1, A2, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('6', 2 * 8, 120, A0, A1, A2, 0, 0, 0));
+    // Row 110's real label is still accent here (the M8 recolours it back, but
+    // this asserts the ghost-blank rule alone, so leave it), so the topmost
+    // real label is still 110 -- what matters is that the ' ' at col 3 never
+    // becomes the answer on its own.
+    REQUIRE(grid.cursorRowY() == 110);
+}
+
+TEST_CASE("cursorRowY still finds a form-screen cursor label", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+
+    // PROJECT-style: white title, then an accent label on the cursor's row.
+    grid.handleFrame(makeCharFrame('P', 0, 30, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('T', 1 * 8, 60, A0, A1, A2, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('R', 2 * 8, 60, A0, A1, A2, 0, 0, 0));
+    REQUIRE(grid.cursorRowY() == 60);
+}
+
 TEST_CASE("ScreenGrid topHeader extracts title", "[hwdecode]") {
     ScreenGrid grid;
     // Row 10: "S", "O", "N", "G" at x=0,8,16,24

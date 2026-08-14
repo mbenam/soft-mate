@@ -162,12 +162,38 @@ std::vector<std::pair<int, std::string>> ScreenGrid::listRows() const {
 }
 
 int ScreenGrid::cursorRowY() const {
-    // Grid screens use '<' character in column 0 as the cursor marker.
-    // Prefer this over accent-color matching when present.
+    // The cursor's row is marked in the LEFT LABEL COLUMNS -- either a '<'
+    // glyph, or (confirmed fw 6.5.2, 2026-08-14) the row's own leading label
+    // recoloured to the accent. Prefer that over the generic scan below.
+    //
+    // Why this branch has to exist: on a grid screen the generic "topmost
+    // accent cell" scan cannot distinguish the cursor from the COLUMN-header
+    // indicator, which is also accent-coloured and also tracks the cursor (it
+    // shows which track column you are on). The header is always above the
+    // data, so topmost always picks the header and the reported row never
+    // advances. Measured on SONG via `m8drv inspect --key DOWN`: accent cells
+    // sat at (row 5, col 19) = the track-6 header indicator, and at
+    // (row 11, cols 1-2) = "05", the cursor's own row number. One DOWN press
+    // moved the latter to (row 12, cols 1-2) = "06" and left the former
+    // untouched. See M8_DRIVER_BUGS.md #22.
+    //
+    // x < 24 is the first three character cells at the 8px glyph pitch, which
+    // is where both the '<' marker and the row-number label live. Kept
+    // deliberately narrow so a highlighted value in the body of a row cannot
+    // win this branch.
+    //
+    // ch != ' ' for the same reason as the fallback: the M8 skips redrawing a
+    // vacated row's trailing blanks, so stale accent-coloured spaces linger.
+    // Directly observed in the run above -- (row 11, col 3, ' ') survived the
+    // press that moved the cursor to row 12.
+    int labelBest = -1;
     for (auto& [pos, c] : cells) {
-        if (c.ch == 0x3C && pos.second < 16 && pos.first >= 0)
-            return pos.first;
+        const bool marker = (c.ch == 0x3C) || (isCursor(c) && c.ch != ' ');
+        if (marker && pos.second < 24 && !isInHighlight(pos.second, pos.first)) {
+            if (labelBest < 0 || pos.first < labelBest) labelBest = pos.first;
+        }
     }
+    if (labelBest >= 0) return labelBest;
     // Fallback: topmost accent-colored cell in main area (works for non-grid screens).
     //
     // Hardware-confirmed (2026-07-18, real M8 fw 6.5.2, PROJECT screen): when the
