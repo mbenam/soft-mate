@@ -160,6 +160,30 @@ TEST_CASE("cursorValueText strips a form field's label", "[hwdecode]") {
     REQUIRE(m8::dev::cursorValueText(grid) == "00");
 }
 
+// Observed on fw 6.5.2: the accent run extends past the value into the row's
+// trailing padding, so INSTRUMENT's AMP read back as "40       ". A caller
+// comparing that against "40" fails on whitespace alone.
+TEST_CASE("cursorValueText trims trailing padding", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    const char* title = "INST. 00";
+    for (int i = 0; title[i]; ++i)
+        grid.handleFrame(makeCharFrame(title[i], i * 8, 30, W, W, W, 0, 0, 0));
+    // TYPE row included so readInstrumentType resolves deterministically -- it
+    // picks which instrument field map cursorValueText looks the label up in.
+    const char* type = "TYPE    MACROSYN";
+    for (int i = 0; type[i]; ++i)
+        grid.handleFrame(makeCharFrame(type[i], i * 8, 50, W, W, W, 0, 0, 0));
+    // "AMP 40" then several accent-coloured blanks, as the device sends it.
+    const char* row = "AMP 40       ";
+    for (int i = 0; row[i]; ++i)
+        grid.handleFrame(makeCharFrame(row[i], (24 + i) * 8, 110, A0, A1, A2, 0, 0, 0));
+
+    REQUIRE(m8::dev::cursorValueText(grid) == "40");
+}
+
 TEST_CASE("gridColumnEdges reads SONG's eight track columns", "[hwdecode]") {
     ScreenGrid grid;
     // SONG header at y=50: single digits 1..8, 24px apart starting at x=32.

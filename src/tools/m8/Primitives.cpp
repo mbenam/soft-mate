@@ -600,7 +600,12 @@ std::string cursorValueText(const ScreenGrid& grid) {
 
     std::string val = txt.substr(bestLen);
     const size_t start = val.find_first_not_of(" \t");
-    return (start == std::string::npos) ? "" : val.substr(start);
+    if (start == std::string::npos) return "";
+    // Trailing trim matters as much as leading: the accent run extends past the
+    // value into the row's padding, so AMP read back as "40       " and any
+    // caller comparing against "40" failed on whitespace alone.
+    const size_t end = val.find_last_not_of(" \t");
+    return val.substr(start, end - start + 1);
 }
 
 // ---- gridColumnEdges -------------------------------------------------------
