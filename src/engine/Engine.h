@@ -9,6 +9,7 @@
 #include "ZdfFilter.h"
 #include "EqFilter.h"
 #include "ReverbScM8.h"
+#include "ModFx.h"
 #include <atomic>
 #include <vector>
 #include <cmath>
@@ -820,6 +821,15 @@ private:
     float m_dcMixL = 0.0f;
     float m_dcMixR = 0.0f;
     daisysp::Chorus m_chorus;
+    // The other two ModFX algorithms. Which one runs is chosen per sample by
+    // effects.modfx_type; all three share MOD DEPTH / MOD FRQ and the return's
+    // width and reverb send.
+    Phaser  m_phaser;
+    Flanger m_flanger;
+    // Shared LFO phase for the phaser and flanger. The chorus keeps its own
+    // inside DaisySP. Right runs a quarter cycle behind left, which is what
+    // gives those two a stereo image for STEREO WIDTH to act on.
+    float   m_modFxPhase = 0.0f;
     daisysp::DelayLine<float, 96000> m_delayL;
     daisysp::DelayLine<float, 96000> m_delayR;
     // Our modified copy, not daisysp::ReverbSc -- the stock class exposes only

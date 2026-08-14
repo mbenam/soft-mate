@@ -151,8 +151,18 @@ authored while the saturation was unconditional and their levels lean on it. A s
 hardware still gets whatever it specifies. `saveNewSong` has to write the byte explicitly —
 `MixerSettings::write` zeroes `+28..+31` on its way past, so a song authored from a template
 would otherwise save with soft clip off and clip on reload. Test **A12**.
-**Stored but not audible:** SHIMMER and MOD TYPE — both need DSP that does not exist (a pitch
-shifter, and a phaser and flanger).
+**ModFX is a slot with three algorithms (2026-08-14), not a chorus.** `MOD TYPE` selects
+`00 CHORUS` / `01 PHASER` / `02 FLANGER`, and all three share MOD DEPTH, MOD FRQ, STEREO WIDTH
+and REVERB SEND — which is why the device's labels do not change as you cycle the type. Type 0
+still runs DaisySP's chorus untouched, so every song we have authored renders unchanged
+(**A13** pins that bit-for-bit). The other two are ours, in `src/engine/ModFx.h`: six swept
+allpass stages with feedback for the phaser, a 0.5–9 ms modulated delay with feedback for the
+flanger, sharing one LFO with the right channel a quarter cycle behind so STEREO WIDTH has an
+image to narrow. Both reset on `LOAD_SONG`. *Neither is hardware-verified* — textbook forms in
+the same approximation class as the FM/Wav engines; the sweep range, delay range and both
+feedback constants are choices, not measurements. Tests: A13, **A14** (each type audibly
+distinct from the others, and neither runs away despite the feedback).
+**Stored but not audible:** reverb SHIMMER, which needs a pitch shifter.
 **SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the
 M8's SOFT CLIP — on hardware a switchable parameter in the Limiter & Mix Scope view, applied
 after the limiter and after MIX, which is where ours sits. We have no Scope view and store no

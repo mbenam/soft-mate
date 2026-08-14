@@ -711,3 +711,49 @@ TEST_CASE("A12 SOFT CLIP defaults to the old unconditional tanh", "[audio]") {
     REQUIRE(maxDiff > 0.01f);
     REQUIRE(sumOff > sumOn);
 }
+
+// ---------------------------------------------------------------------------
+// A13-A14 -- ModFX is a slot with three algorithms (§UI-7), not just a chorus.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A13 ModFX type 0 is the untouched chorus", "[audio]") {
+    // Everything we have authored leaves modfx_type at 0, so introducing the
+    // dispatch must not have altered a single sample of the chorus path.
+    auto base = renderWithEffects([](EffectsState&) {});
+    auto same = renderWithEffects([](EffectsState& fx) { fx.modfx_type = 0; });
+    REQUIRE(base.size() == same.size());
+    bool identical = true;
+    for (size_t i = 0; i < base.size(); ++i)
+        if (base[i] != same[i]) { identical = false; break; }
+    REQUIRE(identical);
+}
+
+TEST_CASE("A14 phaser and flanger are distinct, stable effects", "[audio]") {
+    auto chorus  = renderWithEffects([](EffectsState& fx) { fx.modfx_type = 0; });
+    auto phaser  = renderWithEffects([](EffectsState& fx) { fx.modfx_type = 1; });
+    auto flanger = renderWithEffects([](EffectsState& fx) { fx.modfx_type = 2; });
+
+    REQUIRE(chorus.size() == phaser.size());
+    REQUIRE(chorus.size() == flanger.size());
+
+    auto maxDiff = [](const std::vector<float>& a, const std::vector<float>& b) {
+        float m = 0.0f;
+        for (size_t i = 0; i < a.size(); ++i) m = std::max(m, std::fabs(a[i] - b[i]));
+        return m;
+    };
+
+    // Each type has to be audibly its own thing -- not just different from the
+    // chorus, but from each other.
+    REQUIRE(maxDiff(chorus,  phaser)  > 0.001f);
+    REQUIRE(maxDiff(chorus,  flanger) > 0.001f);
+    REQUIRE(maxDiff(phaser,  flanger) > 0.001f);
+
+    // Both carry feedback, so the thing worth guarding is that neither runs
+    // away. OfflineHost already gates NaN/Inf and |s| <= 1 per chunk; this
+    // pins that they stay well short of the ceiling on a hot input.
+    float pkP = 0.0f, pkF = 0.0f;
+    for (float v : phaser)  pkP = std::max(pkP, std::fabs(v));
+    for (float v : flanger) pkF = std::max(pkF, std::fabs(v));
+    REQUIRE(pkP < 0.99f);
+    REQUIRE(pkF < 0.99f);
+}

@@ -156,6 +156,16 @@ void Engine::processCommands() {
                 // from whatever was previously loaded (e.g. the demo song), causing
                 // the in-app render path to diverge from m8_render's fresh engine.
                 m_chorus.Init(kSampleRate);
+                // The other two ModFX algorithms carry state too -- allpass
+                // memories, a delay line and their feedback -- so they reset
+                // here for the same reason as everything else in this block
+                // (invariant 11: the offline renderer starts from a fresh
+                // engine, so anything stateful must be cleared or the two
+                // paths diverge). Missing one of these is exactly the bug L9
+                // caught in ReverbScM8 earlier today.
+                m_phaser.reset();
+                m_flanger.reset();
+                m_modFxPhase = 0.0f;
                 m_delayL.Reset();
                 m_delayR.Reset();
                 m_reverb.Init(kSampleRate);
@@ -905,9 +915,35 @@ void Engine::render(float* buffer, int frames) {
         // DaisySP's Chorus takes a mono input and produces its own stereo
         // spread, so this one send is summed back down. Delay and reverb below
         // take both channels.
-        m_chorus.Process(0.5f * (sendChoL + sendChoR));
-        float choL = m_chorus.GetLeft();
-        float choR = m_chorus.GetRight();
+        // ModFX is a slot with three algorithms, not a chorus (§UI-7). All
+        // three share MOD DEPTH and MOD FRQ; only the processor differs. Type 0
+        // keeps DaisySP's chorus untouched, so a song that never sets this --
+        // which is every song we have authored -- renders exactly as before.
+        float choL = 0.0f, choR = 0.0f;
+        if (m_state.effects.modfx_type == 0) {
+            // DaisySP's Chorus takes a mono input and makes its own stereo
+            // spread, so this one send is summed back down.
+            m_chorus.Process(0.5f * (sendChoL + sendChoR));
+            choL = m_chorus.GetLeft();
+            choR = m_chorus.GetRight();
+        } else {
+            // Phaser and flanger get a shared LFO, with the right channel a
+            // quarter cycle behind the left so there is a stereo image for
+            // STEREO WIDTH to narrow.
+            m_modFxPhase += m_smoothChoFreq / kSampleRate;
+            if (m_modFxPhase >= 1.0f) m_modFxPhase -= 1.0f;
+            const float lfoL = 0.5f - 0.5f * std::cos(6.28318530718f * m_modFxPhase);
+            float qp = m_modFxPhase + 0.25f;
+            if (qp >= 1.0f) qp -= 1.0f;
+            const float lfoR = 0.5f - 0.5f * std::cos(6.28318530718f * qp);
+
+            if (m_state.effects.modfx_type == 1)
+                m_phaser.process(sendChoL, sendChoR, lfoL, lfoR,
+                                 m_smoothChoDepth, kSampleRate, choL, choR);
+            else
+                m_flanger.process(sendChoL, sendChoR, lfoL, lfoR,
+                                  m_smoothChoDepth, kSampleRate, choL, choR);
+        }
         applyStereoWidth(choL, choR, m_state.effects.cho_width);
 
         float maxDel = kSampleRate * 2.0f - 1.0f; // 2 seconds max
