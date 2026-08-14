@@ -75,7 +75,8 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
         // snapshot of the screen, whereas this is the value the primitive
         // actually resolved for the field that was asked about.
         bool haveValue = false;
-        std::string valueOut;
+        std::string valueOut;    // the field's value, label stripped
+        std::string rowOut;      // readField's raw row text
 
         int holdMs = defaultHoldMs;
         if (params.count("hold")) holdMs = std::atoi(params["hold"].c_str());
@@ -140,11 +141,14 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
                 code = ExitCode::NOT_FOUND;
                 errMessage = "field not found: " + field;
             } else {
-                // This was previously computed and then dropped on the floor:
-                // the reply carried only the semantic state, so callers fell
-                // back to cursor_value and never saw readField's answer.
+                // readField returns the WHOLE ROW by design -- assertField relies
+                // on substring-matching an expected value within it. So it is
+                // reported as "row", and "value" carries the label-stripped value
+                // callers actually asked for. Emitting the row as "value" is
+                // wrong: `read TEMPO` answered "TEMPO        120.00 <>".
                 haveValue = true;
-                valueOut = *val;
+                rowOut    = *val;
+                valueOut  = cursorValueText(dev.grid());
             }
         } else if (verbU == "SET") {
             std::string field = params["field"];
@@ -309,6 +313,7 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
         }
         if (haveValue) {
             ss << "  \"value\": \"" << jsonEscape(valueOut) << "\",\n";
+            ss << "  \"row\": \""   << jsonEscape(rowOut)   << "\",\n";
         }
         ss << "  \"state\": " << semState.toJson() << "\n";
         ss << "}";

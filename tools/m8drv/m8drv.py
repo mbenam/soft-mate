@@ -413,12 +413,18 @@ class M8Driver:
         return self._checked(self.send("MOVEGRID", step=step, col=col),
                              f"cursor_grid {step},{col}")
 
-    def read_field(self, field: str) -> Optional[str]:
-        """The field's value. Prefers the daemon's own `value`, which is what
-        readField resolved; `cursor_value` is a screen snapshot and only a
-        fallback for older m8_nav builds that did not emit `value`."""
+    def read_field(self, field: str, row: bool = False) -> Optional[str]:
+        """The field's value, with its label stripped.
+
+        `row=True` returns the whole row instead -- that is readField's own
+        contract, which assertField depends on for substring matching. Do not
+        confuse the two: the row for TEMPO reads "TEMPO        120.00 <>".
+        `cursor_value` is the fallback for m8_nav builds predating `value`.
+        """
         self._guard(field)
         r = self._checked(self.send("READ", field=field), f"read {field}")
+        if row:
+            return r.get("row")
         if "value" in r:
             return r["value"]
         return r.get("state", {}).get("cursor_value")
@@ -795,11 +801,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="allow pressing EDIT on a modal that will not cancel")
 
     for name, args in [("goto", ["screen"]), ("cursor", ["field"]),
-                       ("read", ["field"]), ("load", ["name"]),
+                       ("load", ["name"]),
                        ("capture", ["path"]), ("script", ["path"])]:
         sp = sub.add_parser(name)
         for a in args:
             sp.add_argument(a)
+
+    sp = sub.add_parser("read"); sp.add_argument("field")
+    sp.add_argument("--row", action="store_true",
+                    help="print the whole row instead of just the value")
 
     sp = sub.add_parser("set"); sp.add_argument("field"); sp.add_argument("value")
     sp = sub.add_parser("press"); sp.add_argument("key")
@@ -837,7 +847,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "cursor":
                 d.cursor(a.field); _print_screen(d)
             elif a.cmd == "read":
-                print(d.read_field(a.field))
+                print(d.read_field(a.field, row=a.row))
             elif a.cmd == "set":
                 d.set_field(a.field, a.value); _print_screen(d)
             elif a.cmd == "press":

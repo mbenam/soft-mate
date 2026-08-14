@@ -778,10 +778,15 @@ std::optional<std::string> readField(M8Device& dev, const std::string& fieldName
     auto cf = dev.cursorField();
     if (!cf) return std::nullopt;
 
-    // Read the full row text (all colors). On form screens the cursor
-    // accent cells are only the field labels; the values are in normal
-    // text. We return the entire row so assertField's substring matching
-    // can locate the expected value within it.
+    // Returns the full row text (all colours, not just accent), because
+    // assertField locates an expected value by substring-matching within it.
+    // Callers wanting just the value want cursorValueText() instead.
+    //
+    // The note that used to sit here -- "on form screens the cursor accent cells
+    // are only the field labels; the values are in normal text" -- is not what
+    // fw 6.5.2 does: the accent run covers the label AND the value together
+    // ("TRANSPOSE02", "TEMPO        120"). Returning the whole row is still the
+    // right contract for assertField, but not for that reason.
     // Read all text on the cursor row. mainRows() uses pixel-y keys.
     typedef std::vector<std::pair<int, std::string> > RowVec;
     RowVec rows = dev.grid().mainRows();
