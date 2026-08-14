@@ -27,8 +27,12 @@ SemanticState semanticState(M8Device& dev) {
     if (cf) {
         state.cursorField = cf->name;
         state.cursorRow = cf->row;
-        auto val = dev.valueOf(*cf);
-        if (val) state.cursorValue = *val;
+        // NOT valueOf(*cf): cf->col is the x of the FIRST accent cell on the row,
+        // which is the field's LABEL, and valueAt() reads forward from whatever
+        // column it is given -- so it returned the label ("TEMPO   120" reported
+        // a value of "TEMPO"). cursorValueText strips the label using the
+        // screen's own field map instead.
+        state.cursorValue = cursorValueText(dev.grid());
     } else {
         state.cursorRow = dev.grid().cursorRowY();
     }

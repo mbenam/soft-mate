@@ -570,6 +570,39 @@ static bool findCursorCell(const ScreenGrid& grid, int minRowY, int& y, int& x) 
     return false;
 }
 
+// ---- cursorValueText -------------------------------------------------------
+
+std::string cursorValueText(const ScreenGrid& grid) {
+    std::string txt = grid.cursorMainText();
+    while (!txt.empty() && txt.back() == '\n') txt.pop_back();
+    if (txt.empty()) return "";
+
+    const Screen s = identifyScreen(grid);
+    const std::string typeHint = (s == Screen::INSTRUMENT)
+                               ? readInstrumentType(grid) : std::string();
+    auto map = typeHint.empty() ? getFieldMap(s) : getFieldMap(s, typeHint);
+    if (map.isGrid || !map.fields) return txt;   // no labels to strip
+
+    std::string upperTxt = txt;
+    for (auto& c : upperTxt) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    // Longest match, not first: labels can prefix one another (e.g. "MOD" would
+    // shadow "MOD TYPE" and leave "TYPE" glued to the front of the value).
+    size_t bestLen = 0;
+    for (size_t i = 0; i < map.count; ++i) {
+        std::string lbl = map.fields[i].label;
+        if (lbl.empty() || lbl.size() > upperTxt.size()) continue;
+        for (auto& c : lbl) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (upperTxt.compare(0, lbl.size(), lbl) == 0 && lbl.size() > bestLen)
+            bestLen = lbl.size();
+    }
+    if (bestLen == 0) return txt;   // cursor is not on a mapped field
+
+    std::string val = txt.substr(bestLen);
+    const size_t start = val.find_first_not_of(" \t");
+    return (start == std::string::npos) ? "" : val.substr(start);
+}
+
 // ---- gridColumnEdges -------------------------------------------------------
 
 std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY) {

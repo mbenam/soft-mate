@@ -140,6 +140,26 @@ TEST_CASE("cursorRowY prefers the row label over the column header", "[hwdecode]
 // M8_DRIVER_BUGS.md #23. Column edges must come from the header row's runs, not
 // from the smallest glyph gap on screen -- the old code measured 8px (adjacent
 // glyphs inside one cell) where SONG's track columns are 24px apart.
+// The label/value split. cursorMainText() concatenates every accent cell on the
+// cursor's row, so the label and value arrive glued together -- with a gap on
+// PROJECT's TEMPO row ("TEMPO   120", observed on fw 6.5.2) and with none at all
+// on TRANSPOSE ("TRANSPOSE00"), which is why splitting on whitespace cannot work.
+TEST_CASE("cursorValueText strips a form field's label", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    // "PROJECT" title so identifyScreen resolves, then an accent TRANSPOSE row.
+    const char* title = "PROJECT";
+    for (int i = 0; title[i]; ++i)
+        grid.handleFrame(makeCharFrame(title[i], i * 8, 30, W, W, W, 0, 0, 0));
+    const char* row = "TRANSPOSE00";
+    for (int i = 0; row[i]; ++i)
+        grid.handleFrame(makeCharFrame(row[i], (1 + i) * 8, 60, A0, A1, A2, 0, 0, 0));
+
+    REQUIRE(m8::dev::cursorValueText(grid) == "00");
+}
+
 TEST_CASE("gridColumnEdges reads SONG's eight track columns", "[hwdecode]") {
     ScreenGrid grid;
     // SONG header at y=50: single digits 1..8, 24px apart starting at x=32.

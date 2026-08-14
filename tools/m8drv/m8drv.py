@@ -414,8 +414,13 @@ class M8Driver:
                              f"cursor_grid {step},{col}")
 
     def read_field(self, field: str) -> Optional[str]:
+        """The field's value. Prefers the daemon's own `value`, which is what
+        readField resolved; `cursor_value` is a screen snapshot and only a
+        fallback for older m8_nav builds that did not emit `value`."""
         self._guard(field)
         r = self._checked(self.send("READ", field=field), f"read {field}")
+        if "value" in r:
+            return r["value"]
         return r.get("state", {}).get("cursor_value")
 
     def set_field(self, field: str, value: Any) -> Dict[str, Any]:

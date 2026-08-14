@@ -158,6 +158,24 @@ JsonResult assertFirmware(M8Device& dev, int major, int minor, int patch);
 JsonResult dismissModal(M8Device& dev, bool confirm,
                         int holdMs = 15, int maxRetries = 5);
 
+// ---- Cursor value ----------------------------------------------------------
+
+// The value under the cursor on a form screen, with the field's own label
+// stripped off.
+//
+// cursorMainText() returns every accent-coloured cell on the cursor's row
+// concatenated, which is the label AND the value together ("TEMPO   120",
+// "TRANSPOSE00" -- note the second has no separating space, so splitting on
+// whitespace does not work). The label is therefore removed by looking it up in
+// the screen's own field map: the longest label that prefixes the text wins.
+//
+// Returns the raw text unchanged on grid screens, which have no labels -- read
+// gridStep/gridCol there instead.
+//
+// Takes the grid rather than the device because it reads nothing else, which also
+// makes it testable without a serial port.
+std::string cursorValueText(const ScreenGrid& grid);
+
 // ---- Grid geometry ---------------------------------------------------------
 
 // Left-edge X of every column on a grid screen, read off its column-header row.

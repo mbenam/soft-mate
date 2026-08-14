@@ -71,6 +71,11 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
 
         ExitCode code = ExitCode::SUCCESS;
         std::string errMessage;
+        // READ's answer. Kept separate from the semantic state because that is a
+        // snapshot of the screen, whereas this is the value the primitive
+        // actually resolved for the field that was asked about.
+        bool haveValue = false;
+        std::string valueOut;
 
         int holdMs = defaultHoldMs;
         if (params.count("hold")) holdMs = std::atoi(params["hold"].c_str());
@@ -134,6 +139,12 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
             if (!val) {
                 code = ExitCode::NOT_FOUND;
                 errMessage = "field not found: " + field;
+            } else {
+                // This was previously computed and then dropped on the floor:
+                // the reply carried only the semantic state, so callers fell
+                // back to cursor_value and never saw readField's answer.
+                haveValue = true;
+                valueOut = *val;
             }
         } else if (verbU == "SET") {
             std::string field = params["field"];
@@ -291,7 +302,13 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
         ss << "  \"ok\": " << (code == ExitCode::SUCCESS ? "true" : "false") << ",\n";
         ss << "  \"code\": " << static_cast<int>(code) << ",\n";
         if (!errMessage.empty()) {
-            ss << "  \"error\": \"" << errMessage << "\",\n";
+            // Escaped: these carry field names, verbs and file paths straight
+            // from the request, and a Windows path's backslashes alone are
+            // enough to emit invalid JSON and desync the caller's parser.
+            ss << "  \"error\": \"" << jsonEscape(errMessage) << "\",\n";
+        }
+        if (haveValue) {
+            ss << "  \"value\": \"" << jsonEscape(valueOut) << "\",\n";
         }
         ss << "  \"state\": " << semState.toJson() << "\n";
         ss << "}";
