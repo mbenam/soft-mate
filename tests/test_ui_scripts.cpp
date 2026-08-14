@@ -154,6 +154,28 @@ TEST_CASE("UI scripts", "[ui]") {
                 INFO("render: " << renderCmd);
                 REQUIRE(runProcess(renderCmd) == 0);
 
+                // Both sides must be AUDIBLE before comparing them, or this
+                // section passes on nothing. Found 2026-08-14: the reference
+                // render was coming back at `peak 0.000 rms 0.0000` with zero
+                // note-ons, the app WAV had the identical fnv1a64 hash because it
+                // was silent too, `m8_analyze --diff` correctly refused the
+                // comparison and returned 2 -- and `rc == 0 || rc == 2` accepted
+                // that as a pass. So ARCHITECTURE.md's hard invariant #11 ("the
+                // offline renderer and the app must produce identical audio") was
+                // being verified by comparing silence to silence.
+                //
+                // rc 2 is still accepted below, because two REAL files hashing
+                // identically is the desired outcome for that invariant -- it is
+                // only meaningless when the files are empty. Hence the gate here
+                // rather than tightening the rc check.
+                for (const std::string& w : {appWav, refOut + ".wav"}) {
+                    const std::string silenceCmd = std::string(kAnalyze) + " " + w;
+                    INFO("silence gate: " << silenceCmd);
+                    // m8_analyze's hard checks include a longest-silence limit, so
+                    // a silent file fails it (rc 1) rather than passing.
+                    REQUIRE(runProcess(silenceCmd) == 0);
+                }
+
                 const std::string diffCmd = std::string(kAnalyze) +
                     " --diff " + appWav + " " + refOut + ".wav";
                 INFO("diff: " << diffCmd);

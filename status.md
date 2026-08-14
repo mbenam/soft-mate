@@ -781,6 +781,18 @@ Future captures use the C++ `m8_capture`.
   reason: the retired constant-power pan law was asymmetric at centre (`0x80/255` = 0.50196, so
   `cos != sin`), which injected a rounding artefact into the channel difference and made the case
   look like it was measuring the returns.
+- **The app-vs-offline-render comparison was passing on silence.** Found 2026-08-14. The `[ui]`
+  suite's `live_vs_offline` section renders a reference with `m8_render` and diffs it against the
+  app's own WAV, which is how ARCHITECTURE.md's hard invariant #11 ("the offline renderer and the
+  app must produce identical audio") is checked. The reference render was coming back at
+  `peak 0.000 rms 0.0000` with **zero note-ons**, the app WAV had the identical fnv1a64 hash
+  because it was silent too, `m8_analyze --diff` correctly refused the comparison and returned 2,
+  and the test's `rc == 0 || rc == 2` accepted that as a pass. Two silent files are identical, so
+  the section proved nothing. Now gated: both WAVs must pass `m8_analyze`'s hard checks (which
+  include a longest-silence limit) before the diff runs. `rc == 2` is still accepted afterwards,
+  because two *real* files hashing identically is exactly the desired outcome for that invariant.
+  **Still open: why the render is silent at all** — zero note-ons suggests the `--song` reference
+  render is not being given a playable song, which is a separate defect from the vacuous gate.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked
