@@ -870,3 +870,69 @@ NAME BEFORE SAVING") and the driver has no text-entry primitive, so naming is a
 human step too.
 
 - **Date:** 2026-08-13
+
+---
+
+## UI-8 — The file library's effects-block offsets are wrong
+
+Read from a real M8 (firmware 6.5.2, COM3) on 2026-08-14: the EFFECT SETTINGS
+screen, photographed with all three blocks visible, lined up against the bytes
+of a device-saved file (`tests/fixtures/device_golden/scope_rel_10.m8s`).
+
+**Device screen**
+
+```
+MODFX   MOD TYPE 00 CHORUS   INPUT EQ   MOD DEPTH:FRQ 40:80
+        STEREO WIDTH FF      REVERB SEND 00
+DELAY   INPUT EQ             TIME L:R 30:30    FEEDBACK 80
+        STEREO WIDTH FF      REVERB SEND 00
+REVERB  INPUT EQ             ROOM SIZE FF      DECAY:SHIMMER C0:00
+        MOD DEPTH:FRQ 10:FF  STEREO WIDTH FF
+```
+
+**File, from the effects block base (0x1A5C1)**
+
+```
++0  +1  +2  +3  +4  +5  +6  +7  +8  +9 +10 +11 +12 +13 +14 +15 +16 +17 +18 +19 +20 +21
+40  80  FF  00  00  00  00  00  00  30  30  80  FF  00  00  00  00  FF  C0  10  FF  FF
+```
+
+Delay's five values (`30 30 80 FF 00`) appear consecutively at **+9**, and
+reverb's five (`FF C0 10 FF FF`) at **+17**. Both are exact five-in-a-row
+matches, so the alignment is not in doubt.
+
+**Measured layout**
+
+```
++0   MODFX  mod depth        +9   DELAY  time L        +17  REVERB room size
++1   MODFX  mod freq         +10  DELAY  time R        +18  REVERB decay
++2   MODFX  stereo width     +11  DELAY  feedback      +19  REVERB mod depth
++3   MODFX  reverb send      +12  DELAY  stereo width  +20  REVERB mod freq
++4   MODFX  mod type         +13  DELAY  reverb send   +21  REVERB stereo width
++5..+8  unknown              +14..+16  unknown         +22..  unknown (SHIMMER?)
+```
+
+**What the library does instead.** `EffectsSettings::from_reader` allows three
+filler bytes after the modfx fields and one after delay, so it starts delay at
+**+6** and reverb at **+12** — 3 and 5 bytes early respectively. It also names
++2 `chorus_reverb_send` when the device calls it STEREO WIDTH. Newer firmware
+added MOD TYPE and SHIMMER; the library never caught up.
+
+**Consequences.**
+
+- Every delay and reverb value the clone loads and displays is the wrong byte.
+  A song whose real feedback is `80` shows `00`.
+- Load and save are symmetrically wrong, so an untouched song still round-trips
+  byte-identically. **L4 cannot catch this** — and did not.
+- `saveUnwrittenBlocks` briefly wrote this block back (same day, both
+  directions). That turned a merely inert edit into one that lands on the wrong
+  parameter, so the effects patch was removed again pending corrected offsets.
+  Test L23 is retained but hidden (`[io][.]`) as the contract to restore.
+- MODFX REVERB SEND (+3) and MOD TYPE (+4), and reverb SHIMMER, have no engine
+  field at all. Phaser and Flanger are not implemented; the clone hardcodes a
+  chorus.
+
+**+22 is `00` and so is much of the block, so SHIMMER's position is a guess and
+is recorded as one.** The rest above is measured.
+
+- **Date:** 2026-08-14

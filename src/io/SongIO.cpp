@@ -166,23 +166,10 @@ static constexpr size_t kMixDjPeak       = 26;  // OTT
 static constexpr size_t kMixDjFilterType = 27;
 static constexpr size_t kMixerBlockSize  = 32;
 
-// Field offsets inside the effects block, in its V4+ shape (the pre-4.0 layout
-// carries delay_hp/lp and reverb_hp/lp; save refuses pre-4.0 files anyway).
-// +3..+5 and +11 are reserved and left alone.
-static constexpr size_t kFxChorusModDepth   = 0;
-static constexpr size_t kFxChorusModFreq    = 1;
-static constexpr size_t kFxChorusReverbSend = 2;
-static constexpr size_t kFxDelayTimeL       = 6;
-static constexpr size_t kFxDelayTimeR       = 7;
-static constexpr size_t kFxDelayFeedback    = 8;
-static constexpr size_t kFxDelayWidth       = 9;
-static constexpr size_t kFxDelayReverbSend  = 10;
-static constexpr size_t kFxReverbSize       = 12;
-static constexpr size_t kFxReverbDamping    = 13;
-static constexpr size_t kFxReverbModDepth   = 14;
-static constexpr size_t kFxReverbModFreq    = 15;
-static constexpr size_t kFxReverbWidth      = 16;
-static constexpr size_t kFxBlockSize        = 17;
+// (Effects-block field offsets used to live here. They mirrored the file
+// library's layout, which the device says is wrong -- see the note in
+// saveUnwrittenBlocks, which carries the measured offsets for when this is
+// fixed properly.)
 
 static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& bytes) {
     if (!song.version.at_least(4, 0)) return;
@@ -228,24 +215,34 @@ static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& byte
         }
     }
 
-    // --- Effects -------------------------------------------------------------
-    if (bytes.size() >= o.effect_settings + kFxBlockSize) {
-        uint8_t* p = bytes.data() + o.effect_settings;
-        const auto& fx = song.effects_settings;
-        p[kFxChorusModDepth]   = fx.chorus_mod_depth;
-        p[kFxChorusModFreq]    = fx.chorus_mod_freq;
-        p[kFxChorusReverbSend] = fx.chorus_reverb_send;
-        p[kFxDelayTimeL]       = fx.delay_time_l;
-        p[kFxDelayTimeR]       = fx.delay_time_r;
-        p[kFxDelayFeedback]    = fx.delay_feedback;
-        p[kFxDelayWidth]       = fx.delay_width;
-        p[kFxDelayReverbSend]  = fx.delay_reverb_send;
-        p[kFxReverbSize]       = fx.reverb_size;
-        p[kFxReverbDamping]    = fx.reverb_damping;
-        p[kFxReverbModDepth]   = fx.reverb_mod_depth;
-        p[kFxReverbModFreq]    = fx.reverb_mod_freq;
-        p[kFxReverbWidth]      = fx.reverb_width;
-    }
+    // --- Effects: DELIBERATELY NOT WRITTEN ------------------------------------
+    //
+    // The effects block was patched here until 2026-08-13, when reading the
+    // device's EFFECT SETTINGS screen showed the file library's field offsets
+    // for it are wrong (hw_findings.md UI-8). Lining the screen up against the
+    // bytes of a device-saved file gives, from the block base:
+    //
+    //     +0  MODFX  mod depth        +9   DELAY  time L      +17  REVERB size
+    //     +1  MODFX  mod freq         +10  DELAY  time R      +18  REVERB decay
+    //     +2  MODFX  stereo width     +11  DELAY  feedback    +19  REVERB mod depth
+    //     +3  MODFX  reverb send      +12  DELAY  stereo wid  +20  REVERB mod freq
+    //     +4  MODFX  mod type         +13  DELAY  reverb send +21  REVERB stereo width
+    //
+    // The library instead starts delay at +6 and reverb at +12 -- it allows 3
+    // filler bytes after the modfx fields where there are 5, and 1 after delay
+    // where there are 3. Newer firmware added MOD TYPE and SHIMMER and the
+    // library never caught up.
+    //
+    // So `song.effects_settings` holds the wrong bytes for every delay and
+    // reverb field. Load and save are symmetrically wrong, so an untouched song
+    // still round-trips byte-identically -- but writing this block back means a
+    // user's edit to, say, FEEDBACK lands on a byte that is not feedback.
+    // Before this function existed the effects block was never written at all,
+    // so those edits were merely inert; patching it made them actively
+    // destructive. Inert is the safer of the two while the offsets are wrong.
+    //
+    // Re-enable together with corrected offsets read through our own accessors
+    // rather than the library's struct, and re-enable test L23 with it.
 }
 
 // ---- FxCmd mapping ----

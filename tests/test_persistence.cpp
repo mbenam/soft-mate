@@ -1051,7 +1051,26 @@ TEST_CASE("L22 edited grooves survive save and reload", "[io]") {
     std::remove("groove_rt.m8s");
 }
 
-TEST_CASE("L23 edited effects settings survive save and reload", "[io]") {
+// DISABLED 2026-08-13 (hidden via Catch2's leading-dot convention, the same
+// idiom test_ui_fuzz.cpp uses). This test passed when it was written, because
+// saveUnwrittenBlocks patched the effects block using the file library's field
+// offsets -- and the load path reads those same offsets, so the round-trip
+// closed on itself. Reading the device's EFFECT SETTINGS screen then showed
+// those offsets are wrong for delay and reverb (hw_findings.md UI-8): the
+// library starts delay 3 bytes early and reverb 5 bytes early. Writing the
+// block back therefore lands a user's edit on the wrong parameter, so the
+// effects patch was removed and this assertion no longer holds.
+//
+// It is kept, not deleted: it is the exact contract to restore once the
+// offsets are corrected. Re-tag it "[io]" at that point.
+//
+// Note the tag is "[.effects_offsets]" and deliberately NOT "[io][.]", which
+// was the first attempt and did not work: Catch2's leading-dot convention
+// hides a case from a *default* run, but an explicit tag filter still selects
+// it, so `m8_tests "[io]"` ran it anyway and went red. Carrying no [io] tag is
+// what actually keeps it out of that run. Ask for it by name when the offsets
+// are fixed:  m8_tests "[effects_offsets]"
+TEST_CASE("L23 edited effects settings survive save and reload", "[.effects_offsets]") {
     auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
     REQUIRE(result.ok);
 

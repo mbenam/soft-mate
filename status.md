@@ -263,7 +263,7 @@ degrade/transpose/table_tick + the synth-params subset + DETUNE via `fine_pitch`
 on save, overlaying only modeled fields so the byte-identical round-trip still holds (tests S-RT1,
 S-DET2). Previously the `engine→file` mappers were dead code and instrument edits were silently
 discarded on save. (MacroSynth `shape/timbre/color` now round-trip too — groundwork for Braids.)
-**Tempo, mixer, groove and effects edits now persist (2026-08-13):** the same class of bug as
+**Tempo, mixer and groove edits now persist (2026-08-13):** the same class of bug as
 the instrument one above, one layer down. `Song::write` seeks straight to the song steps and
 only emits the data sections from there on, so the whole header region (tempo, mixer, the 32
 grooves) and the effects block were left as whatever the original file said.
@@ -277,6 +277,14 @@ right channel our engine cannot represent — `hw_findings.md` §UI-4e), the res
 the effects block, and the four unidentified bytes ending the mixer block, which are non-zero
 on real files. Tempo is only rewritten when it changed at the engine's own hundredths
 resolution, so an untouched song keeps its exact f32 bits and L4 still holds. Tests L20–L24.
+**Effects are deliberately excluded** — they were included in the first version of this fix and
+taken back out the same day. The file library's field offsets for the effects block are wrong
+(`hw_findings.md` §UI-8): it starts delay 3 bytes early and reverb 5 bytes early, so every
+delay/reverb value we load and display is the wrong byte. Load and save were symmetrically
+wrong, so untouched songs still round-tripped and L4 never noticed — but writing the block
+back turned an inert edit into one that lands on the wrong parameter. Effects are back to not
+being written until the offsets are corrected against our own accessors. Test L23 is kept but
+hidden (`[io][.]`) as the contract to restore.
 
 ### Analysis + capture tooling (`M8_AUDIO_ANALYSIS_SPEC.md` Parts A–D, `M8_CAPTURE_SPEC.md`)
 - **kissfft** vendored; `magnitudeSpectrum()` with a baked-in Hann window.
