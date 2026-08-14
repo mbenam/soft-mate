@@ -514,62 +514,102 @@ class M8Driver:
             "settled": st.get("settled"),
         }
 
-    def rects(self, key: Optional[str | int] = None) -> Dict[str, Any]:
-        """Show the screen's rect fills (0xFE highlights), which the semantic
-        state does not expose at all.
+    ACCENT = [0, 252, 248]   # M8 default theme accent, == ScreenGrid::cursorColor
 
-        This is the missing view for grid screens. `cursorRowY()`
-        (M8Device.cpp:188) finds the cursor by scanning for accent-COLOURED
-        text and explicitly skips any cell inside a highlight
-        (`!isInHighlight(...)`). If the M8 draws a grid cursor as a rect fill
-        rather than as coloured text, that scan can never see it -- so knowing
-        whether a rect sits on the cursor cell decides where grid-cursor
-        tracking has to read from.
-
-        Pass `key` to also report which rects move when that key is pressed:
-        a rect that follows the key IS the cursor.
-        """
+    def _capture(self) -> Dict[str, Any]:
         import tempfile
-
-        def snap() -> Dict[str, Any]:
-            fd, path = tempfile.mkstemp(suffix=".json", prefix="m8drv_cap_")
-            os.close(fd)
+        fd, path = tempfile.mkstemp(suffix=".json", prefix="m8drv_cap_")
+        os.close(fd)
+        try:
+            self.send("CAPTURE", path=path)
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        finally:
             try:
-                self.send("CAPTURE", path=path)
-                with open(path, encoding="utf-8") as f:
-                    return json.load(f)
-            finally:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
+                os.unlink(path)
+            except OSError:
+                pass
 
-        a = snap()
+    def inspect(self, key: Optional[str | int] = None) -> Dict[str, Any]:
+        """Show where the accent colour actually is, as foreground AND background.
+
+        `ScreenGrid::isCursor()` (M8Device.cpp:66) tests the **foreground** only:
+
+            return c.fg[0]==cursorColor[0] && c.fg[1]==... && c.fg[2]==...
+
+        So a cursor drawn as inverse video -- accent as BACKGROUND with a dark
+        foreground, which is the usual tracker-grid cursor -- is invisible to it,
+        and to everything built on it (`cursorRowY`, `cursorField`,
+        `moveCursorToGrid`).
+
+        This reports accent-as-fg and accent-as-bg cells separately, plus rect
+        fills, and with `key` shows which of them move. Whichever set follows the
+        key is the real cursor.
+        """
+        def read(cap: Dict[str, Any]) -> Dict[str, Any]:
+            pal = cap.get("palette") or []
+            try:
+                idx = pal.index(self.ACCENT)
+            except ValueError:
+                idx = None
+            cells = cap.get("cells") or []
+            return {
+                "accent_index": idx,
+                "fg": sorted((c["row"], c["col"], c.get("ch"))
+                             for c in cells if c.get("fg") == idx),
+                "bg": sorted((c["row"], c["col"], c.get("ch"))
+                             for c in cells if c.get("bg") == idx),
+                "rects": sorted((r["col"], r["row"], r["w_px"], r["h_px"])
+                                for r in (cap.get("rects") or [])),
+            }
+
+        cap_a = self._capture()
+        a = read(cap_a)
         out: Dict[str, Any] = {
-            "screen": a.get("screen"),
-            "settled": a.get("settled"),
-            "pitch": [a.get("pitch_x"), a.get("pitch_y")],
-            "palette": a.get("palette"),
-            "rect_count": len(a.get("rects") or []),
-            "rects": a.get("rects"),
+            "screen": cap_a.get("screen"),
+            "settled": cap_a.get("settled"),
+            "pitch": [cap_a.get("pitch_x"), cap_a.get("pitch_y")],
+            "accent_index": a["accent_index"],
+            "accent_fg_cells": a["fg"],
+            "accent_bg_cells": a["bg"],
+            "rects": a["rects"],
         }
-        if key is not None:
-            self.press(key)
-            b = snap()
-            before = {(r["col"], r["row"], r["w_px"], r["h_px"]) for r in (a.get("rects") or [])}
-            after = {(r["col"], r["row"], r["w_px"], r["h_px"]) for r in (b.get("rects") or [])}
-            out["after_key"] = str(key)
-            out["rects_after"] = b.get("rects")
-            out["rects_gone"] = sorted(before - after)
-            out["rects_new"] = sorted(after - before)
-            moved = (before - after) or (after - before)
+        if a["accent_index"] is None:
+            out["warning"] = (f"accent {self.ACCENT} is not in this screen's palette; "
+                              f"the device theme may differ from cursorColor.")
+        if key is None:
+            return out
+
+        self.press(key)
+        b = read(self._capture())
+        out["after_key"] = str(key)
+        out["accent_fg_after"] = b["fg"]
+        out["accent_bg_after"] = b["bg"]
+        out["rects_after"] = b["rects"]
+        fg_moved = set(a["fg"]) != set(b["fg"])
+        bg_moved = set(a["bg"]) != set(b["bg"])
+        rect_moved = set(a["rects"]) != set(b["rects"])
+        out["fg_moved"], out["bg_moved"], out["rect_moved"] = fg_moved, bg_moved, rect_moved
+
+        if bg_moved and not fg_moved:
             out["verdict"] = (
-                "a rect MOVED with the key -- the grid cursor is a rect fill, and "
-                "cursorRowY()'s colour scan can never see it (it skips "
-                "highlighted cells). Grid cursor tracking must read `highlights`."
-                if moved else
-                "no rect moved. The cursor is not a rect fill on this screen, so "
-                "the press itself is not landing or does nothing here.")
+                "ACCENT BACKGROUND moved, foreground did not. The grid cursor is "
+                "inverse video, and isCursor() tests fg only (M8Device.cpp:66) -- "
+                "so it is invisible to cursorRowY/cursorField/moveCursorToGrid by "
+                "construction. Fix: match accent as bg too.")
+        elif fg_moved and bg_moved:
+            out["verdict"] = ("both fg and bg accent moved -- compare the row sets "
+                              "to see which one is the cursor and which is the "
+                              "header track indicator.")
+        elif fg_moved:
+            out["verdict"] = ("only accent foreground moved, so isCursor() can see "
+                              "the cursor; the defect is the missing row floor "
+                              "(the header outranks it).")
+        elif rect_moved:
+            out["verdict"] = "only a rect moved -- the cursor is a rect fill."
+        else:
+            out["verdict"] = ("nothing moved at all: the press is not landing on "
+                              "this screen.")
         return out
 
     def probe(self, key: str | int, times: int = 3,
@@ -740,7 +780,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("keyjazz"); sp.add_argument("note", type=int)
     sp.add_argument("--vel", type=int, default=0x7F)
     sp = sub.add_parser("fields"); sp.add_argument("screen", nargs="?")
-    sp = sub.add_parser("rects", help="show rect fills (highlights); --key to see which move")
+    sp = sub.add_parser("inspect",
+                        help="show accent cells (fg and bg) and rects; --key to see which move")
     sp.add_argument("--key", default=None)
     sp = sub.add_parser("cursor-grid", help="move the cursor on a grid screen")
     sp.add_argument("step", type=int); sp.add_argument("col", type=int)
@@ -785,8 +826,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "fields":
                 for f in d.fields(a.screen):
                     print(f)
-            elif a.cmd == "rects":
-                print(json.dumps(d.rects(a.key), indent=2))
+            elif a.cmd == "inspect":
+                print(json.dumps(d.inspect(a.key), indent=2))
             elif a.cmd == "cursor-grid":
                 d.cursor_grid(a.step, a.col); _print_screen(d)
             elif a.cmd == "probe":

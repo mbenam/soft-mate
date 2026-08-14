@@ -69,6 +69,7 @@ decision.
 | `doctor` | End-to-end health check. Reports firmware, `gestures_ready`, screen drift, and a cursor key round-trip. Run this first. |
 | `dump` / `state` | Decoded screen / raw semantic-state JSON |
 | `probe <KEY> [--times N]` | Press a key repeatedly and report exactly what moved. The diagnostic for "did the press land, or is cursor tracking wrong?" |
+| `inspect [--key K]` | Show accent-coloured cells as **foreground and background** separately, plus rect fills. With `--key`, reports which channel moves — i.e. which one is the real cursor. The only view of colour in the toolchain. |
 | `goto <SCREEN>` | `SONG CHAIN PHRASE INSTRUMENT TABLE PROJECT GROOVE MODS SCALE INST_POOL MIXER EFFECTS` |
 | `cursor <FIELD>` | Move to a named field — **form screens only** |
 | `cursor-grid <STEP> <COL>` | Move on a grid screen — see Gotchas |
@@ -106,11 +107,15 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   On SONG the reported cursor row is y=50, which is the *track-number header*, not
   a data row (data starts at y=60). Confirmed working on PROJECT (cursor tracked
   50→60→70→80 through TRANSPOSE/GROOVE/SCALE, `baseline_drift: 0`), confirmed
-  broken on SONG. Use `rects --key DOWN` to see whether the grid cursor is a rect
-  fill — if it is, `cursorRowY()` cannot see it by construction, since it skips
-  highlighted cells.
-- **Rect fills are invisible to the semantic state.** `state`/`dump` show only
-  cells; the `highlights` array is not in `SemanticState` at all. Use `rects`.
+  broken on SONG. Use `inspect --key DOWN` to see which visual channel the cursor
+  actually lives in.
+- **Colour and rect information is invisible to the semantic state.** `state` and
+  `dump` give text only — no cell colours, and the `highlights` array is not in
+  `SemanticState` at all. Use `inspect`. It matters because
+  `ScreenGrid::isCursor()` ([M8Device.cpp:66](../../src/tools/m8/M8Device.cpp:66))
+  tests the **foreground** colour only, so a cursor drawn as inverse video
+  (accent background, dark foreground — the usual tracker-grid cursor) is
+  invisible to it and to everything built on it.
 - **Never compare whole-screen snapshots to detect a change.** `settled` flaps
   between reads, so any comparison including it differs whether or not anything
   moved. This produced a false "keys reach the device" in the first `doctor`
