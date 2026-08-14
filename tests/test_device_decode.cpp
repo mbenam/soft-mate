@@ -203,6 +203,27 @@ TEST_CASE("cursorValueText survives a leading accent blank", "[hwdecode]") {
     REQUIRE(m8::dev::cursorValueText(grid) == "F0");
 }
 
+// Same field, next frame: the interior blanks were NOT accent-coloured that read,
+// so cursorMainText returned "OUTPUTVOLF0" with the spaces collapsed and the label
+// "OUTPUT VOL" no longer prefix-matched. Observed on fw 6.5.2 immediately after a
+// home call. The label match has to ignore whitespace on both sides.
+TEST_CASE("cursorValueText matches a label across collapsed spaces", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    const char* title = "MIXER";
+    for (int i = 0; title[i]; ++i)
+        grid.handleFrame(makeCharFrame(title[i], i * 8, 30, W, W, W, 0, 0, 0));
+    // Only the glyph cells are accent-coloured; the gaps between them are not sent
+    // as accent, so they never reach cursorMainText at all.
+    const char* glyphs = "OUTPUTVOLF0";
+    for (int i = 0; glyphs[i]; ++i)
+        grid.handleFrame(makeCharFrame(glyphs[i], (1 + i) * 8, 50, A0, A1, A2, 0, 0, 0));
+
+    REQUIRE(m8::dev::cursorValueText(grid) == "F0");
+}
+
 TEST_CASE("gridColumnEdges reads SONG's eight track columns", "[hwdecode]") {
     ScreenGrid grid;
     // SONG header at y=50: single digits 1..8, 24px apart starting at x=32.

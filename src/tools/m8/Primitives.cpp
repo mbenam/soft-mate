@@ -572,6 +572,36 @@ static bool findCursorCell(const ScreenGrid& grid, int minRowY, int& y, int& x) 
 
 // ---- cursorValueText -------------------------------------------------------
 
+// Match `label` against the front of `txt` comparing only alphanumerics, and
+// return the index in `txt` just past the match (or npos if it does not match).
+//
+// Whitespace-insensitive because the accent run decides which cells arrive, and
+// the same field reads differently between frames: MIXER's OUTPUT VOL came back
+// as " OUTPUT VOL  F0" in one read and "OUTPUTVOLF0" in the next, the interior
+// blanks having not been accent-coloured that time. A plain prefix compare
+// matches the first and fails the second, which reads as flakiness.
+static size_t matchLabelPrefix(const std::string& txt, const std::string& label) {
+    auto isAl  = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; };
+    auto upper = [](char c) {
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    };
+    size_t ti = 0;
+    for (size_t li = 0; li < label.size(); ++li) {
+        if (!isAl(label[li])) continue;                 // skip label separators
+        while (ti < txt.size() && !isAl(txt[ti])) ti++;  // skip text separators
+        if (ti >= txt.size() || upper(txt[ti]) != upper(label[li])) return std::string::npos;
+        ti++;
+    }
+    return ti;
+}
+
+static size_t alnumCount(const std::string& s) {
+    size_t n = 0;
+    for (char c : s)
+        if (std::isalnum(static_cast<unsigned char>(c))) n++;
+    return n;
+}
+
 std::string cursorValueText(const ScreenGrid& grid) {
     std::string txt = grid.cursorMainText();
     while (!txt.empty() && txt.back() == '\n') txt.pop_back();
@@ -592,22 +622,21 @@ std::string cursorValueText(const ScreenGrid& grid) {
     auto map = typeHint.empty() ? getFieldMap(s) : getFieldMap(s, typeHint);
     if (map.isGrid || !map.fields) return txt;   // no labels to strip
 
-    std::string upperTxt = txt;
-    for (auto& c : upperTxt) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-
     // Longest match, not first: labels can prefix one another (e.g. "MOD" would
     // shadow "MOD TYPE" and leave "TYPE" glued to the front of the value).
-    size_t bestLen = 0;
+    // "Longest" is counted in alphanumerics, since that is what is compared.
+    size_t bestEnd = std::string::npos, bestScore = 0;
     for (size_t i = 0; i < map.count; ++i) {
-        std::string lbl = map.fields[i].label;
-        if (lbl.empty() || lbl.size() > upperTxt.size()) continue;
-        for (auto& c : lbl) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        if (upperTxt.compare(0, lbl.size(), lbl) == 0 && lbl.size() > bestLen)
-            bestLen = lbl.size();
+        const std::string lbl = map.fields[i].label ? map.fields[i].label : "";
+        if (lbl.empty()) continue;
+        const size_t score = alnumCount(lbl);
+        if (score <= bestScore) continue;
+        const size_t end = matchLabelPrefix(txt, lbl);
+        if (end != std::string::npos) { bestEnd = end; bestScore = score; }
     }
-    if (bestLen == 0) return txt;   // cursor is not on a mapped field
+    if (bestEnd == std::string::npos) return txt;   // not on a mapped field
 
-    std::string val = txt.substr(bestLen);
+    std::string val = txt.substr(bestEnd);
     const size_t start = val.find_first_not_of(" \t");
     if (start == std::string::npos) return "";
     // Trailing trim matters as much as leading: the accent run extends past the
