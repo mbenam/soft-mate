@@ -162,7 +162,19 @@ image to narrow. Both reset on `LOAD_SONG`. *Neither is hardware-verified* — t
 the same approximation class as the FM/Wav engines; the sweep range, delay range and both
 feedback constants are choices, not measurements. Tests: A13, **A14** (each type audibly
 distinct from the others, and neither runs away despite the feedback).
-**Stored but not audible:** reverb SHIMMER, which needs a pitch shifter.
+**Reverb SHIMMER is live (2026-08-14)** — the last silent control on the screen. The tail is
+fed back through an octave-up pitch shifter (`src/engine/Shimmer.h`), so it blooms instead of
+only decaying. The shifter is the two-head crossfade form: write at 1x, read at 2x with two
+heads half a window apart under Hann windows that sum to one — not a phase vocoder, and it
+does not pretend to be; at 2x the artefacts are a slight warble on transients, which is the
+texture a shimmer is made of. Amount `00` skips the path entirely (**A15**, exact identity).
+Stability is the real risk, since this feeds the reverb's own output back into its input while
+the internal feedback already runs to 0.98: the amount is capped at `kShimmerMax = 0.45` and
+the fed-back signal goes through a `tanh`. **A16** renders with decay `0xF0` and shimmer `0xFF`
+and asserts the peak stays clear of full scale *and* that energy in the last eighth is not
+climbing away from the middle. *Not hardware-verified:* octave-up is the conventional choice
+and the M8's actual interval is unmeasured; the amount curve and the ceiling are ours.
+**Every control on the Effects screen is now audible.**
 **SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the
 M8's SOFT CLIP — on hardware a switchable parameter in the Limiter & Mix Scope view, applied
 after the limiter and after MIX, which is where ours sits. We have no Scope view and store no

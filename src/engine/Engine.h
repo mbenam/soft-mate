@@ -10,6 +10,7 @@
 #include "EqFilter.h"
 #include "ReverbScM8.h"
 #include "ModFx.h"
+#include "Shimmer.h"
 #include <atomic>
 #include <vector>
 #include <cmath>
@@ -826,6 +827,11 @@ private:
     // width and reverb send.
     Phaser  m_phaser;
     Flanger m_flanger;
+    // SHIMMER: the reverb's own output, pitched up an octave and fed back into
+    // its input. m_shimmerFeed carries one sample of delay, which is what keeps
+    // the loop from being instantaneous.
+    OctaveUpShifter m_shimmer;
+    float m_shimmerFeed = 0.0f;
     // Shared LFO phase for the phaser and flanger. The chorus keeps its own
     // inside DaisySP. Right runs a quarter cycle behind left, which is what
     // gives those two a stereo image for STEREO WIDTH to act on.

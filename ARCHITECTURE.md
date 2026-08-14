@@ -387,11 +387,14 @@ specifically built to catch.
   REV is a stub everywhere. Many M8 FX commands (ARP/RET/RND/scale/arp/mixer sends...) absent —
   see `FX_COMMANDS_SPEC.md`.
 - Mixer: input/USB channels, DJ filter, limiter value, `mix_vol`.
-- Effects: **the whole screen is live as of 2026-08-14** except reverb
-  **SHIMMER**, which is stored and round-tripped but needs a pitch shifter.
-  ModFX MOD TYPE now dispatches to a real phaser and flanger
-  (`src/engine/ModFx.h`); every byte on the screen is located
-  (`hw_findings.md` §UI-8, §UI-9). The
+- Effects: **the whole screen is live as of 2026-08-14.** Every byte is
+  located (`hw_findings.md` §UI-8, §UI-9) and every control reaches the audio.
+  ModFX MOD TYPE dispatches to a real phaser and flanger
+  (`src/engine/ModFx.h`); reverb SHIMMER feeds the tail back through an
+  octave-up shifter (`src/engine/Shimmer.h`). The reverb's SIZE / MOD DEPTH /
+  MOD FREQ needed DaisySP's `ReverbSc` vendored as `ReverbScM8` to reach them.
+  *None of the new DSP is hardware-verified* — reference approximations in the
+  same class as the FM/Wav engines. The
   reverb LP is still hardcoded at 10 kHz. Stereo widths and the ModFX/Delay
   reverb sends landed with tests A6–A8; reverb SIZE / MOD DEPTH / MOD FREQ
   landed with A9–A10, which required vendoring DaisySP's `ReverbSc` as

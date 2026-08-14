@@ -166,6 +166,8 @@ void Engine::processCommands() {
                 m_phaser.reset();
                 m_flanger.reset();
                 m_modFxPhase = 0.0f;
+                m_shimmer.reset();
+                m_shimmerFeed = 0.0f;
                 m_delayL.Reset();
                 m_delayR.Reset();
                 m_reverb.Init(kSampleRate);
@@ -730,6 +732,12 @@ void Engine::applyDjFilter(float& l, float& r) {
 // function-local static so the audio thread never touches a guard variable.
 static const EqBank kFlatEqBank{};
 
+// Ceiling on how much pitched-up tail is folded back. The reverb's own feedback
+// already reaches 0.98, so this is the difference between a shimmer and an
+// oscillator. Not hardware-verified -- chosen for stability, and A16 is what
+// holds it there.
+static constexpr float kShimmerMax = 0.45f;
+
 // STEREO WIDTH on an effect return. 0xFF is unity and is the device's default
 // for all three, so the early-out means a song that never touches these renders
 // exactly as it did before this existed -- not "within tolerance", the same
@@ -976,7 +984,15 @@ void Engine::render(float* buffer, int frames) {
             sendRevL += choL * cr + delL * dr;
             sendRevR += choR * cr + delR * dr;
         }
+        // SHIMMER folds last, after the input EQ has had its say on everything
+        // else -- it is the reverb's own tail coming back an octave up, not an
+        // input to be filtered again. m_shimmerFeed holds the previous sample,
+        // which is what stops this being an instantaneous loop.
         m_sendEq[2].process(sendRevL, sendRevR);
+        if (m_state.effects.rev_shimmer > 0) {
+            sendRevL += m_shimmerFeed;
+            sendRevR += m_shimmerFeed;
+        }
 
         float fb = m_state.effects.rev_decay / 255.0f; if(fb > 0.98f) fb = 0.98f; m_reverb.SetFeedback(fb);
         m_reverb.SetLpFreq(10000.0f);
@@ -1000,6 +1016,19 @@ void Engine::render(float* buffer, int frames) {
         m_reverb.Process(sendRevL, sendRevR, &revL, &revR);
         revL = dcBlock(revL, m_dcRevL);
         revR = dcBlock(revR, m_dcRevR);
+
+        // Pitch the tail up an octave and hold it for the next sample's input.
+        // Two things keep this stable: the amount is capped well below unity,
+        // and the fed-back signal goes through a tanh -- the reverb's own
+        // feedback already runs up to 0.98, so an uncapped shimmer loop would
+        // be a gain stage feeding itself.
+        if (m_state.effects.rev_shimmer > 0) {
+            const float amt = (m_state.effects.rev_shimmer / 255.0f) * kShimmerMax;
+            m_shimmerFeed = std::tanh(m_shimmer.process(0.5f * (revL + revR))) * amt;
+        } else {
+            m_shimmerFeed = 0.0f;
+        }
+
         applyStereoWidth(revL, revR, m_state.effects.rev_width);
 
         float master_cho = m_state.mixer.cho_vol / 255.0f;

@@ -757,3 +757,55 @@ TEST_CASE("A14 phaser and flanger are distinct, stable effects", "[audio]") {
     REQUIRE(pkP < 0.99f);
     REQUIRE(pkF < 0.99f);
 }
+
+// ---------------------------------------------------------------------------
+// A15-A16 -- reverb SHIMMER: the tail fed back an octave up.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A15 SHIMMER at zero is the identity", "[audio]") {
+    // Default and off must cost nothing at all -- the whole path is skipped,
+    // so this has to be exact, not close.
+    auto base = renderWithEffects([](EffectsState& fx) { fx.rev_decay = 0xE0; });
+    auto same = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xE0; fx.rev_shimmer = 0x00;
+    });
+    REQUIRE(base.size() == same.size());
+    bool identical = true;
+    for (size_t i = 0; i < base.size(); ++i)
+        if (base[i] != same[i]) { identical = false; break; }
+    REQUIRE(identical);
+}
+
+TEST_CASE("A16 SHIMMER is audible and does not run away", "[audio]") {
+    // The dangerous case: shimmer feeds the reverb's own output back into its
+    // input while the reverb's internal feedback is already near maximum. If
+    // the ceiling or the tanh were wrong this is where it would oscillate.
+    auto dry = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xF0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+    });
+    auto wet = renderWithEffects([](EffectsState& fx) {
+        fx.rev_decay = 0xF0; fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+        fx.rev_shimmer = 0xFF;
+    });
+
+    REQUIRE(dry.size() == wet.size());
+
+    float maxDiff = 0.0f, pk = 0.0f;
+    for (size_t i = 0; i < wet.size(); ++i) {
+        maxDiff = std::max(maxDiff, std::fabs(wet[i] - dry[i]));
+        pk      = std::max(pk, std::fabs(wet[i]));
+    }
+    REQUIRE(maxDiff > 0.001f);   // it does something
+    REQUIRE(pk < 0.99f);         // and stays clear of the ceiling
+
+    // Energy must not be climbing at the end of the render. A shimmer loop that
+    // is going to oscillate shows it here first: compare the last eighth of the
+    // render against the middle.
+    auto rms = [&](size_t a, size_t b) {
+        double s = 0.0;
+        for (size_t i = a; i < b; ++i) s += double(wet[i]) * wet[i];
+        return std::sqrt(s / double(b - a));
+    };
+    const size_t n = wet.size();
+    REQUIRE(rms(n * 7 / 8, n) < rms(n / 2, n * 5 / 8) * 4.0);
+}
