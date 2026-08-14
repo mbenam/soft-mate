@@ -510,6 +510,7 @@ class M8Driver:
         st = self.state()
         return {
             "cursor": (st.get("cursor_field"), st.get("cursor_row")),
+            "grid": (st.get("grid_step", -1), st.get("grid_col", -1)),
             "rows": {r.get("y"): r.get("text") for r in (st.get("rows") or [])},
             "settled": st.get("settled"),
         }
@@ -602,9 +603,11 @@ class M8Driver:
                               "to see which one is the cursor and which is the "
                               "header track indicator.")
         elif fg_moved:
-            out["verdict"] = ("only accent foreground moved, so isCursor() can see "
-                              "the cursor; the defect is the missing row floor "
-                              "(the header outranks it).")
+            out["verdict"] = ("accent foreground moved -- the normal case. The "
+                              "cursor is accent-coloured text, which isCursor() "
+                              "can see. Compare accent_fg vs accent_fg_after: the "
+                              "header row's cell marks the column, and the data "
+                              "row's marks the row.")
         elif rect_moved:
             out["verdict"] = "only a rect moved -- the cursor is a rect fill."
         else:
@@ -644,6 +647,8 @@ class M8Driver:
             out["steps"].append({
                 "press": i + 1,
                 "cursor": cur["cursor"],
+                "grid": cur["grid"],          # (step, col) -- the addressable pair
+                "grid_moved": cur["grid"] != prev["grid"],
                 "cursor_moved": cur["cursor"] != prev["cursor"],
                 "rows_changed": len(changed),
                 "rows_changed_at": changed[:8],
