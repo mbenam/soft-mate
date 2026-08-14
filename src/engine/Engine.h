@@ -315,6 +315,18 @@ struct MixerState {
     // DJ filter type (LP/HP, LP/BS, BS/HP). Round-trips, but has no UI: on
     // hardware it is chosen in the Scope view, which we are not building.
     int djf_typ = 0x00;
+
+    // ---- Limiter & Mix Scope parameters (file bytes located, hw_findings §UI-9)
+    // These live at 0xEA/0xEB/0xEC, which the file library does not model, and
+    // have no UI here for the same reason djf_typ doesn't: they are set on the
+    // scope view. They load, save, and drive the DSP.
+    int lim_atk = 0x00;    // 0xEA. Limiter attack, 0..100 ms.
+    int lim_rel = 0x00;    // 0xEB. Limiter release, 4..1000 ms; 00 means AUTO.
+    // 0xEC. Applied after the limiter. NOT yet wired: the master `tanh` is
+    // currently unconditional, so honouring this byte would switch soft clip
+    // OFF for most songs and change their sound. Stored and round-tripped only
+    // until that gets its own before/after.
+    int soft_clip = 0x00;
 };
 
 struct EffectsState {
@@ -334,6 +346,18 @@ struct EffectsState {
     int rev_mod_depth = 0x20;
     int rev_mod_freq = 0xFF;
     int rev_width = 0xFF;
+
+    // ---- Located 2026-08-14 (hw_findings §UI-9) ----------------------------
+    // OTT's TIME and COLOR are stored in the effects block even though OTT
+    // itself is a master-bus control -- they sit at +23 and +24, so they live
+    // here with the rest of that block rather than in MixerState.
+    int ott_time  = 0x80;   // +23. Compressor envelope time, 10%..1000%.
+    int ott_color = 0x80;   // +24. Band tilt; above 0x80 toward treble.
+    // Stored and round-tripped, but NOT yet audible -- both need DSP that does
+    // not exist. MOD TYPE selects Chorus/Phaser/Flanger and we only have a
+    // chorus; SHIMMER is a pitch-shifted reverb feedback path.
+    int modfx_type   = 0x00;  // +25. 00 Chorus, 01 Phaser, 02 Flanger.
+    int rev_shimmer  = 0x00;  // +22.
 };
 
 struct TableState {
@@ -828,6 +852,13 @@ private:
     ZdfSvf m_djfR;
     // Limiter: shared gain-reduction envelope so the image doesn't shift.
     float m_limGain = 1.0f;
+    // ATK/REL coefficients, recomputed only when their byte changes -- the
+    // exp() behind them must not run per sample. -1 forces a first compute.
+    int   m_limAtkByte = -1, m_limRelByte = -1;
+    float m_limAtkCoef = 1.0f, m_limRelCoef = 0.0002f;
+    // AUTO release (REL == 0) interpolates between these two fixed ends by how
+    // much gain reduction is happening, so it needs no exp() either.
+    float m_limRelFast = 0.0f, m_limRelSlow = 0.0f;
     // OTT: three bands, one-pole crossovers, per-band envelopes. An
     // approximation of the real multiband up/down compressor, in the same
     // spirit as the FM/Wav engines -- see MIXER_SPEC.md §8.

@@ -658,3 +658,20 @@ TEST_CASE("A10 each reverb control changes the output", "[audio]") {
     REQUIRE(differsFrom(deepMod)   > 0.001f);
     REQUIRE(differsFrom(slowMod)   > 0.001f);
 }
+
+// A11 -- the scope parameters that drive existing DSP are anchored so their
+// defaults reproduce the constants they replaced. ATK 0x00 is the old
+// "attack immediately", REL 0x00 is AUTO whose fast end is where the old fixed
+// release sat, RES 0x00 is the old 0.3, and OTT TIME/COLOR 0x80 are 100% and
+// neutral. A song that never touches them must be unchanged.
+TEST_CASE("A11 scope-parameter defaults reproduce the old constants", "[audio]") {
+    auto base = renderWithEffects([](EffectsState&) {});
+    auto same = renderWithEffects([](EffectsState& fx) {
+        fx.ott_time = 0x80; fx.ott_color = 0x80;
+    });
+    REQUIRE(base.size() == same.size());
+    bool identical = true;
+    for (size_t i = 0; i < base.size(); ++i)
+        if (base[i] != same[i]) { identical = false; break; }
+    REQUIRE(identical);
+}

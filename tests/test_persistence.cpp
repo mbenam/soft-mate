@@ -1123,17 +1123,9 @@ TEST_CASE("L24 patching the mixer leaves the bytes we do not model alone", "[io]
     constexpr size_t kMixerOffset = 0xCE;
     REQUIRE(orig.size() >= kMixerOffset + 32);
 
-    // +28 ATK, +29 REL, +30 SOFT CLIP: identified on hardware (§UI-9) but with
-    // no engine field, so they must survive untouched. +31 is OTT, which we do
-    // model and therefore do write -- it is checked separately in L27.
-    // They must also not have been zeros to begin with, or this would pass
-    // without proving anything.
-    bool tailNonZero = false;
-    for (size_t i = 28; i < 31; ++i) {
-        if (orig[kMixerOffset + i] != 0) tailNonZero = true;
-        REQUIRE(rt[kMixerOffset + i] == orig[kMixerOffset + i]);
-    }
-    REQUIRE(tailNonZero);
+    // The whole tail (+28 ATK, +29 REL, +30 SOFT CLIP, +31 OTT) is modeled as
+    // of §UI-9, so it is written rather than preserved -- L27 and L28 cover it.
+    // What this case still guards is the analog/USB input block below.
 
     // Analog + USB input bytes, +13..+24, likewise untouched.
     for (size_t i = 13; i <= 24; ++i)
@@ -1289,4 +1281,50 @@ TEST_CASE("L27 OTT reads 0xED and RES reads dj_peak", "[io]") {
 
         std::remove("ott_rt.m8s");
     }
+}
+
+// L28 -- the scope parameters located in §UI-9 round-trip.
+// ATK/REL/SOFT CLIP sit in the mixer tail, SHIMMER/TIME/COLOR/MOD TYPE in the
+// effects block. None of them exist in the file library, so all eight are
+// patched in by hand and this is what stops that drifting.
+TEST_CASE("L28 scope-view parameters round-trip", "[io]") {
+    auto r = loadSong("tests/fixtures/device_golden/probe_ottA0.m8s", "");
+    REQUIRE(r.ok);
+
+    auto edited = r.state;
+    edited.mixer.lim_atk    = 0x11;
+    edited.mixer.lim_rel    = 0x22;
+    edited.mixer.soft_clip  = 0x01;
+    edited.effects.rev_shimmer = 0x33;
+    edited.effects.ott_time    = 0x44;
+    edited.effects.ott_color   = 0x55;
+    edited.effects.modfx_type  = 0x02;
+
+    std::string err;
+    REQUIRE(saveSong("scope_rt.m8s", r, r.sequencer, edited, err));
+    auto again = loadSong("scope_rt.m8s", "");
+    REQUIRE(again.ok);
+
+    REQUIRE(again.state.mixer.lim_atk       == 0x11);
+    REQUIRE(again.state.mixer.lim_rel       == 0x22);
+    REQUIRE(again.state.mixer.soft_clip     == 0x01);
+    REQUIRE(again.state.effects.rev_shimmer == 0x33);
+    REQUIRE(again.state.effects.ott_time    == 0x44);
+    REQUIRE(again.state.effects.ott_color   == 0x55);
+    REQUIRE(again.state.effects.modfx_type  == 0x02);
+
+    std::remove("scope_rt.m8s");
+}
+
+// L29 -- and they load from the bytes the device actually uses.
+// probe_res30.m8s was photographed showing ATK 10 / SOFT CLIP ON / MOD TYPE
+// Flanger / OTT TIME 40 / OTT COLOR 50, so these are the device's readings.
+TEST_CASE("L29 scope parameters load from the device's bytes", "[io]") {
+    auto r = loadSong("tests/fixtures/device_golden/probe_res30.m8s", "");
+    REQUIRE(r.ok);
+    REQUIRE(r.state.mixer.lim_atk      == 0x10);
+    REQUIRE(r.state.mixer.soft_clip    == 0x01);
+    REQUIRE(r.state.effects.ott_time   == 0x40);
+    REQUIRE(r.state.effects.ott_color  == 0x50);
+    REQUIRE(r.state.effects.modfx_type == 0x02);   // Flanger
 }

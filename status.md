@@ -133,6 +133,19 @@ absence from one screen is not evidence about a byte — RES simply lived on a s
 read.*
 Tests: `[mixer]` (5 cases). *The LIM/DJF/OTT curves are reference approximations, not
 hardware-verified* — see `MIXER_SPEC.md` §8.
+**The scope-view parameters are live (2026-08-14).** Once `hw_findings.md` §UI-9 located their
+bytes, five controls that had been hardcoded constants started coming from the song: limiter
+**ATK** (0–100 ms) and **REL** (4–1000 ms, `00` = AUTO swinging 100–900 ms with the amount of
+reduction), DJ filter **RES**, and OTT **TIME** (10–1000%) and **COLOR** (band tilt). Every
+mapping is anchored so the default byte reproduces the constant it replaced — `ATK 00` is the
+old instant attack, `RES 00` the old fixed 0.3, `TIME/COLOR 80` the old 100%/neutral — and
+since LIM, DJF and OTT all default to off, no existing song changes. Test **A11** pins that
+bit-for-bit; L28/L29 pin the round-trip and the load. The limiter's `exp()` is cached against
+its byte and AUTO interpolates two precomputed ends, so nothing new runs per sample.
+**Stored but not audible:** SHIMMER and MOD TYPE (both need DSP that does not exist), and
+**SOFT CLIP** — deliberately, because ours is the unconditional master `tanh`, so honouring
+the byte would switch soft clip *off* for most songs. That is an audio change wanting its own
+before/after, not a side effect of wiring up persistence.
 **SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the
 M8's SOFT CLIP — on hardware a switchable parameter in the Limiter & Mix Scope view, applied
 after the limiter and after MIX, which is where ours sits. We have no Scope view and store no

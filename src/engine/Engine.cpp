@@ -595,17 +595,30 @@ void Engine::applyOtt(float& l, float& r) {
     constexpr float kFloor  = 0.0005f; // below this a band is treated as silent
     constexpr float kMaxUp  = 8.0f;    // ceiling on upward gain
 
+    // TIME and COLOR, from the scope view (§UI-9). Both are anchored so 0x80 --
+    // the default and what the manual calls 100% / neutral -- reproduces the
+    // fixed behaviour these had before the bytes were located.
+    //
+    // TIME is envelope time as a percentage, 10%..1000%, so it scales the
+    // envelope coefficients inversely: a longer time is a slower follower.
+    const float timeScale = std::pow(10.0f, (m_state.effects.ott_time - 128.0f) / 128.0f);
+    const float atkC = kAtk / timeScale;
+    const float relC = kRel / timeScale;
+    // COLOR tilts the band gains: above 0x80 toward treble, below toward bass.
+    const float tilt = (m_state.effects.ott_color - 128.0f) / 128.0f;   // -1..+1
+    const float bandTilt[3] = { 1.0f - 0.5f * tilt, 1.0f, 1.0f + 0.5f * tilt };
+
     float wetL = 0.0f, wetR = 0.0f;
     for (int b = 0; b < 3; ++b) {
         const float aL = std::fabs(bandL[b]);
-        m_ottEnvL[b] += (aL > m_ottEnvL[b] ? kAtk : kRel) * (aL - m_ottEnvL[b]);
+        m_ottEnvL[b] += (aL > m_ottEnvL[b] ? atkC : relC) * (aL - m_ottEnvL[b]);
         const float aR = std::fabs(bandR[b]);
-        m_ottEnvR[b] += (aR > m_ottEnvR[b] ? kAtk : kRel) * (aR - m_ottEnvR[b]);
+        m_ottEnvR[b] += (aR > m_ottEnvR[b] ? atkC : relC) * (aR - m_ottEnvR[b]);
 
         float gL = (m_ottEnvL[b] > kFloor) ? kTarget / m_ottEnvL[b] : 1.0f;
         float gR = (m_ottEnvR[b] > kFloor) ? kTarget / m_ottEnvR[b] : 1.0f;
-        gL = std::clamp(gL, 1.0f / kMaxUp, kMaxUp);
-        gR = std::clamp(gR, 1.0f / kMaxUp, kMaxUp);
+        gL = std::clamp(gL, 1.0f / kMaxUp, kMaxUp) * bandTilt[b];
+        gR = std::clamp(gR, 1.0f / kMaxUp, kMaxUp) * bandTilt[b];
 
         wetL += bandL[b] * gL;
         wetR += bandR[b] * gR;
@@ -636,10 +649,40 @@ void Engine::applyLimiter(float& l, float& r) {
     const float peak = std::max(std::fabs(l), std::fabs(r));
     const float wanted = (peak > threshold) ? (threshold / peak) : 1.0f;
 
-    // Attack immediately (never let a peak through), release gently.
-    constexpr float kRelease = 0.0002f;
-    if (wanted < m_limGain) m_limGain = wanted;
-    else                    m_limGain += kRelease * (wanted - m_limGain);
+    // ATK and REL, from the scope view (hw_findings §UI-9). Coefficients are
+    // cached because exp() must not run per sample.
+    //
+    // Both defaults reproduce what the limiter did when these were constants:
+    // ATK 0x00 is 0 ms, i.e. the old "attack immediately", and REL 0x00 is the
+    // manual's AUTO, whose fast end (~100 ms) is where the old fixed 0.0002
+    // coefficient sat.
+    auto coefFor = [](float ms) {
+        if (ms <= 0.0f) return 1.0f;
+        return 1.0f - std::exp(-1.0f / (ms * 0.001f * kSampleRate));
+    };
+    if (m_state.mixer.lim_atk != m_limAtkByte) {
+        m_limAtkByte = m_state.mixer.lim_atk;
+        m_limAtkCoef = coefFor((m_limAtkByte / 255.0f) * 100.0f);   // 0..100 ms
+    }
+    if (m_state.mixer.lim_rel != m_limRelByte) {
+        m_limRelByte = m_state.mixer.lim_rel;
+        // 4..1000 ms; 0 means AUTO, which swings 100..900 ms with the amount of
+        // reduction. Both AUTO ends are precomputed and interpolated below.
+        m_limRelCoef = coefFor(4.0f + (m_limRelByte / 255.0f) * 996.0f);
+        m_limRelFast = coefFor(100.0f);
+        m_limRelSlow = coefFor(900.0f);
+    }
+
+    if (wanted < m_limGain) {
+        m_limGain += m_limAtkCoef * (wanted - m_limGain);
+    } else {
+        float rel = m_limRelCoef;
+        if (m_limRelByte == 0) {
+            const float reduction = std::clamp(1.0f - m_limGain, 0.0f, 1.0f);
+            rel = m_limRelFast + reduction * (m_limRelSlow - m_limRelFast);
+        }
+        m_limGain += rel * (wanted - m_limGain);
+    }
 
     l *= m_limGain;
     r *= m_limGain;
@@ -660,8 +703,12 @@ void Engine::applyDjFilter(float& l, float& r) {
     const float cutoff = highPass ? 30.0f * std::pow(600.0f, t)
                                   : 18000.0f * std::pow(1.0f / 600.0f, t);
 
-    m_djfL.setParams(cutoff, 0.3f, kSampleRate);
-    m_djfR.setParams(cutoff, 0.3f, kSampleRate);
+    // RES, from the scope view (§UI-9). ZdfSvf takes 0..1; 0.3 was the fixed
+    // value before this byte was located, so a resonance of 00 -- the default,
+    // and what every existing song carries -- lands on exactly that.
+    const float res = 0.3f + (m_state.mixer.djf_res / 255.0f) * 0.65f;
+    m_djfL.setParams(cutoff, res, kSampleRate);
+    m_djfR.setParams(cutoff, res, kSampleRate);
     float hpL = 0.0f, hpR = 0.0f;
     const float lpL = m_djfL.process(l, hpL);
     const float lpR = m_djfR.process(r, hpR);

@@ -169,6 +169,9 @@ static constexpr size_t kMixReverbVolume = 12;
 static constexpr size_t kMixDjFilter     = 25;
 static constexpr size_t kMixDjPeak       = 26;  // DJ filter RESONANCE, not OTT
 static constexpr size_t kMixDjFilterType = 27;
+static constexpr size_t kMixLimAtk       = 28;  // §UI-9
+static constexpr size_t kMixLimRel       = 29;
+static constexpr size_t kMixSoftClip     = 30;
 static constexpr size_t kMixOtt          = 31;  // OTT amount
 static constexpr size_t kMixerBlockSize  = 32;
 
@@ -176,7 +179,10 @@ static constexpr size_t kMixerBlockSize  = 32;
 static void loadMixerTail(const std::vector<uint8_t>& bytes,
                           engine::MixerState& mixer) {
     if (bytes.size() < kMixerOffset + kMixerBlockSize) return;
-    mixer.ott = bytes[kMixerOffset + kMixOtt];
+    mixer.ott       = bytes[kMixerOffset + kMixOtt];
+    mixer.lim_atk   = bytes[kMixerOffset + kMixLimAtk];
+    mixer.lim_rel   = bytes[kMixerOffset + kMixLimRel];
+    mixer.soft_clip = bytes[kMixerOffset + kMixSoftClip];
 }
 
 // ---- The effects block, read and written at measured offsets ----------------
@@ -216,7 +222,11 @@ static constexpr size_t kFxRevDecay   = 18;
 static constexpr size_t kFxRevModDep  = 19;
 static constexpr size_t kFxRevModFrq  = 20;
 static constexpr size_t kFxRevWidth   = 21;
-static constexpr size_t kFxBlockSpan  = 22;   // highest touched offset + 1
+static constexpr size_t kFxRevShimmer = 22;   // §UI-9
+static constexpr size_t kFxOttTime    = 23;
+static constexpr size_t kFxOttColor   = 24;
+static constexpr size_t kFxModType    = 25;
+static constexpr size_t kFxBlockSpan  = 26;   // highest touched offset + 1
 
 static bool effectsBlockFits(const std::vector<uint8_t>& bytes) {
     return bytes.size() >= m8::V4_OFFSETS.effect_settings + kFxBlockSpan;
@@ -240,6 +250,10 @@ static void loadEffectsBlock(const std::vector<uint8_t>& bytes,
     fx.rev_mod_depth = p[kFxRevModDep];
     fx.rev_mod_freq  = p[kFxRevModFrq];
     fx.rev_width     = p[kFxRevWidth];
+    fx.rev_shimmer   = p[kFxRevShimmer];
+    fx.ott_time      = p[kFxOttTime];
+    fx.ott_color     = p[kFxOttColor];
+    fx.modfx_type    = p[kFxModType];
 }
 
 static void saveEffectsBlock(const engine::EffectsState& fx,
@@ -260,6 +274,10 @@ static void saveEffectsBlock(const engine::EffectsState& fx,
     p[kFxRevModDep] = static_cast<uint8_t>(fx.rev_mod_depth);
     p[kFxRevModFrq] = static_cast<uint8_t>(fx.rev_mod_freq);
     p[kFxRevWidth]  = static_cast<uint8_t>(fx.rev_width);
+    p[kFxRevShimmer]= static_cast<uint8_t>(fx.rev_shimmer);
+    p[kFxOttTime]   = static_cast<uint8_t>(fx.ott_time);
+    p[kFxOttColor]  = static_cast<uint8_t>(fx.ott_color);
+    p[kFxModType]   = static_cast<uint8_t>(fx.modfx_type);
 }
 
 static void saveUnwrittenBlocks(const m8::Song& song,
@@ -301,6 +319,9 @@ static void saveUnwrittenBlocks(const m8::Song& song,
         // OTT: ours to write, and the library has no field for it. ATK, REL and
         // SOFT CLIP sit beside it at +28..+30 and are deliberately not touched.
         p[kMixOtt]          = static_cast<uint8_t>(state.mixer.ott);
+        p[kMixLimAtk]       = static_cast<uint8_t>(state.mixer.lim_atk);
+        p[kMixLimRel]       = static_cast<uint8_t>(state.mixer.lim_rel);
+        p[kMixSoftClip]     = static_cast<uint8_t>(state.mixer.soft_clip);
     }
 
     // --- Grooves (32 x 16 raw bytes) -----------------------------------------
