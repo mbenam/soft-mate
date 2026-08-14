@@ -124,6 +124,50 @@ JsonResult dismissModal(M8Device& dev, bool confirm, int holdMs, int maxRetries)
                             dev.grid());
 }
 
+// ---- panicHome -------------------------------------------------------------
+
+JsonResult panicHome(M8Device& dev, int holdMs, int maxUp, bool confirmModals) {
+    // 1. A modal blocks every other interaction, so clear it before anything
+    //    else. Cancel rather than confirm -- see the header comment.
+    dev.readSettled(120, 150, 250);
+    if (isModal(dev.grid())) {
+        auto r = dismissModal(dev, confirmModals, holdMs);
+        if (!r.ok) {
+            return JsonResult::fail(
+                "panicHome: modal would not cancel; refusing to press EDIT "
+                "blind (pass confirmModals to accept it): " + r.error,
+                dev.grid());
+        }
+    }
+
+    // 2. Bounded run of plain UP presses. Stop early once the cursor row stops
+    //    moving twice in a row -- we are at the top of the screen and further
+    //    presses are wasted device round-trips.
+    int lastY = -1, stable = 0;
+    for (int i = 0; i < maxUp; ++i) {
+        dev.press(Key::UP, holdMs);
+        dev.readSettled(60, 120, 200);
+        const int y = dev.grid().cursorRowY();
+        if (y == lastY) {
+            if (++stable >= 2) break;
+        } else {
+            stable = 0;
+            lastY  = y;
+        }
+    }
+
+    // 3. An UP press can itself raise a modal on some screens.
+    dev.readSettled(120, 150, 250);
+    if (isModal(dev.grid())) {
+        auto r = dismissModal(dev, confirmModals, holdMs);
+        if (!r.ok) {
+            return JsonResult::fail("panicHome: modal present after UP run: " + r.error,
+                                    dev.grid());
+        }
+    }
+    return JsonResult::success();
+}
+
 // ---- gotoScreen -----------------------------------------------------------
 
 JsonResult gotoScreen(M8Device& dev, Screen target, int holdMs, int maxHops) {

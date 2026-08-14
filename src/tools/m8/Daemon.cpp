@@ -113,6 +113,60 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
                 code = ExitCode::NOT_FOUND;
                 errMessage = "field not found: " + field;
             }
+        } else if (verbU == "SET") {
+            std::string field = params["field"];
+            std::string value = params.count("value") ? params["value"] : params["to"];
+            if (field.empty() || value.empty()) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "SET requires field= and value=";
+            } else {
+                auto res = editValue(dev, field, value, holdMs);
+                if (!res.ok) {
+                    code = ExitCode::COMMAND_FAILED;
+                    errMessage = res.error;
+                }
+            }
+        } else if (verbU == "NOTE") {
+            std::string name = params.count("name") ? params["name"] : params["note"];
+            uint8_t vel = 0xFF;
+            if (params.count("vel")) vel = static_cast<uint8_t>(std::atoi(params["vel"].c_str()));
+            if (name.empty()) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "NOTE requires name=";
+            } else {
+                auto res = enterNote(dev, name, vel, holdMs);
+                if (!res.ok) {
+                    code = ExitCode::COMMAND_FAILED;
+                    errMessage = res.error;
+                }
+            }
+        } else if (verbU == "KEYJAZZ") {
+            if (!params.count("note")) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "KEYJAZZ requires note=";
+            } else {
+                int note = std::atoi(params["note"].c_str());
+                int vel  = params.count("vel") ? std::atoi(params["vel"].c_str()) : 0x7F;
+                if (note < 0 || note > 127 || vel < 0 || vel > 255) {
+                    code = ExitCode::UNKNOWN_ARG;
+                    errMessage = "KEYJAZZ note must be 0..127 and vel 0..255";
+                } else {
+                    dev.keyjazz(static_cast<uint8_t>(note), static_cast<uint8_t>(vel));
+                    dev.readSettled(120, 150, defaultSettleMs);
+                }
+            }
+        } else if (verbU == "HOME") {
+            // Watchdog recovery. `confirm=1` opts into pressing EDIT on a modal
+            // that will not cancel; the default refuses to, so an unattended
+            // driver can never commit an edit it did not intend.
+            const bool confirmModals = params.count("confirm")
+                                    && params["confirm"] != "0";
+            int maxUp = params.count("maxup") ? std::atoi(params["maxup"].c_str()) : 12;
+            auto res = panicHome(dev, holdMs, maxUp, confirmModals);
+            if (!res.ok) {
+                code = ExitCode::COMMAND_FAILED;
+                errMessage = res.error;
+            }
         } else if (verbU == "LOAD") {
             std::string path = params["path"];
             if (path.empty()) path = params["file"];

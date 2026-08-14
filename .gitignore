@@ -38,3 +38,5 @@ manual/
 # Full upstream Mutable Instruments source (56MB nested git repo). Only the
 # vendored subset in src/engine/braids/ is built; keep the full clone local.
 third_party/eurorack/
+__pycache__/
+*.pyc

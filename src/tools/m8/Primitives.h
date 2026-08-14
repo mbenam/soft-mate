@@ -158,6 +158,29 @@ JsonResult assertFirmware(M8Device& dev, int major, int minor, int patch);
 JsonResult dismissModal(M8Device& dev, bool confirm,
                         int holdMs = 15, int maxRetries = 5);
 
+// ---- Recovery --------------------------------------------------------------
+
+// Escape an unknown or stuck UI state without human help, and report where we
+// landed. Intended as the watchdog action for an unattended driver: call it
+// when any other primitive times out or returns an unexpected screen.
+//
+// Order matters:
+//   1. Clear a modal first -- while one is up nothing else responds.
+//   2. Then a bounded run of PLAIN UP presses. Per M8_DRIVER_BUGS.md #20 that
+//      is the only escape from the MIXER compound widget that hardware testing
+//      found reliable; bouncing to another screen and back does not work,
+//      because the M8 remembers its per-screen cursor position.
+//   3. Re-check for a modal, since an UP press can open one.
+//
+// `confirmModals` is false by default and should stay false for automated
+// recovery: cancelling (OPT) can never commit an edit, whereas confirming
+// (EDIT) can. If the modal will not cancel, this FAILS rather than pressing
+// EDIT blind -- the caller gets the modal still on screen in the snapshot and
+// decides for itself. Pass true only when the caller knows the pending action
+// is safe to accept.
+JsonResult panicHome(M8Device& dev, int holdMs = 15, int maxUp = 12,
+                     bool confirmModals = false);
+
 // ---- File loading ----------------------------------------------------------
 
 // Load a project file on the device. Navigates to PROJECT screen, opens the
