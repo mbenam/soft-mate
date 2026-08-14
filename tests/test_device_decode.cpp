@@ -174,6 +174,57 @@ TEST_CASE("gridColumnEdges groups multi-character column labels", "[hwdecode]") 
     REQUIRE(edges[2] == 128);
 }
 
+// Built cell-for-cell from a real fw 6.5.2 capture (`m8drv inspect`, 2026-08-14)
+// taken right after `cursor-grid 4 2` succeeded, so this pins the indexing the
+// tool's API now exposes: accented header digit "3" at (row 5, col 10), cursor
+// row label "04" at (row 10, cols 1-2), cursor cell at (row 10, cols 10-11).
+// step must read 4 and col must read 2 -- i.e. col is 0-based and track 3 == 2.
+TEST_CASE("gridCursorPosition matches the captured SONG cursor", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    // Header row y=50: digits 1..8 at cols 4,7,10,... Track 3 (col 10) accented.
+    for (int i = 0; i < 8; ++i) {
+        const int col = 4 + i * 3;
+        const bool on = (col == 10);
+        grid.handleFrame(makeCharFrame('1' + i, col * 8, 50,
+                                       on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+    }
+    // Sixteen data rows y=60..210 with hex row labels; row 04 (y=100) accented.
+    for (int r = 0; r < 16; ++r) {
+        const int y = 60 + r * 10;
+        const bool on = (r == 4);
+        const char hi = '0';
+        const char lo = static_cast<char>(r < 10 ? '0' + r : 'A' + (r - 10));
+        grid.handleFrame(makeCharFrame(hi, 1 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+        grid.handleFrame(makeCharFrame(lo, 2 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+        for (int t = 0; t < 8; ++t) {
+            const int col = 4 + t * 3;
+            const bool cur = on && col == 10;
+            for (int d = 0; d < 2; ++d)
+                grid.handleFrame(makeCharFrame('-', (col + d) * 8, y,
+                                               cur ? A0 : W, cur ? A1 : W, cur ? A2 : W, 0, 0, 0));
+        }
+    }
+    // The ghost the M8 leaves behind: a stale accent blank at the cursor row.
+    grid.handleFrame(makeCharFrame(' ', 3 * 8, 100, A0, A1, A2, 0, 0, 0));
+
+    auto gc = m8::dev::gridCursorPosition(grid);
+    REQUIRE(gc.valid);
+    REQUIRE(gc.columns == 8);
+    REQUIRE(gc.step == 4);
+    REQUIRE(gc.col == 2);
+}
+
+TEST_CASE("gridCursorPosition reports invalid on a form screen", "[hwdecode]") {
+    ScreenGrid grid;
+    // PROJECT-like: a title and one accent label, no row-number grid or header.
+    grid.handleFrame(makeCharFrame('T', 1 * 8, 60, 0, 252, 248, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('E', 2 * 8, 60, 0, 252, 248, 0, 0, 0));
+    REQUIRE_FALSE(m8::dev::gridCursorPosition(grid).valid);
+}
+
 TEST_CASE("gridColumnEdges returns empty for a blank header row", "[hwdecode]") {
     ScreenGrid grid;
     grid.handleFrame(makeCharFrame('0', 8, 60, 255, 255, 255, 0, 0, 0));

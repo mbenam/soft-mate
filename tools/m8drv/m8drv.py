@@ -738,6 +738,9 @@ def _print_screen(d: M8Driver) -> None:
     print(f"screen  : {st.get('screen')}")
     print(f"cursor  : {st.get('cursor_field')} = {st.get('cursor_value')!r}"
           f"  (row {st.get('cursor_row')})")
+    if st.get("grid_step", -1) >= 0:
+        print(f"grid    : step {st.get('grid_step')} col {st.get('grid_col')}"
+              f" of {st.get('grid_columns')} columns")
     print(f"settled : {st.get('settled')}   modal: {st.get('is_modal')}"
           f"   live: {st.get('is_live_mode')}")
     for r in st.get("rows") or []:

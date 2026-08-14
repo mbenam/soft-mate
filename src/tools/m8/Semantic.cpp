@@ -1,4 +1,5 @@
 #include "Semantic.h"
+#include "Primitives.h"   // gridCursorPosition
 #include <sstream>
 
 namespace m8 {
@@ -32,6 +33,15 @@ SemanticState semanticState(M8Device& dev) {
         state.cursorRow = dev.grid().cursorRowY();
     }
 
+    // Grid coordinates, when this is a grid screen at all. gridCursorPosition
+    // returns valid == false on form screens (no step-0 row label / no column
+    // header), which leaves these at their -1 defaults.
+    if (auto gc = gridCursorPosition(dev.grid()); gc.valid) {
+        state.gridStep    = gc.step;
+        state.gridCol     = gc.col;
+        state.gridColumns = gc.columns;
+    }
+
     state.rows = dev.listRows();
     return state;
 }
@@ -46,6 +56,9 @@ std::string SemanticState::toJson() const {
     ss << "  \"cursor_field\": \"" << escapeJson(cursorField) << "\",\n";
     ss << "  \"cursor_value\": \"" << escapeJson(cursorValue) << "\",\n";
     ss << "  \"cursor_row\": " << cursorRow << ",\n";
+    ss << "  \"grid_step\": " << gridStep << ",\n";
+    ss << "  \"grid_col\": " << gridCol << ",\n";
+    ss << "  \"grid_columns\": " << gridColumns << ",\n";
     ss << "  \"rows\": [\n";
     for (size_t i = 0; i < rows.size(); ++i) {
         ss << "    {\"y\": " << rows[i].first << ", \"text\": \"" << escapeJson(rows[i].second) << "\"}";

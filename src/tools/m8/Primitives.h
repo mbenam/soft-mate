@@ -171,6 +171,25 @@ JsonResult dismissModal(M8Device& dev, bool confirm,
 // Returns an empty vector if the header row has no readable cells.
 std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY);
 
+// The cursor's (step, col) on a grid screen, both 0-based.
+//
+// Single source of truth: moveCursorToGrid navigates by it and semanticState
+// reports it, so the driver can never act on one notion of position while
+// reporting another.
+struct GridCursor {
+    bool valid   = false;   // false if this is not a readable grid screen
+    int  step    = -1;      // row index, 0..15
+    int  col     = -1;      // column index, 0-based (track 1 == col 0 on SONG)
+    int  columns = 0;       // how many columns this screen has
+};
+
+// Verified on hardware (fw 6.5.2, SONG, 2026-08-14): with the cursor on song row
+// 04 / track 3, `m8drv inspect` reported the accented header digit "3" at
+// (row 5, col 10) and the cursor cell at (row 10, cols 10-11) -- the header
+// digit's X is exactly the cell's left edge, which is what makes column edges
+// read off the header row directly usable as cell positions.
+GridCursor gridCursorPosition(const ScreenGrid& grid);
+
 // ---- Recovery --------------------------------------------------------------
 
 // Escape an unknown or stuck UI state without human help, and report where we

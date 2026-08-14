@@ -124,20 +124,6 @@ JsonResult dismissModal(M8Device& dev, bool confirm, int holdMs, int maxRetries)
                             dev.grid());
 }
 
-// ---- gridColumnEdges -------------------------------------------------------
-
-std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY) {
-    std::vector<int> xs;
-    for (auto& [pos, c] : grid.cells)
-        if (pos.first == headerY && c.ch != ' ' && pos.second < ScreenGrid::MAIN_X_MAX)
-            xs.push_back(pos.second);
-    std::sort(xs.begin(), xs.end());
-    std::vector<int> edges;
-    for (size_t i = 0; i < xs.size(); ++i)
-        if (i == 0 || xs[i] - xs[i - 1] > 8) edges.push_back(xs[i]);
-    return edges;
-}
-
 // ---- panicHome -------------------------------------------------------------
 
 JsonResult panicHome(M8Device& dev, int holdMs, int maxUp, bool confirmModals) {
@@ -575,6 +561,73 @@ static bool findCursorCell(const ScreenGrid& grid, int minRowY, int& y, int& x) 
     return false;
 }
 
+// ---- gridColumnEdges -------------------------------------------------------
+
+std::vector<int> gridColumnEdges(const ScreenGrid& grid, int headerY) {
+    std::vector<int> xs;
+    for (auto& [pos, c] : grid.cells)
+        if (pos.first == headerY && c.ch != ' ' && pos.second < ScreenGrid::MAIN_X_MAX)
+            xs.push_back(pos.second);
+    std::sort(xs.begin(), xs.end());
+    std::vector<int> edges;
+    for (size_t i = 0; i < xs.size(); ++i)
+        if (i == 0 || xs[i] - xs[i - 1] > 8) edges.push_back(xs[i]);
+    return edges;
+}
+
+// ---- gridCursorPosition ----------------------------------------------------
+
+GridCursor gridCursorPosition(const ScreenGrid& grid) {
+    GridCursor out;
+
+    const int rowPitch = detectCellPitch(grid);
+    int firstStepY = -1;
+    if (!findLabelCell(grid, "0", firstStepY)) return out;   // no step-0 row label
+
+    const int headerY = firstStepY - rowPitch;
+    const std::vector<int> edges = gridColumnEdges(grid, headerY);
+    if (edges.empty()) return out;
+    out.columns = static_cast<int>(edges.size());
+
+    // Step: the topmost accent cell at or below step 0's row is that row's own
+    // accent-recoloured row-number label (see M8_DRIVER_BUGS.md #22).
+    int y = -1, x = -1;
+    if (!findCursorCell(grid, firstStepY, y, x)) return out;
+    out.step = (y - firstStepY) / rowPitch;
+
+    // Column, preferred path: the M8 accent-highlights the header cell of the
+    // column the cursor is on, so this is a readout rather than a measurement.
+    auto edgeIndexFor = [&edges](int px) {
+        int best = -1;
+        for (size_t i = 0; i < edges.size(); ++i)
+            if (edges[i] <= px) best = static_cast<int>(i);
+        return best;
+    };
+    for (auto& [pos, c] : grid.cells) {
+        if (pos.first == headerY && grid.isCursor(c) && c.ch != ' ') {
+            out.col = edgeIndexFor(pos.second);
+            if (out.col >= 0) { out.valid = true; return out; }
+        }
+    }
+
+    // Fallback for screens that do not highlight their header (header accent is
+    // verified on SONG only): the RIGHTMOST accent cell on the cursor's row.
+    // Rightmost, not leftmost, because leftmost is the row-number label, whose X
+    // never changes as the cursor moves sideways -- that was bug #23(c).
+    int bestX = -1;
+    for (auto& [pos, c] : grid.cells)
+        if (pos.first == y && grid.isCursor(c) && c.ch != ' '
+            && pos.second >= edges.front() && pos.second < ScreenGrid::MAIN_X_MAX)
+            bestX = std::max(bestX, pos.second);
+    if (bestX >= 0) {
+        out.col = edgeIndexFor(bestX);
+        out.valid = out.col >= 0;
+    }
+    return out;
+}
+
+// ---- moveCursorToGrid ------------------------------------------------------
+
 JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
                             int holdMs, int maxSteps) {
     // Grid screens need longer hold for key processing.
@@ -586,15 +639,9 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
         return JsonResult::fail("moveCursorToGrid: not a grid-style screen", dev.grid());
     }
 
-    int rowPitch = detectCellPitch(dev.grid());
-
-    // Calibrate step 0's Y from its row label ("0"), not from cursor state --
-    // this is fixed screen layout, unaffected by where the cursor is now.
-    int firstStepY = -1;
-    if (!findLabelCell(dev.grid(), "0", firstStepY)) {
-        return JsonResult::fail("moveCursorToGrid: cannot find step-0 row label", dev.grid());
-    }
-
+    // Position comes from gridCursorPosition() so navigating and reporting can
+    // never disagree -- see its declaration for the hardware evidence.
+    //
     // Column geometry comes from the COLUMN-HEADER row, one row above step 0.
     //
     // The three things this replaces were each independently wrong, and the
@@ -614,52 +661,19 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
     // Header runs are the honest source: each run of consecutive non-space
     // header cells is exactly one column ("1".."8" on SONG, "FX1" etc. on
     // PHRASE), and its start X is that column's left edge.
-    const int headerY = firstStepY - rowPitch;
-    const std::vector<int> colX = gridColumnEdges(dev.grid(), headerY);
-    if (colX.empty()) {
-        return JsonResult::fail("moveCursorToGrid: cannot read the column header row",
+    GridCursor pos0 = gridCursorPosition(dev.grid());
+    if (!pos0.valid) {
+        return JsonResult::fail("moveCursorToGrid: cannot read the grid cursor position "
+                                "(no step-0 row label, no column header, or no cursor cell)",
                                 dev.grid());
     }
-    if (targetCol < 0 || targetCol >= static_cast<int>(colX.size())) {
+    if (targetCol < 0 || targetCol >= pos0.columns) {
         return JsonResult::fail("moveCursorToGrid: col " + std::to_string(targetCol)
                                 + " out of range; this screen has "
-                                + std::to_string(colX.size()) + " columns", dev.grid());
+                                + std::to_string(pos0.columns) + " columns", dev.grid());
     }
 
-    // Current column: the M8 accent-highlights the header cell of the column
-    // the cursor is on (confirmed fw 6.5.2 -- `m8drv inspect` showed the track-6
-    // header digit accent-coloured while the cursor sat in track 6). That is a
-    // direct readout, not a measurement. Fall back to measuring the cursor's
-    // own data-area X against the column edges if no header cell is accented,
-    // since header highlighting is only verified on SONG.
-    auto readCol = [&](void) -> int {
-        for (auto& [pos, c] : dev.grid().cells)
-            if (pos.first == headerY && dev.grid().isCursor(c) && c.ch != ' ') {
-                int best = -1;
-                for (size_t i = 0; i < colX.size(); ++i)
-                    if (colX[i] <= pos.second) best = static_cast<int>(i);
-                if (best >= 0) return best;
-            }
-        // Fallback: rightmost accent cell on the cursor's row, which skips the
-        // row-number label and lands in the data area.
-        int cursorY = dev.grid().cursorRowY(), bestX = -1;
-        for (auto& [pos, c] : dev.grid().cells)
-            if (pos.first == cursorY && dev.grid().isCursor(c) && c.ch != ' '
-                && pos.second >= colX.front() && pos.second < ScreenGrid::MAIN_X_MAX)
-                bestX = std::max(bestX, pos.second);
-        if (bestX < 0) return -1;
-        int best = -1;
-        for (size_t i = 0; i < colX.size(); ++i)
-            if (colX[i] <= bestX) best = static_cast<int>(i);
-        return best;
-    };
-
-    int curStepY = -1, curColX = -1;
-    if (!findCursorCell(dev.grid(), firstStepY, curStepY, curColX)) {
-        return JsonResult::fail("moveCursorToGrid: cannot detect cursor position", dev.grid());
-    }
-    int curStep = (curStepY - firstStepY) / rowPitch;
-    int curCol = readCol();
+    int curStep = pos0.step, curCol = pos0.col;
 
     // Navigate to target.
     int lastStep = curStep, lastCol = curCol;
@@ -667,10 +681,10 @@ JsonResult moveCursorToGrid(M8Device& dev, int targetStep, int targetCol,
     for (int i = 0; i < maxSteps; ++i) {
         // Re-read screen and detect actual position.
         dev.readScreen();
-        int actualStepY = -1, actualColX = -1;
-        if (findCursorCell(dev.grid(), firstStepY, actualStepY, actualColX)) {
-            curStep = (actualStepY - firstStepY) / rowPitch;
-            curCol = readCol();
+        GridCursor now = gridCursorPosition(dev.grid());
+        if (now.valid) {
+            curStep = now.step;
+            curCol  = now.col;
         }
 
         if (curStep == targetStep && curCol == targetCol) {
