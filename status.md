@@ -659,7 +659,16 @@ is implemented and verified.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
-- **Voice path is mono** (`SamplerEngine` reads stereo, `SynthVoice` sums).
+- **Voice path is mono** (`SamplerEngine` reads stereo, `SynthVoice` sums) — and the hardware is
+  **not**, measured 2026-08-14 (`hw_findings.md` §UI-11). Two probes differing only in HyperSynth
+  WIDTH: `00` captured as exactly mono (side RMS 0.000000, corr 1.0000), `FF` as genuinely stereo
+  (side RMS 0.002136, corr 0.9984), reproducible across two velocities with no clipping. So the
+  `0.5f * (outL + outR)` collapse in `SynthVoice.cpp` destroys information the device keeps. Also
+  settled: **WIDTH is unipolar** (`00` = no spread, `FF` = max), not bipolar around `0x80`. The
+  same probes through `m8_render` show side RMS 0.000086/0.000085 — no response to WIDTH at all.
+  Magnitude is modest though: side/mid ≈ 0.029 (−31 dB) at maximum, and level is unchanged, so
+  this is a smaller audible defect than the §UI-10 pan-law error. **Stereo samples are the
+  untested case likely to matter more** and need a stereo WAV on the card.
 
 ---
 

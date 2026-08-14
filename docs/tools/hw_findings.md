@@ -1093,3 +1093,56 @@ committing to a replacement curve.
   fails these files on `crest <= 6 dB` and DC thresholds tuned for full mixes; a
   sustained CSAW legitimately has ~2 dB crest. Read `clipped` and `peak` for
   validity here, not the overall verdict.
+
+---
+
+## UI-11 — The voice path carries stereo, and HyperSynth WIDTH is unipolar
+
+**Date:** 2026-08-14. Firmware 6.5.2, COM3. `m8_makeprobe` authored the probes,
+`m8drv` loaded them, `m8_capture` recorded, `m8_analyze` measured — unattended.
+
+### Method
+
+Two probes differing in one byte: `m8_makeprobe --type hypersynth --width 0x00`
+and `--width 0xFF`, note C-4, instrument vol `0x7F`, pan `0x80`, dry `0xC0`. Each
+loaded on the device by filename, then keyjazz C-4 at velocities `0x40` and `0x20`
+for 2 s. Two velocities per probe because clipping would **false-negative** this
+test: squashing both channels against the rails makes them more alike, so a
+clipped capture can read as mono when it is not. All four takes came back
+`clipped: 0`, peak ≈ 0.26, crest ≈ 11 dB.
+
+WIDTH had to be baked into the probe because `ScreenModel.h` has no HyperSynth
+field map, so it cannot be set on the device by field name.
+
+### Results
+
+| WIDTH | vel | mid RMS | side RMS | L/R corr | side/mid |
+|---|---|---|---|---|---|
+| `00` | `0x40` | 0.074140 | 0.000000 | 1.0000 | 0 |
+| `00` | `0x20` | 0.074375 | 0.000000 | 1.0000 | 0 |
+| `FF` | `0x40` | 0.074243 | 0.002136 | 0.9984 | 0.029 |
+| `FF` | `0x20` | 0.074446 | 0.002053 | — | 0.028 |
+
+1. **The M8's voice path preserves stereo.** WIDTH `FF` produces real side energy;
+   WIDTH `00` is exactly mono. So the clone's `SynthVoice.cpp` collapse
+   (`sample = 0.5f * (outL + outR)`) destroys information the hardware keeps.
+2. **WIDTH is unipolar**: `00` is no spread, `FF` is maximum. It is *not* bipolar
+   around `0x80`, so the stock `HyperState::width = 0x80` default is mid-spread.
+3. **The effect is small** — side/mid ≈ 0.029, about −31 dB, correlation still
+   0.998 at maximum. Peak and RMS are unchanged across all four takes
+   (0.2614 / 0.0741), so WIDTH redistributes energy rather than adding any.
+
+### The clone, measured the same way
+
+`m8_render` on the identical probe files: side RMS 0.000086 at width `00` and
+0.000085 at width `FF`, `corr` 1.0000 for both — i.e. no response to WIDTH at all,
+as expected from the summing. Both sides of the comparison are now numbers rather
+than one number and a code reading.
+
+### What this implies for priority
+
+Real but subtle. Against §UI-10's pan-law error — a 3 dB level error on *every*
+track, in the wrong direction as pan sweeps — HyperSynth WIDTH at −31 dB is the
+smaller audible defect. **Stereo samples are the untested case likely to matter
+more**, since a genuinely stereo sample carries far more side content than this;
+that needs a stereo WAV on the card and has not been measured.
