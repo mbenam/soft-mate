@@ -1026,6 +1026,23 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
     if (isNumeric(targetValue)) {
         int target = static_cast<int>(std::strtol(targetValue.c_str(), nullptr, 0));
         int maxSteps = 256;  // safety limit
+
+        // Coarse stepping, because single-stepping is not merely slow, it is
+        // unusable: each iteration below carries a readSettled(120, 200, 1200),
+        // so the ~320ms floor times 255 steps is over a minute for one byte and
+        // four minutes in the worst case. `set AMP 0x40` reads as a hang.
+        //
+        // hw_buttons.json pins valueInc16/valueDec16 (EDIT+UP / EDIT+DOWN) as a
+        // nibble step, described as "+16". The size is MEASURED here rather than
+        // assumed: "nibble/octave increment" is a hex-shaped description and there
+        // is no guarantee it lands on 16 for every field (a decimal field like
+        // TEMPO need not behave like a hex byte). One probe press settles it, and
+        // a field where the coarse gesture does nothing falls back to fine steps
+        // rather than stalling.
+        int  coarseDelta  = 0;                    // 0 = not measured yet
+        bool coarseUsable = (g.valueInc16 != 0 && g.valueDec16 != 0);
+        int  probeFrom    = -1;                   // value before a probe press
+
         for (int i = 0; i < maxSteps; ++i) {
             dev.readSettled(120, 200, 1200);
 
@@ -1055,12 +1072,35 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
                 if (screenVal == target) {
                     return JsonResult::success();
                 }
+
+                // Resolve an outstanding coarse probe by measuring what it did.
+                if (probeFrom >= 0) {
+                    const int observed = std::abs(screenVal - probeFrom);
+                    if (observed >= 2) coarseDelta = observed;
+                    else               coarseUsable = false;  // no effect here
+                    probeFrom = -1;
+                }
+
                 // Hardware-confirmed (2026-07-18, real M8 fw 6.5.2, Instrument/
                 // MacroSynth AMP field): pressing value_inc unconditionally
                 // clamps at 0xFF rather than wrapping back to 0x00 -- a target
                 // BELOW the current value could never be reached by only ever
                 // incrementing. Pick the direction that actually closes the gap.
-                dev.press(screenVal < target ? g.valueInc : g.valueDec, holdMs);
+                const int  gap = target - screenVal;
+                const bool up  = gap > 0;
+
+                // Only coarse-step while the gap is at least one coarse step, so
+                // a coarse press can never overshoot the target. Clamping at
+                // 0x00/0xFF needs no special case: the value is re-read every
+                // iteration, so a clamped step just shows up as a smaller gap.
+                if (coarseUsable && coarseDelta == 0 && std::abs(gap) >= 32) {
+                    probeFrom = screenVal;                       // measure it
+                    dev.press(up ? g.valueInc16 : g.valueDec16, holdMs);
+                } else if (coarseUsable && coarseDelta > 0 && std::abs(gap) >= coarseDelta) {
+                    dev.press(up ? g.valueInc16 : g.valueDec16, holdMs);
+                } else {
+                    dev.press(up ? g.valueInc : g.valueDec, holdMs);
+                }
             } else {
                 // Couldn't parse a value at all this read (transitional frame,
                 // or a screen we don't fully understand yet) -- default to
