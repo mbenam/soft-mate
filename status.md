@@ -659,7 +659,7 @@ is implemented and verified.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
-- **Voice path is mono** (`SamplerEngine` reads stereo, `SynthVoice` sums) — and the hardware is
+- **Voice path is mono for the SYNTHS; the sampler is now stereo (2026-08-14).** The hardware is
   **not**, measured 2026-08-14 (`hw_findings.md` §UI-11). Two probes differing only in HyperSynth
   WIDTH: `00` captured as exactly mono (side RMS 0.000000, corr 1.0000), `FF` as genuinely stereo
   (side RMS 0.002136, corr 0.9984), reproducible across two velocities with no clipping. So the
@@ -667,8 +667,17 @@ is implemented and verified.
   settled: **WIDTH is unipolar** (`00` = no spread, `FF` = max), not bipolar around `0x80`. The
   same probes through `m8_render` show side RMS 0.000086/0.000085 — no response to WIDTH at all.
   Magnitude is modest though: side/mid ≈ 0.029 (−31 dB) at maximum, and level is unchanged, so
-  this is a smaller audible defect than the §UI-10 pan-law error. **Stereo samples are the
-  untested case likely to matter more** and need a stereo WAV on the card.
+  this is a smaller audible defect than the pan-law error, so the synths still sum -- each will
+  need its own audio A/B before changing. **Stereo samples were the case that mattered, and are
+  FIXED:** §UI-12 measured the device reproducing a stereo sample's image intact, and the sampler
+  voice path now does too. `Engine` calls `SynthVoice::renderFrame`, whose sampler branch carries
+  both channels through a duplicated output stage (`m_filterR`/`m_zdfR` for the right channel; the
+  DEGRADE sample-and-hold keeps ONE shared phase, since two would latch L and R at different
+  instants and invent stereo). Verified against hardware: the same probe files through `m8_render`
+  went from side 0.000053/0.000061 (mono either way) to side == mid for the stereo file and
+  0.000000 for the mono one, with the mono file's mid exactly 2x the stereo file's -- the same
+  relationship the device showed. Tests `S-ST1`/`S-ST2` (`[sampler]`), the second being the control.
+  All four synth tags stayed green through the change (396,319 assertions).
 
 ---
 
@@ -761,6 +770,17 @@ Future captures use the C++ `m8_capture`.
   confirmed the capture rig measures stereo correctly (centre gives `side RMS` 0.000000, `corr`
   +1.0000) and that `OUTPUT VOL` does not reach the USB tap — use keyjazz velocity for capture
   level (`0x7F` clips, `0x40` is clean).
+- **The chorus and delay returns are mono, so their STEREO WIDTH controls do nothing.** Found
+  2026-08-14 while fixing the pan law. With the instrument's dry send muted so only the returns
+  are audible, the output measures 2555.6 of energy with a mean |L-R| of **exactly 0.0**, at both
+  width `0xFF` and width `0x00` -- there is signal and its two channels are bit-identical, so
+  there is no width to narrow. `Engine` holds `m_delayL`/`m_delayR` as separate delay lines, so
+  the structure is stereo but they appear to be fed identically. Test `A7` is marked
+  `[!shouldfail]` and documents it; when the returns are made genuinely stereo it will start
+  passing and Catch2 will flag the marker for removal. Note `A7` previously passed for a bogus
+  reason: the retired constant-power pan law was asymmetric at centre (`0x80/255` = 0.50196, so
+  `cos != sin`), which injected a rounding artefact into the channel difference and made the case
+  look like it was measuring the returns.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked

@@ -581,7 +581,24 @@ TEST_CASE("A6 effect-return defaults are the exact identity", "[audio]") {
 // Now the dry path is muted, so meanStereoDiff sees ONLY the returns and the
 // assertion measures what the case name claims. If this fails, the finding is real
 // (our chorus/delay returns are mono) and should be reported, not tuned away.
-TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio]") {
+// MARKED [!shouldfail] 2026-08-14, because the defect is real and this case now
+// documents it instead of hiding it. With the dry path muted the output is nothing
+// but the chorus and delay returns, and it measures energyWide = 2555.6 with
+// dWide = 0.0 and dNarrow = 0.0 -- i.e. there IS signal and its two channels are
+// bit-identical. So the returns are mono, and STEREO WIDTH has nothing to act on;
+// narrowing them cannot change anything because they are already narrow.
+//
+// Engine holds m_delayL and m_delayR as separate delay lines, so the structure is
+// stereo, but they appear to receive identical input and produce identical output.
+// Left failing on purpose rather than rewritten to assert the broken behaviour:
+// when the returns are made genuinely stereo this case starts passing and Catch2
+// will flag the [!shouldfail] as needing removal, which is the right prompt.
+//
+// Do NOT "fix" this by restoring the old centred-dry setup. That version passed
+// only because the retired constant-power pan law was asymmetric at centre
+// (0x80/255 = 0.50196, so cos != sin), which put a rounding artefact into the
+// channel difference and made the case look like it was testing the returns.
+TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio][!shouldfail]") {
     auto wide   = renderWithEffects([](EffectsState&) {}, /*dryLevel=*/0x00);
     auto narrow = renderWithEffects([](EffectsState& fx) {
         fx.cho_width = 0x00; fx.del_width = 0x00; fx.rev_width = 0x00;

@@ -37,8 +37,12 @@ static SampleData makeRamp(int frames, int channels = 1, int sr = 48000) {
     sd.channels = channels;
     sd.sampleRate = sr;
     sd.data = new float[frames * channels];
+    // Channel 0 ramps up, every other channel is its negation -- so a stereo ramp
+    // is maximally wide. The `channels == 1 ? ... : 0.0f` this used to have made
+    // every stereo sample silent, which went unnoticed because nothing asked for
+    // one until the stereo voice path did (S-ST1).
     for (int i = 0; i < frames; ++i) {
-        float v = (channels == 1) ? float(i) / float(frames - 1) : 0.0f;
+        float v = float(i) / float(frames - 1);
         for (int c = 0; c < channels; ++c)
             sd.data[i * channels + c] = (c == 0) ? v : -v;
     }
