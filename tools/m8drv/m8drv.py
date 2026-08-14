@@ -108,14 +108,18 @@ DEFAULT_TIMEOUT = 30
 # DIFFERENT result on identical re-test. A fixed key sequence cannot reach these
 # reliably in any language over any transport, so refuse immediately rather than
 # thrash. DJF_TYP could not be located on-device at all.
+# Narrowed 2026-08-14 after re-testing on fw 6.5.2 with working position reads.
+# MIX_VOL came off the list because `cursor MIX_VOL` from a homed start now
+# succeeds outright. The three that remain are the MX/DE/RE vertical column, and
+# the reason they fail is not hidden state: `probe RIGHT` from OUTPUT VOL walks
+# 50 -> 120 -> 160 -> 170 -> 180 -> 190, so RIGHT moves DOWN through rows --
+# MIXER's cursor order is a linear chain, not a 2D grid, and moveCursorTo drives
+# it as a grid (UP/DOWN for rows, LEFT/RIGHT for columns). That chain never
+# visits col 10, which is where MX/DE/RE live.
 FENCED_FIELDS = {
-    "MST_CHO": "MIXER compound widget (bug #20, OPEN)",
-    "MST_DEL": "MIXER compound widget (bug #20, OPEN)",
-    "MST_REV": "MIXER compound widget (bug #20, OPEN)",
-    "MIX_VOL": "MIXER compound widget (bug #20, OPEN)",
-    "LIM_VAL": "MIXER compound widget (bug #20, OPEN)",
-    "DJF_FREQ": "MIXER compound widget (bug #20, OPEN)",
-    "DJF_RES": "MIXER compound widget (bug #20, OPEN)",
+    "MST_CHO": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
+    "MST_DEL": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
+    "MST_REV": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
     "DJF_TYP": "never located on-device (bug #20, OPEN)",
 }
 
