@@ -959,7 +959,7 @@ delay and `FF C0 10 FF FF` for reverb at the measured offsets, matching the
 
 **Consequence for our own files:** every .m8s this project authored before
 2026-08-14 has its effects written at the library's offsets, because
-`saveNewSong` used `EffectsSettings::write`. `songs/sunrise.m8s` was
-regenerated; `songs/opening.m8s` still carries the defect.
+`saveNewSong` used `EffectsSettings::write`. Both `songs/sunrise.m8s` and
+`songs/opening.m8s` have been regenerated; no committed song still carries it.
 
 - **Date:** 2026-08-14
