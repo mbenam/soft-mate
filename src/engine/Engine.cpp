@@ -673,6 +673,19 @@ void Engine::applyDjFilter(float& l, float& r) {
 // function-local static so the audio thread never touches a guard variable.
 static const EqBank kFlatEqBank{};
 
+// STEREO WIDTH on an effect return. 0xFF is unity and is the device's default
+// for all three, so the early-out means a song that never touches these renders
+// exactly as it did before this existed -- not "within tolerance", the same
+// samples. Below unity the side component is scaled down, reaching mono at 0.
+static inline void applyStereoWidth(float& l, float& r, int amt) {
+    if (amt >= 255) return;
+    const float w = amt / 255.0f;
+    const float m = 0.5f * (l + r);
+    const float s = 0.5f * (l - r) * w;
+    l = m + s;
+    r = m - s;
+}
+
 // Point each track's EQ at whatever bank its current instrument names. Called
 // once per render() call rather than per sample: a bank change landing a few
 // milliseconds late is inaudible, and configure() does nothing at all when the
@@ -830,7 +843,13 @@ void Engine::render(float* buffer, int frames) {
         // which is what the device calls it and where it belongs.
         m_sendEq[0].process(sendChoL, sendChoR);
         m_sendEq[1].process(sendDelL, sendDelR);
-        m_sendEq[2].process(sendRevL, sendRevR);
+        // The reverb's INPUT EQ is applied further down, after ModFX's and the
+        // delay's REVERB SEND have been folded into this bus -- so it EQs
+        // everything entering the reverb, which is what "input EQ" should mean.
+        // ASSUMPTION: whether hardware taps those sends before or after the
+        // reverb's input EQ is unmeasured. It is the same question §UI-6 had to
+        // settle for the instrument EQ, and it wants the same treatment: mute
+        // the dry path, drive one send, and compare captures.
 
         m_smoothChoFreq += ((m_state.effects.cho_mod_freq / 255.0f) * 10.0f - m_smoothChoFreq) * 0.005f;
         m_smoothChoDepth += (m_state.effects.cho_mod_depth / 255.0f - m_smoothChoDepth) * 0.005f;
@@ -842,6 +861,7 @@ void Engine::render(float* buffer, int frames) {
         m_chorus.Process(0.5f * (sendChoL + sendChoR));
         float choL = m_chorus.GetLeft();
         float choR = m_chorus.GetRight();
+        applyStereoWidth(choL, choR, m_state.effects.cho_width);
 
         float maxDel = kSampleRate * 2.0f - 1.0f; // 2 seconds max
         m_smoothDelL += ((m_state.effects.del_time_l / 255.0f) * maxDel - m_smoothDelL) * 0.001f;
@@ -857,6 +877,23 @@ void Engine::render(float* buffer, int frames) {
         // time offset did far less than they looked like they did.
         m_delayL.Write(sendDelL + delL * delFeed);
         m_delayR.Write(sendDelR + delR * delFeed);
+        // Width is applied to the return only, after the line has been written
+        // back -- narrowing the output must not narrow what feeds the feedback
+        // path, or the image would collapse further on every repeat.
+        applyStereoWidth(delL, delR, m_state.effects.del_width);
+
+        // ModFX and Delay each have their own REVERB SEND. Taken from their
+        // post-width returns, so what the reverb hears is what the mix hears.
+        // No feedback loop is created: the reverb's output feeds neither.
+        const int choRevAmt = m_state.effects.cho_reverb;
+        const int delRevAmt = m_state.effects.del_reverb;
+        if (choRevAmt > 0 || delRevAmt > 0) {
+            const float cr = choRevAmt / 255.0f;
+            const float dr = delRevAmt / 255.0f;
+            sendRevL += choL * cr + delL * dr;
+            sendRevR += choR * cr + delR * dr;
+        }
+        m_sendEq[2].process(sendRevL, sendRevR);
 
         float fb = m_state.effects.rev_decay / 255.0f; if(fb > 0.98f) fb = 0.98f; m_reverb.SetFeedback(fb);
         m_reverb.SetLpFreq(10000.0f);
@@ -864,6 +901,7 @@ void Engine::render(float* buffer, int frames) {
         m_reverb.Process(sendRevL, sendRevR, &revL, &revR);
         revL = dcBlock(revL, m_dcRevL);
         revR = dcBlock(revR, m_dcRevR);
+        applyStereoWidth(revL, revR, m_state.effects.rev_width);
 
         float master_cho = m_state.mixer.cho_vol / 255.0f;
         float master_del = m_state.mixer.del_vol / 255.0f;

@@ -387,8 +387,15 @@ specifically built to catch.
   REV is a stub everywhere. Many M8 FX commands (ARP/RET/RND/scale/arp/mixer sends...) absent —
   see `FX_COMMANDS_SPEC.md`.
 - Mixer: input/USB channels, DJ filter, limiter value, `mix_vol`.
-- Effects: chorus width/reverb-send, delay width/reverb-send, reverb size /
-  mod depth/freq / width (reverb LP is hardcoded 10 kHz; only decay is live).
+- Effects: reverb **size / mod depth / mod freq** only (reverb LP is hardcoded
+  10 kHz). These three are engine-limited, not unwired: DaisySP's `ReverbSc`
+  exposes just `SetFeedback` and `SetLpFreq`, and size/mod live in a
+  `static const` table inside a FetchContent dependency — reaching them means
+  vendoring LGPL source or replacing the reverb (`hw_findings.md` §UI-8).
+  The ModFX/Delay/Reverb **stereo widths** and the ModFX/Delay **reverb sends**
+  became live 2026-08-14 (tests A6–A8). Also unmodelled: ModFX **MOD TYPE** —
+  hardware offers Chorus/Phaser/Flanger and the engine hardcodes a chorus — and
+  reverb **SHIMMER**.
 - Instrument params: `tbl_tic`, `eq`, `slice`, sampler `transp` flag, `pan`
   mod destination.
 - `INST_MIDI` type.

@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <functional>
+#include <memory>
 
 using namespace m8::test;
 using namespace m8::engine;
@@ -469,4 +471,131 @@ TEST_CASE("S-LIM-POST POST:AD soft-clips after the filter, bounded and distinct 
     std::cout << "S-LIM-POST: POST:AD peak = " << postPeak << ", maxDiff vs CLIP = " << maxDiff << std::endl;
     REQUIRE(postPeak <= 1.0001f);   // tanh soft clip stays bounded
     REQUIRE(maxDiff > 0.02f);       // measurably different from hard clip
+}
+
+// ---------------------------------------------------------------------------
+// A6-A8 -- the effect-return controls that were stored but silent until
+// 2026-08-14: STEREO WIDTH on each of the three returns, and the REVERB SEND
+// that ModFX and Delay each have.
+//
+// A6 is the one that protects everything else. All three widths default to
+// 0xFF and both reverb sends to 0x00, which is deliberately the identity, so
+// adding these must not alter a single sample of an existing song.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Renders a short burst through a noise sampler with the sends open, and
+// returns the interleaved audio. `tweak` gets to change the effects state.
+std::vector<float> renderWithEffects(const std::function<void(EffectsState&)>& tweak) {
+    static std::vector<float> sampleBuf;
+    if (sampleBuf.empty()) {
+        sampleBuf.resize(48000);
+        uint32_t s = 1234;
+        for (size_t i = 0; i < sampleBuf.size(); ++i) {
+            s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+            sampleBuf[i] = 0.5f * static_cast<float>(s) / 4294967296.0f;
+        }
+    }
+
+    auto host = std::make_unique<OfflineHost>();
+    auto& state = host->engine().getStateForInit();
+    auto& seq   = host->sequencer();
+    seq.clear();
+
+    auto& inst = state.instruments[0];
+    inst.type = InstType::INST_SAMPLER;
+    inst.sampler.play    = 2;      // FWDLOOP, so it keeps sounding
+    inst.sampler.loop_st = 0x00;
+    inst.sampler.length  = 0xFF;
+    inst.sampler.detune  = 0x80;
+    inst.sampler.dry     = 0x40;
+    inst.sampler.cho     = 0xFF;   // all three sends open so every return is live
+    inst.sampler.del     = 0xFF;
+    inst.sampler.rev     = 0x00;   // reverb fed only via the modfx/delay sends
+    inst.sampler.pan     = 0x80;
+    inst.sampler.amp     = 0x00;
+    inst.sampler.filter_type = 0;
+    inst.mods[0] = {0, 1, 0xFF, 0, 0, 2, 0};   // AHD -> VOLUME, sustaining
+
+    SampleData sd{};
+    sd.data = sampleBuf.data();
+    sd.frames = static_cast<uint32_t>(sampleBuf.size());
+    sd.channels = 1;
+    sd.sampleRate = 48000;
+    std::strncpy(sd.path, "noise.wav", sizeof(sd.path) - 1);
+    EngineCommand load{};
+    load.type = CommandType::LOAD_SAMPLE;
+    load.targetId = 0;
+    load.u.sample = sd;
+    host->push(load);
+
+    tweak(state.effects);
+
+    m8::test::setStep(seq, 0, 0, 60, 0x7F, 0);
+    host->push(m8::test::playPhrase(0, 0, 0));
+    host->render(24000);
+    return host->audio();
+}
+
+// Mean |L-R| -- a proxy for how wide the output is.
+float meanStereoDiff(const std::vector<float>& a) {
+    double acc = 0.0;
+    size_t n = a.size() / 2;
+    for (size_t i = 0; i < n; ++i) acc += std::fabs(a[i * 2] - a[i * 2 + 1]);
+    return n ? static_cast<float>(acc / n) : 0.0f;
+}
+
+} // namespace
+
+TEST_CASE("A6 effect-return defaults are the exact identity", "[audio]") {
+    // Widths at 0xFF and reverb sends at 0x00 must reproduce the pre-existing
+    // signal path bit-for-bit, not approximately. If this fails, adding these
+    // controls silently changed the sound of every song that never used them.
+    auto base = renderWithEffects([](EffectsState&) {});
+    auto same = renderWithEffects([](EffectsState& fx) {
+        fx.cho_width = 0xFF; fx.del_width = 0xFF; fx.rev_width = 0xFF;
+        fx.cho_reverb = 0x00; fx.del_reverb = 0x00;
+    });
+
+    REQUIRE(base.size() == same.size());
+    bool identical = true;
+    for (size_t i = 0; i < base.size(); ++i)
+        if (base[i] != same[i]) { identical = false; break; }
+    REQUIRE(identical);
+}
+
+TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio]") {
+    auto wide   = renderWithEffects([](EffectsState&) {});          // all 0xFF
+    auto narrow = renderWithEffects([](EffectsState& fx) {
+        fx.cho_width = 0x00; fx.del_width = 0x00; fx.rev_width = 0x00;
+    });
+
+    const float dWide   = meanStereoDiff(wide);
+    const float dNarrow = meanStereoDiff(narrow);
+
+    // The dry path is still stereo, so this does not reach zero -- but the
+    // returns collapsing to mono has to reduce the channel difference.
+    REQUIRE(dWide > 0.0f);
+    REQUIRE(dNarrow < dWide);
+}
+
+TEST_CASE("A8 ModFX and Delay reach the reverb through their own sends", "[audio]") {
+    // The instrument's own reverb send is 0x00 here, so any reverb at all can
+    // only have arrived via the modfx/delay REVERB SEND controls.
+    auto off = renderWithEffects([](EffectsState& fx) {
+        fx.cho_reverb = 0x00; fx.del_reverb = 0x00;
+    });
+    auto on = renderWithEffects([](EffectsState& fx) {
+        fx.cho_reverb = 0xFF; fx.del_reverb = 0xFF;
+        fx.rev_decay  = 0xE0;
+    });
+
+    REQUIRE(off.size() == on.size());
+    float maxDiff = 0.0f;
+    for (size_t i = 0; i < off.size(); ++i)
+        maxDiff = std::max(maxDiff, std::fabs(off[i] - on[i]));
+    REQUIRE(maxDiff > 0.001f);
+    // OfflineHost already gates NaN/Inf and |s| <= 1 on every chunk it renders,
+    // so there is no per-sample assertion here -- AGENTS.md §2.
 }

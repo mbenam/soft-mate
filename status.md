@@ -292,6 +292,16 @@ scramble the effects of any song authored from a template. `cho_reverb` finally 
 so they survive a save (test L26).
 *Behaviour change:* delay and reverb values shown for an existing song will differ from what
 the clone displayed before — the old ones were the wrong bytes.
+**Five more effect controls became audible (2026-08-14):** STEREO WIDTH on all three returns
+(mid/side, applied to the return only — for the delay it lands after the line is written back,
+so narrowing the output cannot collapse the image further on each repeat) and the ModFX and
+Delay **REVERB SEND** controls, taken post-width. That takes the Effects screen from 6 of 14
+controls reaching the audio to **11 of 14**. All five default to the identity (widths `0xFF`,
+sends `0x00`), and test **A6** asserts bit-for-bit equality at those defaults so an existing
+song is untouched; A7 and A8 prove the controls do something. *Unmeasured assumption:* the
+reverb's INPUT EQ is applied after the ModFX/Delay sends fold in, so it EQs everything entering
+the reverb — whether hardware taps those before or after wants the §UI-6 treatment.
+The remaining three (reverb SIZE / MOD DEPTH / MOD FREQ) are engine-limited, not unwired.
 Tests: L23 (round-trip), **L25** (loaded values match the device screen — the one that breaks
 the load/save symmetry a round-trip test cannot), L26 (unmodelled bytes preserved).
 
