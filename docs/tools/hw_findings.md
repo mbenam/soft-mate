@@ -1030,3 +1030,66 @@ device-authored file) correspond to no control on either screen. Mixer `+28`,
 untouched on save (test L24).
 
 - **Date:** 2026-08-14
+
+---
+
+## UI-10 — The M8's pan law is balance, not constant-power
+
+**Date:** 2026-08-14. Firmware 6.5.2, COM3. Measured with `m8drv` driving the
+parameter and `m8_capture` + `m8_analyze` measuring, entirely unattended.
+
+### Method
+
+Instrument 00, MACROSYN CSAW, `DRY FF` / `REV 00` (dry path only, so the reverb —
+which is decorrelated stereo regardless — cannot mask the voice), `AMP 20`.
+Keyjazz C-4 at velocity `0x08` for headroom, 2 s captures. Only `PAN` changed
+between the two takes.
+
+### Results
+
+| PAN | mid RMS | side RMS | L/R corr | derived L | derived R |
+|---|---|---|---|---|---|
+| `80` (centre) | 0.010864 | 0.000000 | +1.0000 | 0.010864 | 0.010864 |
+| `00` (hard left) | 0.005433 | 0.005433 | 0.0000 | 0.010866 | 0 |
+
+Derived from `mid = (L+R)/2`, `side = (L-R)/2`.
+
+**L is unchanged between centre and hard left** (0.010864 vs 0.010866). Panning
+fully to one side takes the far channel to exactly zero and leaves the near
+channel at the level it already had.
+
+### What this means for the clone
+
+`Engine.cpp`'s master bus uses a **constant-power** law:
+
+```cpp
+float panL = std::cos(pan * 1.5707963f);
+float panR = std::sin(pan * 1.5707963f);
+```
+
+which puts centre at 0.707 and hard-left at 1.0 — so it boosts the near channel
+by 3 dB as the pan sweeps, and renders a centred track 3 dB quieter than hardware
+does. Under that law, L at hard left should have measured 0.01537; it measured
+0.010866. The hardware law is instead a plain balance control: the near channel
+stays at unity and the far channel is attenuated.
+
+Not yet measured: intermediate pan positions, which would distinguish a linear
+taper from a curved one. Two endpoints cannot tell those apart, so the exact
+shape between `00` and `80` is still unknown — sweep `20`/`40`/`60` before
+committing to a replacement curve.
+
+### Side findings from the same run
+
+- **The capture rig measures stereo correctly.** `side RMS` of exactly 0.000000
+  with `corr` of exactly +1.0000 on a centred mono source is the calibration that
+  makes every other stereo measurement here trustworthy.
+- **`OUTPUT VOL` does not reach the USB audio tap — confirmed, not inferred.**
+  With keyjazz velocity held at `0x08`, `OUT_VOL F0` and `OUT_VOL 40` produced
+  captures with identical peaks (0.013641 both). The `status.md` note that raising
+  `OUTPUT VOL` cannot fix capture level is correct: use keyjazz velocity as the
+  level lever instead. Velocity `0x7F` clips hard (50,573 samples, crest 1.43 dB);
+  `0x40` gives peak 0.43 clean.
+- **Level gates do not apply to a single sustained oscillator.** `m8_analyze`
+  fails these files on `crest <= 6 dB` and DC thresholds tuned for full mixes; a
+  sustained CSAW legitimately has ~2 dB crest. Read `clipped` and `peak` for
+  validity here, not the overall verdict.

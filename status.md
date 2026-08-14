@@ -740,6 +740,16 @@ Future captures use the C++ `m8_capture`.
   report "already on target" without checking the column) is a DATA bug of the same class as
   #9/#11/#17 and is fixable by measuring those columns — `inspect` can do that now. `m8drv`
   currently mitigates it by forcing a known cursor position first, which is not the fix.
+- **Pan law is wrong: we use constant-power, the M8 uses balance.** Measured 2026-08-14 on
+  fw 6.5.2 (`hw_findings.md` §UI-10, `m8drv` + `m8_capture` + `m8_analyze`, unattended). At hard
+  left the device takes R to exactly zero and leaves **L unchanged** from its centre level
+  (0.010866 vs 0.010864); `Engine.cpp`'s `cos`/`sin` law would have put L at 0.01537. So every
+  centred track renders 3 dB quieter than hardware, and panning boosts the near channel where the
+  device does not. Not yet fixed: two endpoints cannot distinguish a linear taper from a curved
+  one, so sweep intermediate pan values before replacing the curve. Same run confirmed the capture
+  rig measures stereo correctly (centre gives `side RMS` 0.000000, `corr` +1.0000) and that
+  `OUTPUT VOL` does not reach the USB tap — use keyjazz velocity for capture level (`0x7F` clips,
+  `0x40` is clean).
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked
