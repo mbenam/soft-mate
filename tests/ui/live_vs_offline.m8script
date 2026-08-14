@@ -5,8 +5,20 @@
 # using: m8_analyze --diff <in_app.wav> <m8_render.wav>
 #
 # Both paths call Engine::render() — the bar is exact sample-for-sample identity.
+#
+# The fixture MUST be audible, and must not need samples.
+#
+# This used V4EMPTY.m8s until 2026-08-14 — an EMPTY song, so both sides rendered
+# silence, the hashes matched trivially, and `m8_analyze --diff` refused the
+# comparison as identical inputs. The section passed on that for as long as it
+# existed, which means ARCHITECTURE.md's hard invariant #11 (app and offline
+# renderer produce identical audio) was never actually checked.
+#
+# HyperSynth.m8s renders at peak 0.398, crest 20 dB, and loads zero samples — so it
+# needs no sample root, which matters because the manifest's `diff` policy has no
+# field for one.
 
-load third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s
+load tests/fixtures/device_golden/HyperSynth.m8s
 assert_no_error
 render 1 live_vs_offline_app.wav
 assert_no_error

@@ -791,8 +791,13 @@ Future captures use the C++ `m8_capture`.
   the section proved nothing. Now gated: both WAVs must pass `m8_analyze`'s hard checks (which
   include a longest-silence limit) before the diff runs. `rc == 2` is still accepted afterwards,
   because two *real* files hashing identically is exactly the desired outcome for that invariant.
-  **Still open: why the render is silent at all** — zero note-ons suggests the `--song` reference
-  render is not being given a playable song, which is a separate defect from the vacuous gate.
+  **Root cause found and fixed the same day:** the fixture was
+  `third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s` — an **empty** song, so both sides
+  rendered silence by construction and the section had never verified anything. Repointed at
+  `tests/fixtures/device_golden/HyperSynth.m8s`, which renders at peak 0.398 / crest 20 dB and
+  loads **zero samples** — the last part matters because the manifest's `diff` policy has no
+  `--sample-root` field, so any sample-using song would render silent too. The manifest header now
+  states both requirements.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked

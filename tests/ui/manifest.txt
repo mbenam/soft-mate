@@ -14,7 +14,13 @@
 #   analyze_fail:<wav>            same, but expect a deliberate hard-check FAIL (exit 1)
 #   diff:<wav>:<song.m8s>:<sec>   after exit 0, render <song.m8s> for <sec>s via m8_render into the
 #                                 same out-dir, then `m8_analyze --diff` it against <out-dir>/<wav>;
-#                                 expect byte-for-byte identity (exit 0)
+#                                 expect byte-for-byte identity (exit 0, or 2 = refused as
+#                                 identical, which for this check is success).
+#                                 <song.m8s> MUST be audible and MUST NOT need samples: both WAVs
+#                                 are gated through `m8_analyze` before the diff runs, because two
+#                                 SILENT files are also byte-identical and this policy spent its
+#                                 whole life passing on that (V4EMPTY.m8s). There is no field for
+#                                 a --sample-root, so a song needing one renders as silence.
 #
 # ORDER MATTERS: scripts listed here run top-to-bottom in this file's order, before any
 # unlisted scripts (which run afterward, alphabetically).
@@ -32,4 +38,4 @@
 
 closed_loop_glitch   analyze_fail:glitch.wav
 closed_loop_fix      analyze_fail:fixed.wav
-live_vs_offline      diff:live_vs_offline_app.wav:third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s:1
+live_vs_offline      diff:live_vs_offline_app.wav:tests/fixtures/device_golden/HyperSynth.m8s:1
