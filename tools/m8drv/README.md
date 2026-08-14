@@ -81,6 +81,28 @@ these fail immediately instead of thrashing for 30 s.
 (its row carries an unmapped LOAD/SAVE pair), so this one gets a forced known
 position rather than a refusal.
 
+## Grid screens
+
+SONG, CHAIN, PHRASE, GROOVE, TABLE and INST_POOL have no field names at all —
+`getFieldMap().isGrid` is true and every field lookup returns `nullopt`. Address
+them with `cursor-grid <step> <col>`, both 0-based (track 1 on SONG is `col 0`),
+and read position from `grid_step` / `grid_col`, which `dump` prints. Don't read
+`cursor_field` there: on a grid screen it is the row label glued to the cell text
+(`"07--"`), naming neither axis.
+
+Four hardware-confirmed bugs stood between this working and not, all found by
+driving the device and all recorded in
+[`M8_DRIVER_BUGS.md`](../../specs/M8_DRIVER_BUGS.md) #22–#24. The one worth knowing
+about, because it shapes how you debug this tool: **#24 was invisible to one-shot
+invocations.** `open()` sends `'R'`, a full-framebuffer resend that repaints away
+the stale accent-coloured blanks the M8 leaves at a vacated row, so a fresh
+process always reads correctly and only the *second and later* reads within one
+connection went wrong. Holding the connection open is what surfaced it.
+
+If a position read ever looks stale again, `probe <KEY> --times 3` is the
+instrument — it reports `cursor` and `grid` per press, and a cursor that moves
+while the grid coordinates stand still is that same signature.
+
 ## Commands
 
 ```
@@ -88,7 +110,11 @@ doctor                 prove the loop end-to-end; reports firmware + gestures_re
 dump | state           decoded screen / raw semantic JSON
 goto <SCREEN>          SONG CHAIN PHRASE INSTRUMENT TABLE PROJECT GROOVE MODS
                        SCALE INST_POOL MIXER EFFECTS
-cursor <FIELD>         move the cursor to a named field
+cursor <FIELD>         move the cursor to a named field -- form screens only
+cursor-grid <ST> <COL> move the cursor on a grid screen, both 0-based
+probe <KEY> [--times]  press a key N times; report cursor + grid per press
+inspect [--key K]      accent cells as fg AND bg, plus rect fills; the only
+                       view of colour in the toolchain
 read <FIELD>           read a field's value
 set <FIELD> <VALUE>    edit a field (needs pinned gestures)
 press <KEY>            e.g. UP, SHIFT+RIGHT, 0x14

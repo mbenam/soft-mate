@@ -72,7 +72,7 @@ decision.
 | `inspect [--key K]` | Show accent-coloured cells as **foreground and background** separately, plus rect fills. With `--key`, reports which channel moves — i.e. which one is the real cursor. The only view of colour in the toolchain. |
 | `goto <SCREEN>` | `SONG CHAIN PHRASE INSTRUMENT TABLE PROJECT GROOVE MODS SCALE INST_POOL MIXER EFFECTS` |
 | `cursor <FIELD>` | Move to a named field — **form screens only** |
-| `cursor-grid <STEP> <COL>` | Move on a grid screen — see Gotchas |
+| `cursor-grid <STEP> <COL>` | Move on a grid screen, both 0-based (track 1 == col 0) |
 | `read <FIELD>` | Read a field's value |
 | `set <FIELD> <VALUE>` | Edit a field (needs pinned gestures) |
 | `press <KEY>` | `UP`, `SHIFT+RIGHT`, or a raw `0x14` |
@@ -102,13 +102,13 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   true and every field lookup returns `nullopt`
   ([ScreenModel.h:564](../../src/tools/m8/ScreenModel.h:564)), so `cursor <FIELD>`
   cannot reach them at all. Use `cursor-grid <step> <col>`.
-- **`cursor_row`/`cursor_field` are wrong on grid screens, and `cursor-grid` fails
-  because of it** — bug #22 in [`M8_DRIVER_BUGS.md`](../../specs/M8_DRIVER_BUGS.md).
-  On SONG the reported cursor row is y=50, which is the *track-number header*, not
-  a data row (data starts at y=60). Confirmed working on PROJECT (cursor tracked
-  50→60→70→80 through TRANSPOSE/GROOVE/SCALE, `baseline_drift: 0`), confirmed
-  broken on SONG. Use `inspect --key DOWN` to see which visual channel the cursor
-  actually lives in.
+- **Grid screens are addressed by `(step, col)`, and both are 0-based.** Track 1 on
+  SONG is `col 0`. `dump` prints `grid : step N col M of K columns`, and `state`
+  carries `grid_step` / `grid_col` / `grid_columns` (all `-1` on form screens).
+  Verified on hardware: `cursor-grid 7 5` lands on song row 07, track 6.
+- **`cursor_field` on a grid screen is not a field name.** It is the row label
+  glued to the cell text (`"07--"`), which names neither axis — read `grid_step`
+  and `grid_col` instead. This is why the grid coordinates were added.
 - **Colour and rect information is invisible to the semantic state.** `state` and
   `dump` give text only — no cell colours, and the `highlights` array is not in
   `SemanticState` at all. Use `inspect`. It matters because
