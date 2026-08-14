@@ -656,10 +656,26 @@ class M8Driver:
             })
             prev = cur
 
+        # grid_moved has to count here. A horizontal press changes the column
+        # without changing the row, and `cursor` is (field-text, row) -- so on a
+        # grid screen `cursor_moved` is legitimately false for LEFT/RIGHT, and
+        # judging on it alone reported "NOTHING CHANGED" for a press that had
+        # visibly moved the cursor three columns.
+        moved_grid = any(s["grid_moved"] for s in out["steps"])
         moved_cursor = any(s["cursor_moved"] for s in out["steps"])
         moved_rows = any(s["rows_changed"] for s in out["steps"])
-        if moved_cursor:
-            out["verdict"] = "press lands and cursor tracking works"
+        if moved_cursor and moved_grid:
+            out["verdict"] = "press lands; both cursor and grid coordinates track"
+        elif moved_grid:
+            out["verdict"] = ("press lands and grid coordinates track. `cursor` did "
+                              "not change, which is expected for a horizontal move: "
+                              "it carries (field text, row), neither of which a "
+                              "column change alters.")
+        elif moved_cursor:
+            out["verdict"] = ("press lands, but the GRID COORDINATES did not follow. "
+                              "cursor_row moved while grid_step/grid_col stood "
+                              "still, so the grid position read is stale -- suspect "
+                              "a ghost accent cell pinning it (M8_DRIVER_BUGS #24).")
         elif moved_rows:
             out["verdict"] = ("PRESS LANDS but cursor tracking is broken on this "
                               "screen -- the screen changed and cursor_row did "

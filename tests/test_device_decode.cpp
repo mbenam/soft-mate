@@ -217,6 +217,42 @@ TEST_CASE("gridCursorPosition matches the captured SONG cursor", "[hwdecode]") {
     REQUIRE(gc.col == 2);
 }
 
+// M8_DRIVER_BUGS.md #24. Measured on hardware: within one session, DOWN advanced
+// cursor_row 150 -> 160 -> 170 while grid_step stayed pinned at 8, because
+// findCursorCell() had no ch != ' ' guard and latched onto the accent-coloured
+// blank the M8 leaves at the vacated row. A fresh process read it correctly,
+// since open()'s 'R' full-framebuffer resend repaints the ghosts away -- which is
+// exactly why this hid behind one-shot invocations.
+TEST_CASE("gridCursorPosition ignores the ghost row the cursor left", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    for (int i = 0; i < 8; ++i) {
+        const int col = 4 + i * 3;
+        const bool on = (col == 10);
+        grid.handleFrame(makeCharFrame('1' + i, col * 8, 50,
+                                       on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+    }
+    for (int r = 0; r < 16; ++r) {
+        const int y = 60 + r * 10;
+        const bool on = (r == 12);                     // cursor is on row 0C
+        const char lo = static_cast<char>(r < 10 ? '0' + r : 'A' + (r - 10));
+        grid.handleFrame(makeCharFrame('0', 1 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+        grid.handleFrame(makeCharFrame(lo, 2 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+        grid.handleFrame(makeCharFrame('-', 10 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+        grid.handleFrame(makeCharFrame('-', 11 * 8, y, on ? A0 : W, on ? A1 : W, on ? A2 : W, 0, 0, 0));
+    }
+    // The ghost: row 08 (y=140) is a row the cursor previously occupied, and its
+    // trailing blank kept the accent colour while its real text recoloured back.
+    grid.handleFrame(makeCharFrame(' ', 3 * 8, 140, A0, A1, A2, 0, 0, 0));
+
+    auto gc = m8::dev::gridCursorPosition(grid);
+    REQUIRE(gc.valid);
+    REQUIRE(gc.step == 12);      // not 8, the ghost's row
+    REQUIRE(gc.col == 2);
+}
+
 TEST_CASE("gridCursorPosition reports invalid on a form screen", "[hwdecode]") {
     ScreenGrid grid;
     // PROJECT-like: a title and one accent label, no row-number grid or header.

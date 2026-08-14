@@ -552,7 +552,16 @@ static bool findLabelCell(const ScreenGrid& grid, const std::string& text, int& 
 // so this scan uses color only, never the glyph.
 static bool findCursorCell(const ScreenGrid& grid, int minRowY, int& y, int& x) {
     for (auto& [pos, c] : grid.cells) {
-        if (pos.first >= minRowY && grid.isCursor(c) && pos.second < ScreenGrid::MAIN_X_MAX
+        // c.ch != ' ' is load-bearing, for the same reason it is in
+        // ScreenGrid::cursorRowY(): the M8 does not resend a colour update for a
+        // vacated row's blank cells (a cyan space is pixel-identical to a plain
+        // space), so stale accent-coloured blanks linger at the row the cursor
+        // just left. Without this guard the scan latches onto that ghost and
+        // reports the OLD row forever -- see M8_DRIVER_BUGS.md #24. The real
+        // cursor row always carries real non-blank text, so this cannot
+        // false-negative, and ghosts are by construction always blank.
+        if (pos.first >= minRowY && grid.isCursor(c) && c.ch != ' '
+            && pos.second < ScreenGrid::MAIN_X_MAX
             && !grid.isInHighlight(pos.second, pos.first)) {
             y = pos.first; x = pos.second;
             return true;
