@@ -1,0 +1,23 @@
+{
+  "output_path": "pan80.wav",
+  "bytes": 423216,
+  "fnv1a64": "9f4a5c88b5d939f5",
+  "sample_rate": 48000,
+  "channels": 2,
+  "duration_seconds": 2.204,
+  "port": "COM3",
+  "timestamp_utc": "2026-08-14T20:34:29Z",
+  "capture_settings": {
+    "seconds": 2.00,
+    "pre_roll_ms": 5.0,
+    "tail_seconds": 0.00,
+    "keyjazz_note": 60,
+    "keyjazz_vel": 127
+  },
+  "check_level": {
+    "enabled": false,
+    "floor_level": 0.50000,
+    "measured_peak": 1.01537,
+    "passed": true
+  }
+}

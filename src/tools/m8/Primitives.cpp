@@ -1067,7 +1067,19 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
 
     // For numeric targets: use step-by-step editing.
     if (isNumeric(targetValue)) {
-        int target = static_cast<int>(std::strtol(targetValue.c_str(), nullptr, 0));
+        // HEX, always. The device displays byte fields in hex without a prefix,
+        // and the convergence check below parses the screen text as base 16 --
+        // so parsing the target with base 0 (bare digits = decimal) read the two
+        // sides in different bases. `set PAN 80` then converged, correctly and
+        // silently, on 80 decimal = 0x50, and the screen showed "50". Reported
+        // 2026-08-14. strtol with base 16 still accepts an explicit "0x" prefix,
+        // so `set AMP 0x40` is unaffected.
+        //
+        // This does not regress TEMPO-style decimal fields, because they were
+        // already broken: readCursorValue gives "120.00", whose leading hex run
+        // parses as 0x120 = 288, so no decimal target could ever match it.
+        // Editing decimal fields needs a per-field base, tracked separately.
+        int target = static_cast<int>(std::strtol(targetValue.c_str(), nullptr, 16));
         int maxSteps = 256;  // safety limit
 
         // Coarse stepping, because single-stepping is not merely slow, it is
