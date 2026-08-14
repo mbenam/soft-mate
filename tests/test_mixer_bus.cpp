@@ -83,13 +83,17 @@ Stereo renderWithPan(int panByte, int frames = 6000) {
     m.shape = 0x00;
     m.timbre = 0xC0;
     m.color = 0xC0;
-    m.amp = 0x40;
+    m.amp = 0x00;                 // no drive: it is a distortion, not a level
     m.lim = 0;
     m.filter_type = 0;
     m.dry = 0xFF;
     m.pan = panByte;
 
-    state.mixer.mix_vol = 0xFF;
+    // Deliberately quiet. The master bus ends in a tanh soft clip, and at the
+    // levels MB1-MB5 use it compresses the louder channel harder than the
+    // quieter one -- which drags the L/R ratio toward 1 and makes a pan-law
+    // assertion measure saturation instead of pan. At 0x30 the bus stays linear.
+    state.mixer.mix_vol = 0x30;
     state.mixer.out_vol = 0xFF;
     state.mixer.lim_val = 0x00;   // no limiting, or it would squash the ratio
     state.mixer.djf_freq = 0x80;

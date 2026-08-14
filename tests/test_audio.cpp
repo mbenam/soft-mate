@@ -487,7 +487,10 @@ namespace {
 
 // Renders a short burst through a noise sampler with the sends open, and
 // returns the interleaved audio. `tweak` gets to change the effects state.
-std::vector<float> renderWithEffects(const std::function<void(EffectsState&)>& tweak) {
+// dryLevel overrides the instrument's dry send. A7 sets it to 0 so that
+// meanStereoDiff sees only the effect returns; everything else leaves it alone.
+std::vector<float> renderWithEffects(const std::function<void(EffectsState&)>& tweak,
+                                    int dryLevel = 0x40) {
     static std::vector<float> sampleBuf;
     if (sampleBuf.empty()) {
         sampleBuf.resize(48000);
@@ -509,7 +512,7 @@ std::vector<float> renderWithEffects(const std::function<void(EffectsState&)>& t
     inst.sampler.loop_st = 0x00;
     inst.sampler.length  = 0xFF;
     inst.sampler.detune  = 0x80;
-    inst.sampler.dry     = 0x40;
+    inst.sampler.dry     = dryLevel;
     inst.sampler.cho     = 0xFF;   // all three sends open so every return is live
     inst.sampler.del     = 0xFF;
     inst.sampler.rev     = 0x00;   // reverb fed only via the modfx/delay sends
@@ -565,17 +568,28 @@ TEST_CASE("A6 effect-return defaults are the exact identity", "[audio]") {
     REQUIRE(identical);
 }
 
+// ASSERTION CHANGED 2026-08-14, deliberately, and the reason matters more than the
+// change. This case used the default centred dry path and asserted dWide > 0 with
+// the comment "the dry path is still stereo". It was not: the OLD constant-power
+// pan law computed panL = cos(0.50196 * pi/2) and panR = sin(0.50196 * pi/2),
+// which are unequal only because 0x80/255 = 0.50196 rather than exactly 0.5. So
+// the channel difference this case measured came from that rounding asymmetry, not
+// from the returns. Replacing the pan law with the measured linear one
+// (hw_findings.md §UI-12) makes centre exactly symmetric, and dWide fell to
+// exactly 0.0 -- revealing that the case had never tested the returns at all.
+//
+// Now the dry path is muted, so meanStereoDiff sees ONLY the returns and the
+// assertion measures what the case name claims. If this fails, the finding is real
+// (our chorus/delay returns are mono) and should be reported, not tuned away.
 TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio]") {
-    auto wide   = renderWithEffects([](EffectsState&) {});          // all 0xFF
+    auto wide   = renderWithEffects([](EffectsState&) {}, /*dryLevel=*/0x00);
     auto narrow = renderWithEffects([](EffectsState& fx) {
         fx.cho_width = 0x00; fx.del_width = 0x00; fx.rev_width = 0x00;
-    });
+    }, /*dryLevel=*/0x00);
 
     const float dWide   = meanStereoDiff(wide);
     const float dNarrow = meanStereoDiff(narrow);
 
-    // The dry path is still stereo, so this does not reach zero -- but the
-    // returns collapsing to mono has to reduce the channel difference.
     REQUIRE(dWide > 0.0f);
     REQUIRE(dNarrow < dWide);
 }
