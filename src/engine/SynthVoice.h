@@ -44,6 +44,18 @@ public:
     }
 
     float renderSample(const EnvContext& ctx);
+
+    // Stereo entry point. Engine calls this; renderSample stays as-is.
+    //
+    // Only the SAMPLER path is genuinely stereo: everything else fills both
+    // channels from renderSample, so the synth engines are bit-identical to
+    // before. That split is deliberate rather than lazy -- MEASURED on hardware
+    // 2026-08-14 (hw_findings.md §UI-12), the M8 reproduces a stereo sample's
+    // image intact, whereas HyperSynth's WIDTH at maximum is only about -31 dB
+    // of side content (§UI-11). Samples are what justify a stereo voice path;
+    // the synths can follow later, and each will need its own audio A/B.
+    void renderFrame(const EnvContext& ctx, float out[2]);
+
     bool isActive() const { return m_active; }
     float getSamplePhase() const { return m_samplePhase; }
 
@@ -72,6 +84,24 @@ private:
     float applyAmpLimFilter(float in, int ampByte, int limMode, int filterType,
                             int cutoffByte, int resByte, const ModTargets& mt);
 
+    // Stereo forms of the two stateful stages, for the sampler path.
+    //
+    // These exist as separate functions rather than replacing the mono ones so
+    // the hyper/FM/wav paths keep calling the mono versions and stay
+    // bit-identical. The right channel needs its OWN filter state (m_filterR,
+    // m_zdfR) -- sharing one filter across two channels would cross-feed them
+    // and is not the same operation twice.
+    //
+    // DEGRADE is different: it is a sample-and-hold whose clock is shared, so
+    // m_degradePhase stays single and only the held VALUE is per-channel.
+    // Two independent phases would decimate L and R at different instants and
+    // manufacture stereo out of a mono source.
+    void applyDegradeStereo(float& l, float& r, int degradeByte, float degradeMod);
+    void applyAmpLimFilterStereo(float& l, float& r, int ampByte, int limMode,
+                                 int filterType, int cutoffByte, int resByte,
+                                 const ModTargets& mt);
+    float applyFilterR(float in, int type, float cutoffHz, float res);
+
     const Instrument* m_instrument = nullptr;
     bool m_active = false;
     // NOTE: SynthVoice had its own `m_finished` here, set on note-on and when
@@ -89,7 +119,21 @@ private:
     float m_gateStep = 0.0f;
 
     float m_degradeHeld = 0.0f;
+    float m_degradeHeldR = 0.0f;   // held value for the right channel; phase is shared
     float m_degradePhase = 0.0f;
+
+    // renderFrame <-> sampler-path handshake. renderFrame raises m_frameStereo,
+    // and the sampler branch -- the only stereo-capable one -- runs its output
+    // stage per channel, writes m_frameOut and raises m_frameFilled. Anything
+    // else leaves m_frameFilled low and renderFrame duplicates the mono return.
+    //
+    // Done with members rather than an out-parameter because the stereo decision
+    // has to be made INSIDE the branch: the output stage is stateful, so
+    // summing first and splitting afterwards would run the filter on the wrong
+    // signal, and running it twice would advance the filter state twice.
+    bool  m_frameStereo = false;
+    bool  m_frameFilled = false;
+    float m_frameOut[2] = {0.0f, 0.0f};
 
     bool m_velocityTakeover = false;
 
@@ -100,6 +144,10 @@ private:
     uint8_t m_braidsReadIdx = 24;
     daisysp::Svf m_filter;
     ZdfSvf m_zdf;   // FILTER 06/07 (ZDF LP/HP); m_filter serves the non-ZDF types
+    // Right-channel duplicates, used only by the stereo sampler path. Left keeps
+    // m_filter/m_zdf, so a mono render touches exactly the state it always did.
+    daisysp::Svf m_filterR;
+    ZdfSvf m_zdfR;
 
     AhdEnv  m_ahdEnv[4];
     AdsrEnv m_adsrEnv[4];

@@ -590,6 +590,16 @@ TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio]") {
     const float dWide   = meanStereoDiff(wide);
     const float dNarrow = meanStereoDiff(narrow);
 
+    // Level first, so a red result says WHICH thing is wrong. With the dry send
+    // muted the output is nothing but the chorus and delay returns: if there is
+    // no energy at all then the returns are silent and this case is measuring
+    // nothing, which is a different bug from the returns being mono.
+    double acc = 0.0;
+    for (float v : wide) acc += std::fabs(v);
+    const float energyWide = static_cast<float>(acc);
+    CAPTURE(energyWide, dWide, dNarrow);
+    REQUIRE(energyWide > 0.0f);
+
     REQUIRE(dWide > 0.0f);
     REQUIRE(dNarrow < dWide);
 }

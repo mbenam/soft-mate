@@ -172,6 +172,7 @@ SynthVoice::SynthVoice() {
     m_osc.SetAmp(1.0f);
     m_braidsOsc.Init();
     m_filter.Init(kSampleRate);
+    m_filterR.Init(kSampleRate);   // right channel, stereo sampler path
     m_gateStep = 1.0f / (kGateTime * kSampleRate);
     m_braidsReadIdx = 24;
     for (int i = 0; i < 24; ++i) m_braidsBuffer[i] = 0;
@@ -190,6 +191,8 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
         m_sampler.computeRegion(m_instrument->sampler);
     }
     m_zdf.reset();
+    m_zdfR.reset();
+    m_degradeHeldR = 0.0f;
     m_braidsOsc.Strike();
     m_braidsReadIdx = 24;
 
@@ -354,17 +357,37 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
         float sampOut[2] = {0.0f, 0.0f};
         m_sampler.render(ratio, sampOut);
+        // Mono form: kept for renderSample's contract. The stereo path in
+        // renderFrame carries both channels through instead -- see
+        // hw_findings.md §UI-12 for why that matters.
         float sample = 0.5f * (sampOut[0] + sampOut[1]);
 
         m_samplePhase = float(m_sampler.phase());
 
-        sample = applyDegrade(sample, s.degrade, mt.degrade);
-        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type,
-                                   s.cutoff, s.res, mt);
-
         float effVol = m_velocityTakeover ? 1.0f : m_currentVolume;
         float volMod = m_gate * (1.0f + mt.volume);
         if (volMod < 0.0f) volMod = 0.0f;
+
+        if (m_frameStereo) {
+            // Stereo: carry both channels through the whole output stage. The M8
+            // reproduces a stereo sample's image intact (hw_findings.md §UI-12),
+            // so summing here threw away information the hardware keeps.
+            float l = sampOut[0], r = sampOut[1];
+            applyDegradeStereo(l, r, s.degrade, mt.degrade);
+            applyAmpLimFilterStereo(l, r, s.amp, s.lim, s.filter_type,
+                                    s.cutoff, s.res, mt);
+            const float g = effVol * volMod * m_tableVolume;
+            m_frameOut[0] = l * g;
+            m_frameOut[1] = r * g;
+            m_frameFilled = true;
+            // Return the mono mix too, so a direct renderSample caller that
+            // somehow saw m_frameStereo raised still gets a sane value.
+            return 0.5f * (m_frameOut[0] + m_frameOut[1]);
+        }
+
+        sample = applyDegrade(sample, s.degrade, mt.degrade);
+        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type,
+                                   s.cutoff, s.res, mt);
         return sample * effVol * volMod * m_tableVolume;
     }
 
@@ -667,6 +690,88 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 // the byte-identical copies that lived in the sampler and macrosyn render paths
 // (ARCHITECTURE.md §5.2 #8) -- same expressions in the same order, so the
 // output is unchanged for both callers.
+void SynthVoice::renderFrame(const EnvContext& ctx, float out[2]) {
+    m_frameStereo = true;
+    m_frameFilled = false;
+    const float mono = renderSample(ctx);
+    m_frameStereo = false;
+    if (m_frameFilled) {
+        out[0] = m_frameOut[0];
+        out[1] = m_frameOut[1];
+    } else {
+        out[0] = out[1] = mono;
+    }
+}
+
+void SynthVoice::applyDegradeStereo(float& l, float& r, int degradeByte, float degradeMod) {
+    if (degradeByte > 0 || degradeMod > 0.0f) {
+        float deg = std::clamp(degradeByte / 255.0f + degradeMod, 0.0f, 1.0f);
+        float step = 1.0f + deg * 63.0f;
+        // ONE phase for both channels: the decimator's clock is shared. Giving
+        // each channel its own phase would latch L and R at different instants
+        // and invent stereo from a mono source.
+        m_degradePhase += 1.0f;
+        if (m_degradePhase >= step) {
+            m_degradeHeld  = l;
+            m_degradeHeldR = r;
+            m_degradePhase -= step;
+        }
+        l = m_degradeHeld;
+        r = m_degradeHeldR;
+    }
+}
+
+float SynthVoice::applyFilterR(float in, int type, float cutoffHz, float res) {
+    // Mirror of applyFilter against the right channel's own filter state. Kept as
+    // a twin rather than parameterised so the left/mono path's instruction stream
+    // is untouched.
+    if (type <= 0) return in;
+    if (type == 6 || type == 7) {
+        m_zdfR.setParams(cutoffHz, res, kSampleRate);
+        float hp = 0.0f;
+        float lp = m_zdfR.process(in, hp);
+        return (type == 6) ? lp : hp;
+    }
+    if (type == 5) return in;
+    m_filterR.SetFreq(cutoffHz);
+    m_filterR.SetRes(res);
+    m_filterR.Process(in);
+    switch (type) {
+    case 1: return m_filterR.Low();
+    case 2: return m_filterR.High();
+    case 3: return m_filterR.Band();
+    case 4: return in - m_filterR.Band();
+    default: return in;
+    }
+}
+
+void SynthVoice::applyAmpLimFilterStereo(float& l, float& r, int ampByte, int limMode,
+                                         int filterType, int cutoffByte, int resByte,
+                                         const ModTargets& mt) {
+    // Same maths as applyAmpLimFilter, including the LIM 04-08 ordering flip,
+    // applied to each channel with its own filter state.
+    float ampVal = std::clamp(1.0f + (ampByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
+    float baseCutoff = 20.0f * std::pow(2.0f, (cutoffByte / 255.0f) * 10.0f);
+    float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
+    float finalRes = std::clamp(resByte / 255.0f + mt.res, 0.0f, 1.0f);
+
+    if (limMode < 4) {
+        l *= ampVal;
+        r *= ampVal;
+        l = applyLimiter(l, limMode);
+        r = applyLimiter(r, limMode);
+        l = applyFilter(l, filterType, finalCutoff, finalRes);
+        r = applyFilterR(r, filterType, finalCutoff, finalRes);
+        return;
+    }
+    l = applyFilter(l, filterType, finalCutoff, finalRes);
+    r = applyFilterR(r, filterType, finalCutoff, finalRes);
+    l *= ampVal;
+    r *= ampVal;
+    l = applyLimiter(l, limMode);
+    r = applyLimiter(r, limMode);
+}
+
 float SynthVoice::applyDegrade(float in, int degradeByte, float degradeMod) {
     if (degradeByte > 0 || degradeMod > 0.0f) {
         float deg = std::clamp(degradeByte / 255.0f + degradeMod, 0.0f, 1.0f);

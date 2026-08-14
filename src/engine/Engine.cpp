@@ -814,9 +814,14 @@ void Engine::render(float* buffer, int frames) {
         float sendRevL = 0.0f, sendRevR = 0.0f;
 
         for (int t = 0; t < 8; ++t) {
-            float vSamp = m_voices[t].renderSample(m_envCtx);
+            // Stereo from the voice. Only the sampler path fills the two
+            // channels differently; every synth engine still returns one value
+            // duplicated, so their audio is unchanged (see renderFrame).
+            float vFrame[2] = {0.0f, 0.0f};
+            m_voices[t].renderFrame(m_envCtx, vFrame);
             float tVol = m_state.mixer.track_vol[t] / 255.0f;
-            vSamp *= tVol;
+            vFrame[0] *= tVol;
+            vFrame[1] *= tVol;
             
             float pan = 0.5f;
             float dry = 1.0f;
@@ -911,8 +916,8 @@ void Engine::render(float* buffer, int frames) {
             // the send paths, since they now carry the same signal.
             //
             // A bypassed EQ returns immediately without touching either value.
-            float sigL = vSamp * panL;
-            float sigR = vSamp * panR;
+            float sigL = vFrame[0] * panL;
+            float sigR = vFrame[1] * panR;
             m_trackEq[t].process(sigL, sigR);
 
             const float outL = sigL * dry;

@@ -419,3 +419,82 @@ TEST_CASE("S-ZDF3 ZDF filter stays finite and bounded under noise", "[sampler]")
     }
     REQUIRE(peak < 100.0f);   // does not blow up even at high resonance
 }
+
+// ---- Stereo voice path ----------------------------------------------------
+//
+// MEASURED on hardware 2026-08-14 (hw_findings.md §UI-12): two sampler probes
+// over purpose-built WAVs, one with a tone on L and silence on R, one with the
+// same tone on both. The device captured the first at side RMS == mid RMS with
+// L/R correlation 0.0000, and the second at side 0.000000 / correlation 1.0000 --
+// the mono control's mid exactly 2x the other's, which is what a hard-panned file
+// versus a both-channels file must give when nothing sums them. So the M8
+// reproduces a stereo sample's image intact.
+//
+// Our sampler used to sum: `0.5f * (sampOut[0] + sampOut[1])`. The same probes
+// through m8_render gave side 0.000053 against 0.000061 -- mono either way.
+//
+// These pin the fix. `makeRamp(frames, 2)` builds exactly the hardware case: L
+// ramps up, R is its negation, so the source is maximally wide.
+namespace {
+
+struct SideMid { float mid = 0.0f, side = 0.0f; };
+
+SideMid renderSideMid(SampleData sd, int frames) {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    auto& inst = state.instruments[0];
+    inst.type = InstType::INST_SAMPLER;
+    inst.sampler.play = 2;          // FWDLOOP, so it keeps sounding
+    inst.sampler.loop_st = 0x00;
+    inst.sampler.length = 0xFF;
+    inst.sampler.detune = 0x80;
+    inst.sampler.dry = 0xFF;
+    inst.sampler.cho = 0x00;
+    inst.sampler.del = 0x00;
+    inst.sampler.rev = 0x00;        // dry only: the returns have their own width
+    inst.sampler.pan = 0x80;        // centred, so pan cannot contribute side energy
+    inst.sampler.amp = 0x00;
+    inst.sampler.degrade = 0x00;
+    inst.sampler.filter_type = 0;
+
+    EngineCommand load{};
+    load.type = CommandType::LOAD_SAMPLE;
+    load.targetId = 0;
+    load.u.sample = sd;
+    host.push(load);
+
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(frames);
+
+    SideMid r;
+    const auto& buf = host.audio();
+    for (size_t i = 0; i + 1 < buf.size(); i += 2) {
+        r.mid  += std::fabs(0.5f * (buf[i] + buf[i + 1]));
+        r.side += std::fabs(0.5f * (buf[i] - buf[i + 1]));
+    }
+    return r;
+}
+
+} // namespace
+
+TEST_CASE("S-ST1 a stereo sample keeps its image through the voice", "[sampler]") {
+    SampleData sd = makeRamp(400, 2);      // L = +ramp, R = -ramp
+    const SideMid r = renderSideMid(sd, 4000);
+
+    // Maximally wide source: L == -R means mid cancels and side carries it all.
+    REQUIRE(r.side > 0.0f);
+    REQUIRE(r.side > r.mid);
+    freeSample(sd);
+}
+
+TEST_CASE("S-ST2 a mono sample stays centred", "[sampler]") {
+    SampleData sd = makeConst(0.5f, 400, 2);   // identical on both channels
+    const SideMid r = renderSideMid(sd, 4000);
+
+    // The control. If this shows side energy, something in the path is inventing
+    // stereo and S-ST1 would prove nothing.
+    REQUIRE(r.mid > 0.0f);
+    REQUIRE(r.side < r.mid * 0.01f);
+    freeSample(sd);
+}
