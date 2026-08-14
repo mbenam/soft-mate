@@ -560,7 +560,7 @@ below are deferred by decision, not open bugs.
 | §UI-3a | Background/separator fills (535 bg-only cell gap) | MIXER-specific bars; no other screen needs this geometry. Will revisit via video capture. |
 | §UI-3b | Vertical row offsets (element-by-element, not uniform) | Root cause unknown; pitch ruled out three times. Re-measure after fills land. |
 | ~~§UI-4a~~ | ~~RES vs OTT label~~ | **CLOSED 2026-08-12** — see below. |
-| §UI-4b | Device mixer FX parameter list | BLOCKED — needs hardware. |
+| ~~§UI-4b~~ | ~~Device mixer FX parameter list~~ | **CLOSED 2026-08-13** — read off the device, see §UI-7. |
 | ~~§UI-4c~~ | ~~mix_vol never loaded~~ | **CLOSED 2026-08-12** — see below. |
 | §UI-4d | Sends column spacing (3-col device vs 4-col clone) | MIXER-specific layout; no other screen has this structure. |
 | ~~§UI-4e~~ | ~~Stereo analog_input lost on save~~ | **CLOSED 2026-08-12** — see below. |
@@ -750,5 +750,72 @@ dry path only; `Engine::render` now pans, EQs, and then splits.
 
 Incidental: each `EDIT+DOWN` on an EQ gain field moves exactly **−1.00 dB**,
 which matches the large-step size the clone's own editor uses.
+
+- **Date:** 2026-08-13
+
+---
+
+## UI-7 — The Limiter & Mix Scope view, read off the device
+
+Read from a real M8 (firmware 6.5.2, COM3) on 2026-08-13, driven by `m8_nav`.
+**Read-only: navigation keys only, no EDIT, nothing saved.** Closes §UI-4b
+("device mixer FX parameter list — BLOCKED, needs hardware").
+
+**Method.** `--goto-screen MIXER`, then `--read-field MIX_VOL` to land the
+cursor on MIX, then `SHIFT+RIGHT` (`0x14`) to enter, then `DOWN` (`0x20`) three
+times, dumping the framebuffer at each stop. Exited with `OPT` (`0x02`).
+
+**The sub-parameters are contextual — they appear on the row of whichever
+master parameter the cursor is on, and only that row.** This is why they are
+absent from a screenshot taken with the cursor on MIX, and it is the layout
+question that could not be answered from the manual alone.
+
+The header changes too: **`MIX SCOPE`** with the cursor on MIX, **`LIMITER
+SCOPE`** on LIM — and it *stays* `LIMITER SCOPE` for DJF and OTT, so the header
+tracks the scope's signal source, not the selected row.
+
+Cursor position → what the row shows (values are this device's current state,
+an unnamed project at tempo 120.00 — **not** a factory default):
+
+```
+MIX  E0     SOFT CLIP OFF                 header: MIX SCOPE
+LIM  00     ATK 00      REL 10            header: LIMITER SCOPE
+DJF  80     TYPE 00     RES 00            header: LIMITER SCOPE
+OTT  00     TIME 80     COLOR 80          header: LIMITER SCOPE
+```
+
+Top line carries `ZOOM -30DB` and `PEAK -60.00` (silent; the peak reads real
+levels during playback). `EQ` sits above MIX as its own cursor stop.
+
+### What this does NOT settle — the file bytes
+
+Six of these have no field in the file library's `MixerSettings`: SOFT CLIP,
+ATK, REL, RES, TIME, COLOR. (TYPE does — it is `dj_filter_type`.) The obvious
+suspects are the four bytes at `0xEA`–`0xED`, which `MixerSettings::from_reader`
+reads and discards, and which are demonstrably not padding:
+
+```
+V4EMPTY.m8s / V4-1EMPTY.m8s   40 70 12 32
+artifacts/EQTEST1.m8s          00 10 00 00     (a 6.5.0 device save)
+```
+
+`ATK 00 / REL 10` on this device is *consistent* with EQTEST1's `00 10 ...`,
+which is suggestive. **It is not proof and must not be recorded as a mapping:**
+
+- The project loaded on the device is unnamed at tempo 120.00, i.e. it is not
+  EQTEST1, so these values and those bytes come from different projects.
+- Six parameters do not fit in four bytes. At least two must live elsewhere in
+  the file, so any mapping derived from four bytes alone is incomplete by
+  construction.
+- `TIME 80 / COLOR 80` are non-zero here while EQTEST1's last two reserved bytes
+  are `00 00`, which argues against those two bytes being TIME and COLOR.
+
+**To settle it** the decisive experiment is unchanged: change one parameter on
+the device to a distinctive value, save the project, pull the `.m8s`, and diff
+against a before copy (`tools/m8s_diff.py`). That needs the file off the SD
+card, and `m8_nav` has no file transfer — it decodes the display and presses
+buttons. Pulling the file is a physical step (USB disk mode or a card reader).
+Until someone does that, the four bytes stay unidentified and the clone keeps
+preserving them untouched, which `saveUnwrittenBlocks` and test L24 enforce.
 
 - **Date:** 2026-08-13

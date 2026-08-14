@@ -128,13 +128,26 @@ after the limiter and after MIX, which is where ours sits. We have no Scope view
 value for it, so every song renders as if it were switched ON. It is not a bug and it is not
 being changed on a guess, but a capture from a device with SOFT CLIP OFF will not match our
 render, so it matters for the parity gate.
-**The Scope view itself is still deferred** (`MIXER_SPEC.md` §2). Its stated blocker — "needs
-the same live-audio feed as the meters" — is gone now that the meters ship, but the six
-parameters it hosts (limiter ATK/REL, DJF TYPE/RES, OTT TIME/COLOR) are all hardcoded
-constants in `Engine.cpp` today, and it is not known which file bytes carry them: the mixer
-block ends with four bytes the file library discards on read, non-zero on real files
-(`40 70 12 32` on V4EMPTY, `00 10 00 00` on a 6.5.0 device save). Identify those on hardware
-before building controls for them.
+**The Scope view itself is still deferred** (`MIXER_SPEC.md` §2), but it is no longer
+unmapped — **read off a real device 2026-08-13** (`hw_findings.md` §UI-7, closes §UI-4b).
+Its stated blocker, "needs the same live-audio feed as the meters," is gone now that the
+meters ship. What the device shows, cursor position by cursor position:
+
+```
+MIX  SOFT CLIP        header MIX SCOPE       EQ is its own cursor stop
+LIM  ATK, REL         header LIMITER SCOPE   ZOOM and PEAK on the top line
+DJF  TYPE, RES        header LIMITER SCOPE
+OTT  TIME, COLOR      header LIMITER SCOPE
+```
+
+The sub-parameters are **contextual** — only the selected row's pair is drawn, which is why
+they are missing from a screenshot taken on MIX. All six are hardcoded constants in
+`Engine.cpp` today (limiter attack/release, DJF resonance, OTT envelope time and band tilt).
+**Which file bytes carry them is still unknown** and must not be guessed: six parameters do
+not fit in the four bytes the file library discards at `0xEA`–`0xED` (`40 70 12 32` on
+V4EMPTY, `00 10 00 00` on a 6.5.0 device save), so at least two live elsewhere. Settling it
+needs a save-and-diff against the `.m8s`, which needs the file off the SD card — `m8_nav` has
+no file transfer. Until then the clone preserves those bytes untouched (test L24).
 
 ### EQ (`archive/EQ_SPEC.md`, 2026-08-13)
 3-band parametric EQ — 7 filter types (LOWCUT/LOWSHELF/BELL/BANDPASS/HI.SHELF/HI.CUT/ALLPASS)
