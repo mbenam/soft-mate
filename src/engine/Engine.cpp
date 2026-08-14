@@ -784,24 +784,28 @@ void Engine::render(float* buffer, int frames) {
             float panL = std::cos(pan * 1.5707963f);
             float panR = std::sin(pan * 1.5707963f);
 
-            float outL = vSamp * dry * panL;
-            float outR = vSamp * dry * panR;
+            // Instrument EQ sits on the track's whole output, before it splits
+            // into the dry path and the sends -- so the effects hear the EQ'd
+            // signal too. MEASURED on hardware 2026-08-13, not assumed: with an
+            // instrument's dry level at zero and its reverb send wide open, a
+            // -20 dB shelf at 5 kHz in its EQ bank came back in the recording
+            // as a 15-23 dB loss above 5 kHz and a centroid drop of 1649 Hz. If
+            // the send were tapped before the EQ, that capture would have been
+            // identical to the one without the EQ assigned. See hw_findings.md
+            // §UI-6.
+            //
+            // Panning comes first because the EQ needs a stereo signal for its
+            // MID/SIDE/LEFT/RIGHT modes to mean anything -- the voice path
+            // itself is mono. One filter instance still serves both the dry and
+            // the send paths, since they now carry the same signal.
+            //
+            // A bypassed EQ returns immediately without touching either value.
+            float sigL = vSamp * panL;
+            float sigR = vSamp * panR;
+            m_trackEq[t].process(sigL, sigR);
 
-            // Instrument EQ, on the track's dry stereo output. Placed here
-            // because this is the only point where a track has a stereo signal
-            // -- the voice path itself is mono, so running it any earlier would
-            // make the MID/SIDE/LEFT/RIGHT modes meaningless.
-            //
-            // The sends below are post-pan but still pre-EQ: an instrument's
-            // EQ shapes what you hear dry, not what it feeds to the effects.
-            // Whether hardware puts the instrument EQ before or after the send
-            // tap is not known, and this is deliberately not guessed -- routing
-            // it through would need a second filter instance per track anyway,
-            // since two different signals cannot share one filter's state.
-            //
-            // A bypassed EQ returns immediately without touching either value,
-            // so a song with no EQ assigned renders bit-identically to before.
-            m_trackEq[t].process(outL, outR);
+            const float outL = sigL * dry;
+            const float outR = sigR * dry;
 
             mixL += outL;
             mixR += outR;
@@ -816,11 +820,10 @@ void Engine::render(float* buffer, int frames) {
             if (aR > m_meterBlockR[t]) m_meterBlockR[t] = aR;
             if (aL >= 1.0f || aR >= 1.0f) m_meterClip[t] = true;
 
-            // Post-pan, but NOT through the instrument EQ -- see the note at
-            // m_trackEq[t].process above.
-            sendChoL += vSamp * cho * panL;  sendChoR += vSamp * cho * panR;
-            sendDelL += vSamp * del * panL;  sendDelR += vSamp * del * panR;
-            sendRevL += vSamp * rev * panL;  sendRevR += vSamp * rev * panR;
+            // Fed from the same EQ'd, panned signal as the dry path above.
+            sendChoL += sigL * cho;  sendChoR += sigR * cho;
+            sendDelL += sigL * del;  sendDelR += sigR * del;
+            sendRevL += sigL * rev;  sendRevR += sigR * rev;
         }
 
         // Each send's INPUT EQ, applied to the send bus before its effect --

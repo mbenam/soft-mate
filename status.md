@@ -145,8 +145,9 @@ their own channel instead of the identical signal, so its width and time offset 
 what they look like they do.
 *Behaviour change:* send levels drop about 3 dB for centred material, because a post-pan send
 gives each side 0.707 rather than feeding 1.0 to both. The old arrangement double-counted.
-*Still unknown:* whether hardware taps the send before or after the instrument's own EQ. Ours
-taps before, and does not guess.
+*Measured on hardware* (`hw_findings.md` §UI-6): the instrument EQ is applied to the whole
+track output, before it splits into dry and sends — so the effects hear the EQ'd signal. The
+engine was corrected to match; it previously EQ'd the dry path only.
 
 ### Synth engines — all four are now audible (2026-07-17)
 The M8's four synth instrument types each render their own sound; none is the old shared saw.

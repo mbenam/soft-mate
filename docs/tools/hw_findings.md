@@ -710,3 +710,45 @@ V4.1 offsets — the layout has been stable from 4.1 through 6.5. Its files carr
 and they survive a save because `BinaryWriter` only ever grows its buffer.
 
 - **Date:** 2026-08-13
+
+
+## UI-6 — The instrument EQ is applied before the send is taken
+
+Measured on a real M8 (firmware 6.5.2, COM3) on 2026-08-13, driven by `m8_nav`
+and captured with `m8_capture`. Settles a question the clone had been guessing
+at: when an instrument has both an EQ bank and an effect send, does the signal
+reaching the effect pass through that EQ?
+
+**Method.** Instrument 00, a MacroSynth CSAW, with **DRY `00`** and **REV `FF`**
+— dry path muted, so every sample recorded came out of the reverb. Two captures,
+identical but for the EQ:
+
+1. `EQOFF.wav` — EQ field `--`, no bank assigned.
+2. `EQON.wav` — EQ field `01`, that bank's HIGH band a HI.SHELF at 5 kHz with
+   its gain driven to **−20.00 dB**.
+
+Both triggered by `--keyjazz 60 --keyjazz-vel 40`, three seconds, peaks 0.287
+and 0.237 with **zero clipped samples** (velocity 40 was chosen after 127 and 64
+both saturated the input — a clipped capture manufactures harmonics and would
+have destroyed the very measurement being made).
+
+**Result.**
+
+```
+centroid   EQOFF 3696 Hz   EQON 2047 Hz   (-1649 Hz, darker)
+log-spectral distance: 12.22 dB
+every harmonic above ~5 kHz down 15-23 dB
+```
+
+The 15–23 dB loss above 5 kHz is the −20 dB shelf, showing up in a recording of
+nothing but reverb. Had the send been tapped ahead of the EQ, the reverb return
+would have been identical in both files.
+
+**Conclusion: the instrument EQ sits on the instrument's whole output, before it
+splits into the dry path and the sends.** The clone previously applied it to the
+dry path only; `Engine::render` now pans, EQs, and then splits.
+
+Incidental: each `EDIT+DOWN` on an EQ gain field moves exactly **−1.00 dB**,
+which matches the large-step size the clone's own editor uses.
+
+- **Date:** 2026-08-13

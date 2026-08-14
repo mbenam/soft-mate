@@ -2,10 +2,9 @@
 
 > **COMPLETE / ARCHIVED 2026-08-13.** All nine steps done; suite green at 265 cases.
 > Findings folded into `hw_findings.md` §UI-5, `AGENTS.md` §7 and `status.md`.
-> Both items this spec carried forward are now closed: the block ordering was confirmed on
-> hardware (§4c), and the send EQs are applied on stereo send buses (§8). What remains open is
-> only a question nobody has measured — whether hardware taps a send before or after the
-> instrument's own EQ.
+> Everything this spec carried forward is now closed and measured, including the last open
+> question — hardware applies the instrument EQ *before* the send tap (`hw_findings.md` §UI-6),
+> and the engine was corrected to match.
 
 A 3-band parametric EQ, its editor screen, and the bank system instruments use to share
 settings. Decided 2026-08-13 from the M8 manual's EQ section, a photo of the EQ Editor view,
@@ -293,10 +292,13 @@ view we don't have.
   *Behaviour change:* send levels fall roughly 3 dB for centred material, since a post-pan
   send gives each side 0.707 instead of feeding 1.0 to both. The previous arrangement
   double-counted; this one preserves power.
-- **Whether hardware taps a send before or after the instrument's own EQ is unknown.** Ours
-  taps before, so an instrument's EQ shapes its dry path but not what it feeds the effects.
-  Routing it through would also need a second filter instance per track, since two different
-  signals cannot share one filter's state. Not guessed.
+- ~~Whether hardware taps a send before or after the instrument's own EQ is unknown.~~
+  **Measured 2026-08-13 (`hw_findings.md` §UI-6): after.** The instrument EQ sits on the whole
+  track output, before it splits into dry and sends. Proved by muting an instrument's dry path,
+  opening its reverb send, and putting a −20 dB shelf at 5 kHz in its EQ bank: the recorded
+  reverb came back 15-23 dB down above 5 kHz, centroid 3696 → 2047 Hz. `Engine::render` now
+  pans, EQs, then splits — and one filter instance still serves both paths, since they carry
+  the same signal.
 - Files from firmware 6.5.0 carry 32 bytes past the four EQ blocks that 4.x files do not. We
   do not parse them. They survive a save because the writer only grows its buffer, but nothing
   tells us what they are.
