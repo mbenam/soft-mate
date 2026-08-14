@@ -73,7 +73,8 @@ decision.
 | `goto <SCREEN>` | `SONG CHAIN PHRASE INSTRUMENT TABLE PROJECT GROOVE MODS SCALE INST_POOL MIXER EFFECTS` |
 | `cursor <FIELD>` | Move to a named field — **form screens only** |
 | `cursor-grid <STEP> <COL>` | Move on a grid screen, both 0-based (track 1 == col 0) |
-| `read <FIELD>` | Read a field's value |
+| `batch [FILE]` | Run many commands through **one** connection, from a file or stdin, as `VERB k=v` lines. Use this for anything multi-step — see Gotchas. |
+| `read <FIELD> [--row]` | The field's value, label stripped. `--row` gives the whole row instead. |
 | `set <FIELD> <VALUE>` | Edit a field (needs pinned gestures) |
 | `press <KEY>` | `UP`, `SHIFT+RIGHT`, or a raw `0x14` |
 | `note <NAME>` / `keyjazz <0-127>` | Enter a note / send a live note |
@@ -84,6 +85,7 @@ decision.
 | `repl` | Interactive session |
 
 Global: `--port` (default `COM3`), `--exe`, `--hold-ms` (default 40), `-v`,
+`--unfence`, `--min-ms` / `--settle-ms` / `--max-ms` (250/200/1500),
 `--no-recover`.
 
 `press` takes key **names** on purpose. `RIGHT` (`0x04`) moves the cursor within a
@@ -127,6 +129,31 @@ wrong produces plausible-but-wrong behaviour rather than an error.
 - **COM3 is exclusive.** While this holds the port, `m8_nav`, `m8_capture` and any
   display client cannot open it. The daemon is killed on exit (`QUIT`, or a kill
   on timeout), which releases it.
+- **One invocation per command is slow, and it is the mistake this tool exists to
+  avoid.** Every process start pays `open()`'s 500 ms `'E'`-then-`'R'` sleep plus the
+  read floor from `--min-ms` — roughly a second of dead time before anything happens.
+  A fourteen-command shell script spends most of its life in handshakes. Use `batch`,
+  which runs the lot through one connection. Timing defaults here (250/200/1500) are
+  already lower than `m8_nav`'s own (700/250/2000); raise them if reads come back
+  unsettled.
+- **`--unfence` is for diagnosis only.** It attempts the `FENCED_FIELDS` anyway. The
+  fence records fields a fixed key sequence could not reach reliably, and re-testing
+  it was worthwhile — `MIX_VOL` came off the list that way — but the remainder are
+  refused because they cost 40 wasted presses, not out of caution.
+- **`set` values are HEX**, matching what the device displays. `set PAN 80` is centre,
+  not decimal 128. This was a real bug: with base-0 parsing a bare `80` meant decimal
+  80 and converged silently on `0x50` ([bug #26](../../specs/M8_DRIVER_BUGS.md)).
+  Decimal-display fields such as `TEMPO` cannot be edited at all — `readCursorValue`
+  yields `"120.00"`, whose leading hex run parses as `0x120`, so no target matches.
+- **`read` returns the value; `read --row` returns the row.** They are different
+  things and conflating them was a bug. `readField` deliberately returns the whole
+  row so `assertField` can substring-match inside it, so `read TEMPO` gave
+  `"TEMPO        120.00 <>"` until the daemon started reporting both separately.
+- **Comparing a value against `cursor_value` needs care.** It comes from
+  `cursorMainText()`, which returns only the accent-coloured cells — and *which*
+  cells are accented varies between frames. The same MIXER field arrived as
+  `" OUTPUT VOL  F0"` in one read and `"OUTPUTVOLF0"` in the next. Label stripping
+  is therefore whitespace-insensitive; expect the same of your own comparisons.
 - **PowerShell 5.1 has no `&&`.** Chain with `;` or use separate lines.
 
 ## Also in that directory

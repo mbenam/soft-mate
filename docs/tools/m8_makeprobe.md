@@ -54,6 +54,9 @@ capture it with [`m8_capture`](m8_capture.md), then compare the two with
 | `--filter-res <n>` | `0` | `synth_params.filter_res`. |
 | `--tempo <bpm>` | `120.0` | Song tempo (float). |
 | `--table-tick <n>` | `0xFF` (disabled) | Assigns table 0 to the phrase step via an FX command (library FX byte `0x06`, engine `FxCmd::TBL`) at this tick rate. `0xFF` means "don't assign a table" — setting `table_tick` on the instrument alone does **not** enable table execution; `Engine::tickTable()` is a no-op until a table is actually assigned via this FX command. |
+| `--swarm <n>` | `0x40` | **HyperSynth-only.** Supersaw detune spread. |
+| `--width <n>` | `0x80` | **HyperSynth-only.** Stereo width. Exposed because measuring the device's stereo behaviour needs it varied and `ScreenModel.h` has no HyperSynth field map, so it cannot be set on the device by field name. Hardware-measured **unipolar**: `00` is no spread, `FF` maximum — *not* bipolar around `0x80` (`hw_findings.md` §UI-11). |
+| `--pan <n>` | `0x80` | Instrument pan (`synth_params.mixer_pan`), any type. Added for the pan-law sweep (`hw_findings.md` §UI-12); the HyperSynth screen's right column sits two rows below the Sampler map it falls back to, so `set PAN` would aim at `SHIFT`. `verifyRoundTrip` checks against the requested value rather than a hardcoded `0x80`. |
 | `--slice <n>` | `0` (off) | **Sampler-only.** `0`=off, `1`=FILE (WAV-embedded slice markers), `2`-`0x80`=N equal divisions. Added for the SLICE note-base hardware investigation (`sampler-slice-repitch-hw` memory). |
 | `--verify-against <path>` | — | Verify the generated probe file structure against another existing `.m8s` file. |
 | `--inspect <path>` | — | Read and print structural and patch details of an existing `.m8s` probe file. |

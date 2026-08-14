@@ -47,7 +47,7 @@ earlier, since-superseded guess at the bit layout — the mask constants actuall
 | `--start-mask <hex>` | `0x08` | Override the PLAY-toggle mask (should not normally need changing — this is empirically pinned). |
 | `--stop-mask <hex>` | `0x08` | Same value as start by default (PLAY is a toggle, not separate start/stop keys). |
 | `--keyjazz <note>` | *(none — uses PLAY toggle)* | MIDI note number (60 = C-4). If set (`>= 0`), captures via keyjazz note-on/off instead of PLAY start/stop — plays one live note, not the sequencer. |
-| `--keyjazz-vel <n>` | `0x7F` | Velocity for keyjazz mode. |
+| `--keyjazz-vel <n>` | `0x7F` | Velocity for keyjazz mode. **This is the level lever** — see the note below. |
 | `--check-level [floor]` | `disabled` (`0.5` if argument omitted) | Verify that the captured audio peak level meets or exceeds `floor`. Logs peak measurement and pass/fail state to stderr and the capture manifest. |
 
 ## Capture Manifest (`<name>.manifest.json`)
@@ -125,6 +125,17 @@ probe_macro_10.m8s	macro_shape10
   instrument genuinely silent), `trimToOnset` just returns `onset=0` and writes whatever was
   captured — a full window of near-noise-floor audio, not an error. Check the written file with
   [`m8_analyze`](m8_analyze.md) (peak/RMS) to catch this; this tool won't tell you.
+- **Use keyjazz velocity to set capture level, measured 2026-08-14.** The default `0x7F` clips
+  hard on a normal patch — 50,573 clipped samples, crest 1.43 dB, i.e. a square wave — and
+  `m8_analyze` then refuses the file outright via its saturation guard, so the capture is wasted.
+  Measured on a macrosynth with the dry send open: `0x7F` → peak 1.0 (clipped), `0x40` → 0.43
+  clean, `0x20` → 0.094, `0x08` → 0.014. `0x40` is a good default for a single sustained voice.
+  This matters because clipping does not merely reduce quality, it **destroys stereo
+  information**: squashing both channels against the rails makes them more alike, so a clipped
+  capture can measure as mono when it is not (`hw_findings.md` §UI-11).
+- **`OUTPUT VOL` does not reach the USB tap — now confirmed by measurement, not inference.** With
+  keyjazz velocity held fixed, `OUT_VOL F0` and `OUT_VOL 40` produced captures with identical
+  peaks to six digits (0.013641 both). The note below was right; this is the evidence.
 - **The known "recording level reset" gotcha** (`hw-test-rig` memory): a device power-cycle can
   reset the host's Windows recording level for the M8 input, making every capture ~100× too
   quiet (peak ≈ 0.006 for a full-scale signal) even though the device itself is producing normal

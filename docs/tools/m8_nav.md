@@ -13,12 +13,13 @@ developed tool in the project.
 invariant (`status.md`). Windows/Win32 serial only; the non-Windows path is a stub that prints
 "serial not implemented on this platform" and fails.
 
-> **This tool is under active reliability-hardening work as of 2026-07-18**
-> (`M8_DEVICE_CONTROL_SPEC.md` Tier 4.5, §6.5). The design/architecture description below is
-> stable; the *specific reliability caveats* listed in Gotchas reflect what was true when this
-> doc was written and may already be fixed — **check `M8_DEVICE_CONTROL_SPEC.md`'s top status
-> block for the current, authoritative state** before trusting any specific "X is unreliable"
-> claim below as still true.
+> **Reliability status, 2026-08-14.** The Tier 4.5 caveats this doc carried from 2026-07-18 have
+> largely been answered: multi-hop `--goto-screen` and `--load-file` both work (see Gotchas), and
+> four further driver bugs were found and fixed by holding a single connection open rather than
+> spawning a process per command (`M8_DRIVER_BUGS.md` #22-#26). **For anything multi-step, drive
+> the `--serve` daemon** — one-shot invocations pay a ~1 s handshake each and, worse, hid bug #24
+> entirely, because `open()`'s `'R'` repaints away the stale cells that make position reads go
+> stale within a connection. [`m8drv`](m8drv.md) is the supervised client for that mode.
 
 ## What it does
 
@@ -53,7 +54,7 @@ so every routine must work from an *unknown* starting state.
 | `--port <name>` | *(required)* | Serial port, e.g. `COM3`. |
 | `--dump-screen` | *(implicit default if no other mode flag is given)* | Decode and print the current screen as text. |
 | `--semantic-state` | — | Output high-level semantic state JSON (screen name, modal state, cursor field/value, list rows). |
-| `--serve` | — | Interactive daemon mode reading line-delimited commands from `stdin` and emitting JSON responses to `stdout`. |
+| `--serve` | — | Interactive daemon mode reading line-delimited commands from `stdin` and emitting JSON responses to `stdout`. **This is the mode to use for anything multi-step** — see the verb table below and [`m8drv`](m8drv.md), the supervised client for it. |
 | `--allow-mutation` | `false` | Required flag for `--pin-gestures` to permit sending edit commands to the device. |
 | `--find-file <name>` | — | Navigate to LOAD PROJECT modal and recursively search file tree up to 4 levels / 64 directories for `<name>`. Returns candidates in envelope JSON. |
 | `--load-song <name>` | — | Search for `<name>` using tree search and select/load it via closed-loop navigation. |
@@ -96,6 +97,44 @@ and warns if the field value was mutated. Requires `--allow-mutation`. The confi
 [`hw_buttons.json`](../../hw_buttons.json) by hand (this mode reports candidates, it doesn't
 write the file itself) — see [`Gestures.h`](../../src/tools/m8/Gestures.h) for how that file is
 then loaded and used by `editValue`/`enterNote`/`clearCell`.
+
+## `--serve` daemon verbs
+
+Line-delimited `VERB key=value ...` on stdin; one JSON object per reply, each
+carrying the full semantic state. Every verb accepts `hold=<ms>` to override
+`--hold-ms`.
+
+| Verb | Params | Notes |
+|---|---|---|
+| `PRESS` | `key=` | Name (`SHIFT+RIGHT`) or mask (`0x14`). `key=0` is a bare release. |
+| `GOTO` | `screen=` | Any name from the list above. |
+| `CURSOR` | `field=` | **Form screens only** — grid screens have no field maps. |
+| `MOVEGRID` | `step=` `col=` | Grid screens, both 0-based. `step` 0-15. |
+| `READ` | `field=` | Replies with **both** `value` (label stripped) and `row` (the whole row, which is `readField`'s own contract, relied on by `assertField`). |
+| `SET` | `field=` `value=` | `editValue`. Values are **hex**. Needs pinned gestures. |
+| `NOTE` | `name=` `vel=` | `enterNote`. Needs pinned gestures. |
+| `KEYJAZZ` | `note=` `vel=` | Live note, 0-127. Does not need gestures. |
+| `HOME` | `confirm=` `maxup=` | `panicHome`: clear a modal, bounded run of plain UP presses, re-check. Cancels modals unless `confirm=1`. |
+| `LOAD` | `path=` | Closed-loop project load by filename. |
+| `SCRIPT` | `path=` | Runs a `.m8script`. |
+| `CAPTURE` | `path=` | Writes a `UiCapture` JSON. Requires a settled display. |
+| `STATE` / `FIELDS` | `screen=` (FIELDS) | Refresh state / list a screen's field names. |
+| `QUIT` | — | Exit. |
+
+The semantic state carries `screen`, `is_modal`, `is_live_mode`, `settled`,
+`cursor_field`, `cursor_value`, `cursor_row`, `cursor_col`, `grid_step`,
+`grid_col`, `grid_columns` and `rows`. The grid triple is `-1` on form screens;
+`cursor_col` is the pixel X of the cursor's leading cell.
+
+## Primitives added 2026-08-14
+
+- `panicHome` — the unattended recovery routine (`HOME`).
+- `gridCursorPosition` / `gridColumnEdges` — grid-screen `(step, col)`, read off the
+  column-header row. Single source of truth: `moveCursorToGrid` navigates by it and
+  `semanticState` reports it, so acting and reporting cannot disagree.
+- `cursorValueText` — the cursor's value with the field's label stripped, matched
+  whitespace-insensitively because `cursorMainText()` returns only accent-coloured
+  cells and which cells are accented varies between frames.
 
 ## `.m8script` verbs this driver supports (via `--script`)
 
@@ -189,21 +228,21 @@ that produces plausible-looking-but-wrong behavior rather than an error.
 - **Multi-key masks are easy to get wrong by hand.** `key RIGHT` (plain cursor move within a
   screen) and `key SHIFT+RIGHT` (screen-to-screen navigation) look similar in a script but do
   completely different things — always double check `SHIFT | RIGHT = 0x14 = 20`, not `0x04 = 4`.
-- **`--goto-screen`'s multi-hop route execution has shown real reliability issues** in live
-  testing (landing on the wrong screen after 2+ hops, even after the hex-ID fix above) — this is
-  exactly what `M8_DEVICE_CONTROL_SPEC.md` Tier 4.5 (§6.5.1) exists to fix. If a single
-  `SHIFT+<dir>` press (verified with `--dump-screen` after) reliably reaches the same screen a
-  multi-hop `--goto-screen` call fails to reach, that's the tier-4.5 bug, not a new one.
+- **`--goto-screen` multi-hop reliability: RESOLVED as of 2026-08-14.** This previously read
+  "has shown real reliability issues (landing on the wrong screen after 2+ hops)".
+  `tests/hw/goto_project_test.m8script` — `goto PROJECT` from each of 12 non-modal screens, with
+  `assert_screen` after every hop — now passes with zero flakes, including multi-hop routes such
+  as EFFECTSETTINGS → MIXER → SONG → PROJECT. Run that script if you suspect a regression.
 - **Modals often need more than one press to dismiss.** "LOSE CHANGES TO CURRENT SONG?" and
   "LOSE CHANGES TO INSTRUMENT?" have both been observed needing 2 EDIT presses where 1 appeared
   to have zero effect on the next read. A `dismissModal()` primitive (retry-until-gone) was added
   to `Primitives.cpp` specifically for this — if you're calling into `Primitives` directly rather
   than going through `--script`, use it rather than a single bare `press(EDIT)`.
-- **`--load-file`'s automated browser navigation has failed outright in testing** (`rc=11`,
-  "reach the LOAD PROJECT row" loop giving up). If it fails, you can always fall back to manual
-  `--keys` sequences (see the source's `loadFile()` in `Primitives.cpp` for the exact row/column
-  logic to replicate by hand) — this is a known rough edge, not necessarily fixed by the time
-  you're reading this.
+- **`--load-file` works as of 2026-08-14**, where this previously recorded it "failed outright
+  in testing (`rc=11`)". Loading probes by filename via the `--serve` `LOAD` verb succeeded
+  repeatedly across a measurement session. Bugs #15 and #16 were the causes: `loadFile` used an
+  ad-hoc SHIFT+UP climb instead of the hardened `gotoScreen`, and could only scroll DOWN toward a
+  target. Both fixed.
 - **`--record-frames` does not record a true SLIP stream.** Despite the name, it dumps the
   *already-decoded* cell grid (position/char/colors) in a simple binary format at a fixed polling
   interval, not the raw serial bytes — it can't be replayed through the actual SLIP decoder, only
