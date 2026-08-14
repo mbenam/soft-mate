@@ -139,8 +139,11 @@ class FencedField(M8Error):
 class M8Driver:
     """A supervised `m8_nav --serve` session."""
 
+    # 40ms is m8_nav's own CLI default for --hold-ms. The Primitives signatures
+    # default to 15, but that is the value --load-file clamps to, not a general
+    # one -- do not carry it over as this client's default.
     def __init__(self, port: str = DEFAULT_PORT, exe: str = DEFAULT_EXE,
-                 hold_ms: int = 15, verbose: bool = False,
+                 hold_ms: int = 40, verbose: bool = False,
                  auto_recover: bool = True):
         self.port = port
         self.exe = exe
@@ -491,6 +494,69 @@ class M8Driver:
         if self.verbose:
             print(f"[m8drv] {msg}", file=sys.stderr)
 
+    # -- diagnostics --------------------------------------------------------
+
+    def _snapshot(self) -> Dict[str, Any]:
+        st = self.state()
+        return {
+            "cursor": (st.get("cursor_field"), st.get("cursor_row")),
+            "rows": {r.get("y"): r.get("text") for r in (st.get("rows") or [])},
+            "settled": st.get("settled"),
+        }
+
+    def probe(self, key: str | int, times: int = 3,
+              hold: Optional[int] = None) -> Dict[str, Any]:
+        """Press a key repeatedly and report exactly what moved.
+
+        This separates two failures that look identical from the outside:
+
+          rows change but cursor_row does not -> the press works and CURSOR
+              DETECTION is wrong (it is reading a static cyan cell rather than
+              the real cursor -- the M8_DRIVER_BUGS.md #5/#6 family).
+          nothing changes at all               -> the PRESS is not landing
+              (hold too short, or the key does nothing on this screen).
+
+        Only trustworthy on a screen with no live element, so it reports the
+        no-press drift first. Check `baseline_drift` is 0 before reading anything
+        else here.
+        """
+        a, b = self._snapshot(), self._snapshot()
+        drift = [y for y in a["rows"] if a["rows"][y] != b["rows"].get(y)]
+
+        out: Dict[str, Any] = {
+            "key": key, "hold_ms": hold if hold is not None else self.hold_ms,
+            "screen": self.screen(), "baseline_drift": len(drift), "steps": [],
+        }
+        prev = self._snapshot()
+        for i in range(times):
+            self.press(key, hold=hold)
+            cur = self._snapshot()
+            changed = sorted(y for y in set(prev["rows"]) | set(cur["rows"])
+                             if prev["rows"].get(y) != cur["rows"].get(y))
+            out["steps"].append({
+                "press": i + 1,
+                "cursor": cur["cursor"],
+                "cursor_moved": cur["cursor"] != prev["cursor"],
+                "rows_changed": len(changed),
+                "rows_changed_at": changed[:8],
+                "settled": cur["settled"],
+            })
+            prev = cur
+
+        moved_cursor = any(s["cursor_moved"] for s in out["steps"])
+        moved_rows = any(s["rows_changed"] for s in out["steps"])
+        if moved_cursor:
+            out["verdict"] = "press lands and cursor tracking works"
+        elif moved_rows:
+            out["verdict"] = ("PRESS LANDS but cursor tracking is broken on this "
+                              "screen -- the screen changed and cursor_row did "
+                              "not. Cursor detection is reading something static.")
+        else:
+            out["verdict"] = ("NOTHING CHANGED -- the press is not landing, or "
+                              "this key does nothing on this screen. Retry with "
+                              "a longer --hold.")
+        return out
+
     # -- self-check ---------------------------------------------------------
 
     def doctor(self) -> Dict[str, Any]:
@@ -575,7 +641,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="m8drv", description="Unattended driver for a real M8 headless.")
     p.add_argument("--port", default=DEFAULT_PORT, help=f"serial port (default {DEFAULT_PORT})")
     p.add_argument("--exe", default=DEFAULT_EXE, help="path to m8_nav.exe")
-    p.add_argument("--hold-ms", type=int, default=15)
+    p.add_argument("--hold-ms", type=int, default=40,
+                   help="button hold per press (m8_nav's own default is 40)")
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--no-recover", action="store_true",
                    help="do not kill/restart/HOME on timeout (debugging only)")
@@ -605,6 +672,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("keyjazz"); sp.add_argument("note", type=int)
     sp.add_argument("--vel", type=int, default=0x7F)
     sp = sub.add_parser("fields"); sp.add_argument("screen", nargs="?")
+    sp = sub.add_parser("probe", help="press a key N times and report what moved")
+    sp.add_argument("key")
+    sp.add_argument("--times", type=int, default=3)
+    sp.add_argument("--hold", type=int, default=None)
 
     a = p.parse_args(argv)
 
@@ -642,6 +713,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "fields":
                 for f in d.fields(a.screen):
                     print(f)
+            elif a.cmd == "probe":
+                print(json.dumps(d.probe(a.key, times=a.times, hold=a.hold), indent=2))
             elif a.cmd == "repl":
                 print("verbs: PRESS GOTO CURSOR READ SET NOTE KEYJAZZ HOME "
                       "LOAD SCRIPT CAPTURE STATE FIELDS QUIT")
