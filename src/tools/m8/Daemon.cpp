@@ -106,6 +106,28 @@ int runDaemon(M8Device& dev, int defaultHoldMs, int defaultGapMs, int defaultSet
                 code = ExitCode::TARGET_UNREACHABLE;
                 errMessage = res.error;
             }
+        } else if (verbU == "MOVEGRID") {
+            // Grid screens (SONG/CHAIN/PHRASE/GROOVE/TABLE/INST_POOL) have no
+            // field map -- getFieldMap().isGrid is true and every field lookup
+            // returns nullopt -- so they are reachable only by (step, col),
+            // never by field name.
+            if (!params.count("step") || !params.count("col")) {
+                code = ExitCode::UNKNOWN_ARG;
+                errMessage = "MOVEGRID requires step= and col=";
+            } else {
+                int step = std::atoi(params["step"].c_str());
+                int col  = std::atoi(params["col"].c_str());
+                if (step < 0 || step > 15 || col < 0) {
+                    code = ExitCode::UNKNOWN_ARG;
+                    errMessage = "MOVEGRID step must be 0..15 and col >= 0";
+                } else {
+                    auto res = moveCursorToGrid(dev, step, col, holdMs);
+                    if (!res.ok) {
+                        code = ExitCode::TARGET_UNREACHABLE;
+                        errMessage = res.error;
+                    }
+                }
+            }
         } else if (verbU == "READ") {
             std::string field = params["field"];
             auto val = readField(dev, field, holdMs);

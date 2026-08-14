@@ -22,6 +22,7 @@ it's the main app). None of them require the full `m8_clone` app to build or run
 | [`m8_capture`](m8_capture.md) | hardware audio capture | Drives a real M8 over serial (play/keyjazz) while recording its USB audio output via miniaudio. |
 | [`m8_nav`](m8_nav.md) | hardware device driver | Decodes the M8's serial display protocol; navigates screens, edits fields, loads files, runs `.m8script` scripts — closed-loop, verified against the real framebuffer. The most complex tool here, under active reliability work. |
 | [`m8_diffcheck`](m8_diffcheck.md) | device-vs-golden diff | Runs a `.m8script` on the real device and diffs the resulting screen against a stored text reference. |
+| [`m8drv`](m8drv.md) | unattended driver (Python) | Holds **one** `m8_nav --serve` connection open and supervises it: per-command timeouts, kill/restart/re-home recovery, and up-front refusal of fields that provably can't be driven. Not a second driver — the supervision layer that lets an agent drive the device with no human hand on it. |
 
 **Not covered by a doc here** (out of this index's scope, documented elsewhere):
 - `m8_clone` — the actual application (SDL3 UI + engine + headless `.m8script` runner). See

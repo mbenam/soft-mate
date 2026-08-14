@@ -403,6 +403,16 @@ class M8Driver:
         self._guard(field)
         return self._checked(self.send("CURSOR", field=field), f"cursor {field}")
 
+    def cursor_grid(self, step: int, col: int) -> Dict[str, Any]:
+        """Move the cursor on a grid screen, which has no field names at all.
+
+        SONG / CHAIN / PHRASE / GROOVE / TABLE / INST_POOL are grid screens:
+        getFieldMap().isGrid is true and every field lookup returns nullopt
+        (ScreenModel.h:564/593/636), so `cursor <name>` cannot address them.
+        """
+        return self._checked(self.send("MOVEGRID", step=step, col=col),
+                             f"cursor_grid {step},{col}")
+
     def read_field(self, field: str) -> Optional[str]:
         self._guard(field)
         r = self._checked(self.send("READ", field=field), f"read {field}")
@@ -672,6 +682,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("keyjazz"); sp.add_argument("note", type=int)
     sp.add_argument("--vel", type=int, default=0x7F)
     sp = sub.add_parser("fields"); sp.add_argument("screen", nargs="?")
+    sp = sub.add_parser("cursor-grid", help="move the cursor on a grid screen")
+    sp.add_argument("step", type=int); sp.add_argument("col", type=int)
     sp = sub.add_parser("probe", help="press a key N times and report what moved")
     sp.add_argument("key")
     sp.add_argument("--times", type=int, default=3)
@@ -713,6 +725,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif a.cmd == "fields":
                 for f in d.fields(a.screen):
                     print(f)
+            elif a.cmd == "cursor-grid":
+                d.cursor_grid(a.step, a.col); _print_screen(d)
             elif a.cmd == "probe":
                 print(json.dumps(d.probe(a.key, times=a.times, hold=a.hold), indent=2))
             elif a.cmd == "repl":
