@@ -924,10 +924,23 @@ added MOD TYPE and SHIMMER; the library never caught up.
   A song whose real feedback is `80` shows `00`.
 - Load and save are symmetrically wrong, so an untouched song still round-trips
   byte-identically. **L4 cannot catch this** — and did not.
-- `saveUnwrittenBlocks` briefly wrote this block back (same day, both
-  directions). That turned a merely inert edit into one that lands on the wrong
-  parameter, so the effects patch was removed again pending corrected offsets.
-  Test L23 is retained but hidden (`[io][.]`) as the contract to restore.
+- `saveUnwrittenBlocks` briefly wrote this block back through the library's
+  offsets, which turned a merely inert edit into one that lands on the wrong
+  parameter. That was removed, and then fixed properly.
+
+**FIXED 2026-08-14.** The clone no longer uses `EffectsSettings` at all.
+`loadEffectsBlock`/`saveEffectsBlock` in `SongIO.cpp` read and write the block
+at the measured offsets above, in all three paths -- load, save-in-place, and
+`saveNewSong` (which had the same bug via `EffectsSettings::write` and would
+scramble the effects of any song authored from a template). Bytes not modelled
+(+4 MOD TYPE, +5..+8, +14..+16, +22 onward) are skipped so they survive a save.
+`cho_reverb` now maps to +3 and persists for the first time.
+
+Test **L25** anchors this: it asserts the loaded values equal the ones on the
+device screen above, using the committed `scope_rel_10.m8s`. That is the test
+the round-trips could not be -- L4, L19 and L23 all pass just as happily when
+load and save are wrong in the same direction, which is exactly how this
+survived. L26 pins the unmodelled bytes.
 - MODFX REVERB SEND (+3) and MOD TYPE (+4), and reverb SHIMMER, have no engine
   field at all. Phaser and Flanger are not implemented; the clone hardcodes a
   chorus.

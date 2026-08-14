@@ -1051,26 +1051,11 @@ TEST_CASE("L22 edited grooves survive save and reload", "[io]") {
     std::remove("groove_rt.m8s");
 }
 
-// DISABLED 2026-08-13 (hidden via Catch2's leading-dot convention, the same
-// idiom test_ui_fuzz.cpp uses). This test passed when it was written, because
-// saveUnwrittenBlocks patched the effects block using the file library's field
-// offsets -- and the load path reads those same offsets, so the round-trip
-// closed on itself. Reading the device's EFFECT SETTINGS screen then showed
-// those offsets are wrong for delay and reverb (hw_findings.md UI-8): the
-// library starts delay 3 bytes early and reverb 5 bytes early. Writing the
-// block back therefore lands a user's edit on the wrong parameter, so the
-// effects patch was removed and this assertion no longer holds.
-//
-// It is kept, not deleted: it is the exact contract to restore once the
-// offsets are corrected. Re-tag it "[io]" at that point.
-//
-// Note the tag is "[.effects_offsets]" and deliberately NOT "[io][.]", which
-// was the first attempt and did not work: Catch2's leading-dot convention
-// hides a case from a *default* run, but an explicit tag filter still selects
-// it, so `m8_tests "[io]"` ran it anyway and went red. Carrying no [io] tag is
-// what actually keeps it out of that run. Ask for it by name when the offsets
-// are fixed:  m8_tests "[effects_offsets]"
-TEST_CASE("L23 edited effects settings survive save and reload", "[.effects_offsets]") {
+// Re-enabled 2026-08-14 once the effects block was read and written at the
+// measured offsets instead of the library's. Note this test alone would NOT
+// have caught the offset bug -- load and save were wrong in the same direction
+// and cancelled out. L25 below is the one that pins the direction.
+TEST_CASE("L23 edited effects settings survive save and reload", "[io]") {
     auto result = loadSong(songPath("V4-1EMPTY.m8s"), "");
     REQUIRE(result.ok);
 
@@ -1155,4 +1140,84 @@ TEST_CASE("L24 patching the mixer leaves the bytes we do not model alone", "[io]
     REQUIRE(rt[kMixerOffset + 0] == 0x55);
 
     std::remove("mixer_tail.m8s");
+}
+
+// ---------------------------------------------------------------------------
+// L25 -- the effects block loads the bytes the DEVICE says it should.
+//
+// This is the test the round-trip cases could never be. L4, L19 and L23 all
+// check that what we write comes back, which passes just as happily when load
+// and save are wrong in the same direction -- and that is exactly how the
+// effects offsets stayed broken: the file library starts delay 3 bytes early
+// and reverb 5 bytes early, we inherited that on both sides, and every
+// round-trip closed on itself.
+//
+// The only thing that breaks the symmetry is an external statement of what the
+// bytes mean. That is what this fixture is: scope_rel_10.m8s was saved by a
+// real M8 (firmware 6.5.2) while its EFFECT SETTINGS screen was photographed,
+// so these expected values are read off the device's own display, not off our
+// parser (hw_findings.md UI-8).
+//
+//     MODFX   MOD DEPTH:FRQ 40:80   STEREO WIDTH FF   REVERB SEND 00
+//     DELAY   TIME L:R      30:30   FEEDBACK     80   STEREO WIDTH FF   REVERB SEND 00
+//     REVERB  ROOM SIZE     FF      DECAY        C0   MOD DEPTH:FRQ 10:FF  STEREO WIDTH FF
+// ---------------------------------------------------------------------------
+TEST_CASE("L25 effects load matches the device screen", "[io]") {
+    auto result = loadSong("tests/fixtures/device_golden/scope_rel_10.m8s", "");
+    REQUIRE(result.ok);
+    const auto& fx = result.state.effects;
+
+    // MODFX
+    REQUIRE(fx.cho_mod_depth == 0x40);
+    REQUIRE(fx.cho_mod_freq  == 0x80);
+    REQUIRE(fx.cho_width     == 0xFF);
+    REQUIRE(fx.cho_reverb    == 0x00);
+
+    // DELAY -- these are the ones the library got wrong. Before the fix
+    // feedback read 0x00 here while the device plainly showed 0x80.
+    REQUIRE(fx.del_time_l   == 0x30);
+    REQUIRE(fx.del_time_r   == 0x30);
+    REQUIRE(fx.del_feedback == 0x80);
+    REQUIRE(fx.del_width    == 0xFF);
+    REQUIRE(fx.del_reverb   == 0x00);
+
+    // REVERB -- likewise; decay read 0x00 instead of 0xC0.
+    REQUIRE(fx.rev_size      == 0xFF);
+    REQUIRE(fx.rev_decay     == 0xC0);
+    REQUIRE(fx.rev_mod_depth == 0x10);
+    REQUIRE(fx.rev_mod_freq  == 0xFF);
+    REQUIRE(fx.rev_width     == 0xFF);
+}
+
+// L26 -- saving must not disturb the effects bytes we do not model.
+// MOD TYPE (+4) and the unknown runs carry real device data; the block is
+// patched field by field precisely so they survive, and this stops anyone
+// "simplifying" it back into a whole-block write.
+TEST_CASE("L26 unmodelled effects bytes survive a save", "[io]") {
+    const char* path = "tests/fixtures/device_golden/scope_rel_10.m8s";
+    auto result = loadSong(path, "");
+    REQUIRE(result.ok);
+
+    auto edited = result.state;
+    edited.effects.del_feedback = 0x55;   // force the patch to run
+
+    std::string err;
+    REQUIRE(saveSong("fx_preserve.m8s", result, result.sequencer, edited, err));
+
+    auto orig = readFile(path);
+    auto rt   = readFile("fx_preserve.m8s");
+    REQUIRE(orig.size() == rt.size());
+
+    constexpr size_t kFxBase = 0x1A5C1;
+    REQUIRE(orig.size() >= kFxBase + 22);
+
+    // Untouched: MOD TYPE and the two unknown runs inside the block.
+    const int untouched[] = {4, 5, 6, 7, 8, 14, 15, 16};
+    for (int i : untouched)
+        REQUIRE(rt[kFxBase + i] == orig[kFxBase + i]);
+
+    // And the edit landed where the device says feedback lives (+11).
+    REQUIRE(rt[kFxBase + 11] == 0x55);
+
+    std::remove("fx_preserve.m8s");
 }

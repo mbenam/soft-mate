@@ -277,14 +277,23 @@ right channel our engine cannot represent — `hw_findings.md` §UI-4e), the res
 the effects block, and the four unidentified bytes ending the mixer block, which are non-zero
 on real files. Tempo is only rewritten when it changed at the engine's own hundredths
 resolution, so an untouched song keeps its exact f32 bits and L4 still holds. Tests L20–L24.
-**Effects are deliberately excluded** — they were included in the first version of this fix and
-taken back out the same day. The file library's field offsets for the effects block are wrong
-(`hw_findings.md` §UI-8): it starts delay 3 bytes early and reverb 5 bytes early, so every
-delay/reverb value we load and display is the wrong byte. Load and save were symmetrically
-wrong, so untouched songs still round-tripped and L4 never noticed — but writing the block
-back turned an inert edit into one that lands on the wrong parameter. Effects are back to not
-being written until the offsets are corrected against our own accessors. Test L23 is kept but
-hidden (`[io][.]`) as the contract to restore.
+**Effects load and save at measured offsets (2026-08-14).** The file library's field offsets
+for the effects block are wrong (`hw_findings.md` §UI-8): it allows three filler bytes after
+the modfx fields where there are five and one after delay where there are three, so it starts
+delay 3 bytes early and reverb 5 bytes early. Every delay and reverb value we loaded was the
+wrong byte — a song whose real feedback was `80` displayed `00`. Load and save were
+symmetrically wrong, so untouched songs still round-tripped and **L4 could never have caught
+it**; only reading the device's EFFECT SETTINGS screen against the file bytes exposed it.
+The block now goes through `loadEffectsBlock`/`saveEffectsBlock` at the measured offsets
+(modfx `+0..+3`, delay `+9..+13`, reverb `+17..+21`), bypassing `EffectsSettings` entirely, in
+all three paths — load, save-in-place, and `saveNewSong`, which had the same bug and would
+scramble the effects of any song authored from a template. `cho_reverb` finally has a byte
+(`+3`) and persists. MOD TYPE (`+4`), reverb SHIMMER and the unknown runs are left untouched
+so they survive a save (test L26).
+*Behaviour change:* delay and reverb values shown for an existing song will differ from what
+the clone displayed before — the old ones were the wrong bytes.
+Tests: L23 (round-trip), **L25** (loaded values match the device screen — the one that breaks
+the load/save symmetry a round-trip test cannot), L26 (unmodelled bytes preserved).
 
 ### Analysis + capture tooling (`M8_AUDIO_ANALYSIS_SPEC.md` Parts A–D, `M8_CAPTURE_SPEC.md`)
 - **kissfft** vendored; `magnitudeSpectrum()` with a baked-in Hann window.

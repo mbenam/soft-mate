@@ -166,10 +166,86 @@ static constexpr size_t kMixDjPeak       = 26;  // OTT
 static constexpr size_t kMixDjFilterType = 27;
 static constexpr size_t kMixerBlockSize  = 32;
 
-// (Effects-block field offsets used to live here. They mirrored the file
-// library's layout, which the device says is wrong -- see the note in
-// saveUnwrittenBlocks, which carries the measured offsets for when this is
-// fixed properly.)
+// ---- The effects block, read and written at measured offsets ----------------
+//
+// NOT via the file library's `EffectsSettings`, whose field offsets are wrong:
+// it allows three filler bytes after the modfx fields where there are five, and
+// one after delay where there are three, so it starts delay 3 bytes early and
+// reverb 5 bytes early. Newer firmware added MOD TYPE and SHIMMER and the
+// library never caught up.
+//
+// The offsets below are measured, not inferred: the device's EFFECT SETTINGS
+// screen was read alongside the bytes of a device-saved file, and delay's five
+// values and reverb's five each appear consecutively where this table says
+// (hw_findings.md UI-8). The evidence files are committed --
+// tests/fixtures/device_golden/scope_rel_10.m8s, whose block reads
+// `40 80 FF 00 00 00 00 00 00 30 30 80 FF 00 00 00 00 FF C0 10 FF FF`
+// against a screen showing modfx 40:80 / FF / 00, delay 30:30 / 80 / FF / 00,
+// reverb FF / C0 / 10:FF / FF.
+//
+// Gaps are deliberate. +4 is MODFX MOD TYPE (chorus/phaser/flanger), which the
+// engine does not model -- it is left alone so it survives a save. +5..+8,
+// +14..+16 and everything from +22 (which probably includes reverb SHIMMER,
+// though that byte reads 00 and so is unproven) are likewise untouched.
+static constexpr size_t kFxModDepth   = 0;
+static constexpr size_t kFxModFreq    = 1;
+static constexpr size_t kFxModWidth   = 2;
+static constexpr size_t kFxModReverb  = 3;
+static constexpr size_t kFxDelTimeL   = 9;
+static constexpr size_t kFxDelTimeR   = 10;
+static constexpr size_t kFxDelFeedbk  = 11;
+static constexpr size_t kFxDelWidth   = 12;
+static constexpr size_t kFxDelReverb  = 13;
+static constexpr size_t kFxRevSize    = 17;
+static constexpr size_t kFxRevDecay   = 18;
+static constexpr size_t kFxRevModDep  = 19;
+static constexpr size_t kFxRevModFrq  = 20;
+static constexpr size_t kFxRevWidth   = 21;
+static constexpr size_t kFxBlockSpan  = 22;   // highest touched offset + 1
+
+static bool effectsBlockFits(const std::vector<uint8_t>& bytes) {
+    return bytes.size() >= m8::V4_OFFSETS.effect_settings + kFxBlockSpan;
+}
+
+static void loadEffectsBlock(const std::vector<uint8_t>& bytes,
+                             engine::EffectsState& fx) {
+    if (!effectsBlockFits(bytes)) return;
+    const uint8_t* p = bytes.data() + m8::V4_OFFSETS.effect_settings;
+    fx.cho_mod_depth = p[kFxModDepth];
+    fx.cho_mod_freq  = p[kFxModFreq];
+    fx.cho_width     = p[kFxModWidth];
+    fx.cho_reverb    = p[kFxModReverb];
+    fx.del_time_l    = p[kFxDelTimeL];
+    fx.del_time_r    = p[kFxDelTimeR];
+    fx.del_feedback  = p[kFxDelFeedbk];
+    fx.del_width     = p[kFxDelWidth];
+    fx.del_reverb    = p[kFxDelReverb];
+    fx.rev_size      = p[kFxRevSize];
+    fx.rev_decay     = p[kFxRevDecay];
+    fx.rev_mod_depth = p[kFxRevModDep];
+    fx.rev_mod_freq  = p[kFxRevModFrq];
+    fx.rev_width     = p[kFxRevWidth];
+}
+
+static void saveEffectsBlock(const engine::EffectsState& fx,
+                             std::vector<uint8_t>& bytes) {
+    if (!effectsBlockFits(bytes)) return;
+    uint8_t* p = bytes.data() + m8::V4_OFFSETS.effect_settings;
+    p[kFxModDepth]  = static_cast<uint8_t>(fx.cho_mod_depth);
+    p[kFxModFreq]   = static_cast<uint8_t>(fx.cho_mod_freq);
+    p[kFxModWidth]  = static_cast<uint8_t>(fx.cho_width);
+    p[kFxModReverb] = static_cast<uint8_t>(fx.cho_reverb);
+    p[kFxDelTimeL]  = static_cast<uint8_t>(fx.del_time_l);
+    p[kFxDelTimeR]  = static_cast<uint8_t>(fx.del_time_r);
+    p[kFxDelFeedbk] = static_cast<uint8_t>(fx.del_feedback);
+    p[kFxDelWidth]  = static_cast<uint8_t>(fx.del_width);
+    p[kFxDelReverb] = static_cast<uint8_t>(fx.del_reverb);
+    p[kFxRevSize]   = static_cast<uint8_t>(fx.rev_size);
+    p[kFxRevDecay]  = static_cast<uint8_t>(fx.rev_decay);
+    p[kFxRevModDep] = static_cast<uint8_t>(fx.rev_mod_depth);
+    p[kFxRevModFrq] = static_cast<uint8_t>(fx.rev_mod_freq);
+    p[kFxRevWidth]  = static_cast<uint8_t>(fx.rev_width);
+}
 
 static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& bytes) {
     if (!song.version.at_least(4, 0)) return;
@@ -215,34 +291,8 @@ static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& byte
         }
     }
 
-    // --- Effects: DELIBERATELY NOT WRITTEN ------------------------------------
-    //
-    // The effects block was patched here until 2026-08-13, when reading the
-    // device's EFFECT SETTINGS screen showed the file library's field offsets
-    // for it are wrong (hw_findings.md UI-8). Lining the screen up against the
-    // bytes of a device-saved file gives, from the block base:
-    //
-    //     +0  MODFX  mod depth        +9   DELAY  time L      +17  REVERB size
-    //     +1  MODFX  mod freq         +10  DELAY  time R      +18  REVERB decay
-    //     +2  MODFX  stereo width     +11  DELAY  feedback    +19  REVERB mod depth
-    //     +3  MODFX  reverb send      +12  DELAY  stereo wid  +20  REVERB mod freq
-    //     +4  MODFX  mod type         +13  DELAY  reverb send +21  REVERB stereo width
-    //
-    // The library instead starts delay at +6 and reverb at +12 -- it allows 3
-    // filler bytes after the modfx fields where there are 5, and 1 after delay
-    // where there are 3. Newer firmware added MOD TYPE and SHIMMER and the
-    // library never caught up.
-    //
-    // So `song.effects_settings` holds the wrong bytes for every delay and
-    // reverb field. Load and save are symmetrically wrong, so an untouched song
-    // still round-trips byte-identically -- but writing this block back means a
-    // user's edit to, say, FEEDBACK lands on a byte that is not feedback.
-    // Before this function existed the effects block was never written at all,
-    // so those edits were merely inert; patching it made them actively
-    // destructive. Inert is the safer of the two while the offsets are wrong.
-    //
-    // Re-enable together with corrected offsets read through our own accessors
-    // rather than the library's struct, and re-enable test L23 with it.
+    // Effects are patched by the caller via saveEffectsBlock(), which uses the
+    // measured offsets rather than the library's (wrong) ones.
 }
 
 // ---- FxCmd mapping ----
@@ -545,20 +595,9 @@ static void convertSongToEngine(const m8::Song& song,
     state.mixer.usb_rev = song.mixer_settings.usb_input.reverb;
 
     // Effects
-    auto& fx = state.effects;
-    fx.cho_mod_depth = song.effects_settings.chorus_mod_depth;
-    fx.cho_mod_freq = song.effects_settings.chorus_mod_freq;
-    fx.cho_width = song.effects_settings.chorus_reverb_send;
-    fx.del_time_l = song.effects_settings.delay_time_l;
-    fx.del_time_r = song.effects_settings.delay_time_r;
-    fx.del_feedback = song.effects_settings.delay_feedback;
-    fx.del_width = song.effects_settings.delay_width;
-    fx.del_reverb = song.effects_settings.delay_reverb_send;
-    fx.rev_size = song.effects_settings.reverb_size;
-    fx.rev_decay = song.effects_settings.reverb_damping;
-    fx.rev_mod_depth = song.effects_settings.reverb_mod_depth;
-    fx.rev_mod_freq = song.effects_settings.reverb_mod_freq;
-    fx.rev_width = song.effects_settings.reverb_width;
+    // Effects are NOT read from song.effects_settings -- the library's offsets
+    // for that block are wrong (see loadEffectsBlock). loadSong() fills
+    // state.effects from the raw bytes instead, after this function returns.
 
     // EQ banks (EQ_SPEC.md §3-4). The library gives us however many the song's
     // version carries -- 32 on V4, 128 on V4.1+ -- so take what is there and
@@ -807,21 +846,10 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     // (hw_findings.md §UI-4e). Leaving them alone lets save-by-overlay preserve
     // the original bytes exactly. See MIXER_SPEC.md §3.
 
-    // Effects
-    auto& fx = song.effects_settings;
-    fx.chorus_mod_depth = state.effects.cho_mod_depth;
-    fx.chorus_mod_freq = state.effects.cho_mod_freq;
-    fx.chorus_reverb_send = state.effects.cho_width;
-    fx.delay_time_l = state.effects.del_time_l;
-    fx.delay_time_r = state.effects.del_time_r;
-    fx.delay_feedback = state.effects.del_feedback;
-    fx.delay_width = state.effects.del_width;
-    fx.delay_reverb_send = state.effects.del_reverb;
-    fx.reverb_size = state.effects.rev_size;
-    fx.reverb_damping = state.effects.rev_decay;
-    fx.reverb_mod_depth = state.effects.rev_mod_depth;
-    fx.reverb_mod_freq = state.effects.rev_mod_freq;
-    fx.reverb_width = state.effects.rev_width;
+    // Effects are NOT written through song.effects_settings -- the library's
+    // offsets for that block are wrong (see saveEffectsBlock), and its writer
+    // would lay the fields down in the wrong places. Both save paths patch the
+    // block into the finished image instead.
 
     // EQ banks. Overlay onto the song's own array so its size (32 or 128, by
     // version) is preserved -- never resize it.
@@ -1103,6 +1131,7 @@ LoadResult loadSong(const std::string& path, const std::string& sampleRoot) {
         // The main mix and effect EQs are not part of the parsed Song, so they
         // come straight from the file bytes (EQ_SPEC.md §4c).
         loadBusEqs(song, data, res.state);
+        loadEffectsBlock(data, res.state.effects);   // library offsets are wrong
 
         // Collect sample paths
         for (size_t i = 0; i < song.instruments.size(); ++i) {
@@ -1170,8 +1199,9 @@ bool saveSong(const std::string& path, const LoadResult& origin,
         convertEngineToSong(seq, state, song);
 
         auto out = song.write_over(origin.original);
-        saveUnwrittenBlocks(song, out); // modeled, but Song::write never emits them
-        saveBusEqs(song, state, out);   // not modeled by the library; patched in
+        saveUnwrittenBlocks(song, out);      // modeled, but Song::write never emits them
+        saveEffectsBlock(state.effects, out); // measured offsets, not the library's
+        saveBusEqs(song, state, out);        // not modeled by the library; patched in
         if (!writeFile(path, out)) {
             error = "cannot write file";
             return false;
@@ -1228,9 +1258,14 @@ bool saveNewSong(const std::string& path, const std::string& templatePath,
         writer.seek(o.groove);
         for (const auto& g : song.grooves) g.write(writer);
         song.write(writer);                        // data sections (seeks internally)
-        writer.seek(o.effect_settings);
-        song.effects_settings.write(writer, song.version);
         auto out = writer.finish();
+        // Effects last, at the measured offsets. This used to be
+        // `song.effects_settings.write(writer, ...)`, which lays the fields out
+        // in the library's wrong positions -- so a song authored from a
+        // template got a scrambled effects block. Everything this does not
+        // touch (MOD TYPE, SHIMMER, the unknown runs) keeps the template's
+        // bytes, which is the same preservation rule the rest of the file gets.
+        saveEffectsBlock(state.effects, out);
         if (!writeFile(path, out)) { error = "cannot write file: " + path; return false; }
         return true;
     } catch (const std::exception& e) {
