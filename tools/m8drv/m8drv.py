@@ -514,23 +514,41 @@ class M8Driver:
         r = self.send("PRESS", key=0)
         out["release_ok"] = bool(r.get("ok"))
 
-        # Prove keys actually reach the device. DOWN then UP nets to no cursor
-        # movement, so this is state-neutral -- unlike a bare UP, which also
-        # can't move at all when the cursor is already on the top row and would
-        # then read as a false "keys not arriving".
-        before = json.dumps(self.state(), sort_keys=True)
+        # How much of the screen changes on its own, with no key pressed? Any
+        # live element (playhead, meters, a running clock) means `settled` never
+        # goes true and that comparing whole-screen snapshots is meaningless --
+        # so measure it rather than be misled by it.
+        a, b = self.state(), self.state()
+        rows_a = {r.get("y"): r.get("text") for r in (a.get("rows") or [])}
+        rows_b = {r.get("y"): r.get("text") for r in (b.get("rows") or [])}
+        drifting = [y for y in rows_a if rows_a[y] != rows_b.get(y)]
+        out["self_animating_rows"] = len(drifting)
+        out["screen_is_static"] = not drifting
+
+        # Prove keys reach the device, comparing ONLY the cursor position.
+        # DOWN then UP nets to no movement, so this is state-neutral -- unlike a
+        # bare UP, which cannot move at all when the cursor is already on the top
+        # row and would read as a false "keys not arriving".
+        def cur() -> tuple:
+            st = self.state()
+            return (st.get("cursor_field"), st.get("cursor_row"))
+
+        before = cur()
         self.press("DOWN")
-        moved = json.dumps(self.state(), sort_keys=True)
+        moved = cur()
         self.press("UP")
-        back = json.dumps(self.state(), sort_keys=True)
+        back = cur()
+        out["cursor_before"], out["cursor_after_down"], out["cursor_back"] = \
+            before, moved, back
         out["keys_reach_device"] = before != moved
         out["cursor_returned"] = back == before
         if before == moved:
-            out["note"] = ("DOWN did not change the screen state: either this "
-                           "screen has one row, or keys are not arriving.")
+            out["note"] = ("DOWN did not move the cursor: either this screen has "
+                           "one row, or keys are not arriving.")
         elif back != before:
-            out["note"] = ("DOWN moved the cursor but UP did not restore it -- "
-                           "cursor is one row off where it started.")
+            out["note"] = (f"DOWN moved the cursor {before} -> {moved} but UP "
+                           f"returned {back}, not {before}. Cursor is off by one; "
+                           f"suspect a dropped press or key auto-repeat.")
         else:
             out["note"] = "keys confirmed round-trip; cursor restored"
         out["banner"] = self.banner
