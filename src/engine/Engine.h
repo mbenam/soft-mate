@@ -322,11 +322,17 @@ struct MixerState {
     // scope view. They load, save, and drive the DSP.
     int lim_atk = 0x00;    // 0xEA. Limiter attack, 0..100 ms.
     int lim_rel = 0x00;    // 0xEB. Limiter release, 4..1000 ms; 00 means AUTO.
-    // 0xEC. Applied after the limiter. NOT yet wired: the master `tanh` is
-    // currently unconditional, so honouring this byte would switch soft clip
-    // OFF for most songs and change their sound. Stored and round-tripped only
-    // until that gets its own before/after.
-    int soft_clip = 0x00;
+    // 0xEC. The master `tanh`, applied after the limiter. Any non-zero value
+    // engages it; the device writes 00/01, but older files carry other values
+    // there (V4EMPTY has 0x12) so this is deliberately not a == 1 test.
+    //
+    // Defaults ON, which is NOT the device's factory default. Our own songs
+    // were authored while this was unconditional and their levels lean on it:
+    // sunrise peaks at 0.83 *after* the tanh, so the signal reaching it is
+    // around 1.19 and removing it would clip. Defaulting to ON keeps every
+    // existing song sounding as authored, while a song made on hardware still
+    // gets whatever it actually specifies.
+    int soft_clip = 0x01;
 };
 
 struct EffectsState {

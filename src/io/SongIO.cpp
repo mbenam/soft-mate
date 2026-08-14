@@ -1310,11 +1310,18 @@ bool saveNewSong(const std::string& path, const std::string& templatePath,
         // touch (MOD TYPE, SHIMMER, the unknown runs) keeps the template's
         // bytes, which is the same preservation rule the rest of the file gets.
         saveEffectsBlock(state.effects, out);
-        // OTT likewise. MixerSettings::write zeroes +28..+31 on its way past,
-        // which is a fine default for ATK/REL/SOFT CLIP -- we do not model
-        // those -- but would silently discard an authored OTT value.
-        if (out.size() > kMixerOffset + kMixOtt)
-            out[kMixerOffset + kMixOtt] = static_cast<uint8_t>(state.mixer.ott);
+        // The mixer tail likewise: MixerSettings::write zeroes +28..+31 on its
+        // way past, so every one of these has to be written back or the
+        // authored value is silently lost. SOFT CLIP is the one that bites --
+        // it defaults ON and a zero here would switch it off, which for our own
+        // songs means clipping, since their levels assume the saturation.
+        if (out.size() > kMixerOffset + kMixerBlockSize) {
+            uint8_t* m = out.data() + kMixerOffset;
+            m[kMixLimAtk]   = static_cast<uint8_t>(state.mixer.lim_atk);
+            m[kMixLimRel]   = static_cast<uint8_t>(state.mixer.lim_rel);
+            m[kMixSoftClip] = static_cast<uint8_t>(state.mixer.soft_clip);
+            m[kMixOtt]      = static_cast<uint8_t>(state.mixer.ott);
+        }
         if (!writeFile(path, out)) { error = "cannot write file: " + path; return false; }
         return true;
     } catch (const std::exception& e) {

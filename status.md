@@ -142,10 +142,17 @@ old instant attack, `RES 00` the old fixed 0.3, `TIME/COLOR 80` the old 100%/neu
 since LIM, DJF and OTT all default to off, no existing song changes. Test **A11** pins that
 bit-for-bit; L28/L29 pin the round-trip and the load. The limiter's `exp()` is cached against
 its byte and AUTO interpolates two precomputed ends, so nothing new runs per sample.
-**Stored but not audible:** SHIMMER and MOD TYPE (both need DSP that does not exist), and
-**SOFT CLIP** — deliberately, because ours is the unconditional master `tanh`, so honouring
-the byte would switch soft clip *off* for most songs. That is an audio change wanting its own
-before/after, not a side effect of wiring up persistence.
+**SOFT CLIP is a real switch now (2026-08-14).** The master `tanh` is applied only when the
+byte is non-zero — any non-zero value, deliberately not `== 1`, because older files carry other
+values there (V4EMPTY has `0x12`). Our field defaults **ON**, which is *not* the device's
+factory default, and the measurement is why: rendering `sunrise.m8s` with it off gives
+**peak 1.000 and 46 clipped samples** against 0.831 and none with it on. Our songs were
+authored while the saturation was unconditional and their levels lean on it. A song made on
+hardware still gets whatever it specifies. `saveNewSong` has to write the byte explicitly —
+`MixerSettings::write` zeroes `+28..+31` on its way past, so a song authored from a template
+would otherwise save with soft clip off and clip on reload. Test **A12**.
+**Stored but not audible:** SHIMMER and MOD TYPE — both need DSP that does not exist (a pitch
+shifter, and a phaser and flanger).
 **SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the
 M8's SOFT CLIP — on hardware a switchable parameter in the Limiter & Mix Scope view, applied
 after the limiter and after MIX, which is where ours sits. We have no Scope view and store no

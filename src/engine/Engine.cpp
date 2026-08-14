@@ -992,23 +992,18 @@ void Engine::render(float* buffer, int frames) {
         mixL = dcBlock(mixL, m_dcMixL);
         mixR = dcBlock(mixR, m_dcMixR);
 
-        // This is the M8's SOFT CLIP, wired permanently on.
+        // SOFT CLIP -- the M8's own, now driven by its byte (§UI-9). The manual
+        // calls it "a gentle saturation after the limiter to prevent harsh
+        // clipping" and notes that raising MIX exaggerates it, which puts it
+        // after MIX, exactly where this sits.
         //
-        // On hardware it is a switchable parameter living in the Limiter & Mix
-        // Scope view -- "a gentle saturation after the limiter to prevent harsh
-        // clipping," and the manual notes that raising MIX exaggerates it,
-        // which puts it after MIX exactly where this sits. We have no Scope
-        // view and no stored value for it, so every song renders as though the
-        // user had switched it ON. Worth knowing before comparing against a
-        // capture: a device with SOFT CLIP OFF will not match this.
-        //
-        // Kept deliberately even though the limiter now exists: LIM is off at
-        // value 00, and nothing should be able to produce a hard-clipped buffer
-        // just because the user turned it off. Removing it, or putting it
-        // behind a parameter, is an audio change that wants a before/after
-        // render comparison, not a guess.
-        mixL = std::tanh(mixL);
-        mixR = std::tanh(mixR);
+        // Any non-zero value engages it. When it is off the hard clamp below is
+        // all that stands between a hot mix and a clipped buffer -- which is
+        // what the device does too, and is the point of the control.
+        if (m_state.mixer.soft_clip != 0) {
+            mixL = std::tanh(mixL);
+            mixR = std::tanh(mixR);
+        }
 
         const float aL = std::fabs(mixL);
         const float aR = std::fabs(mixR);

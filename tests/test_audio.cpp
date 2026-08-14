@@ -675,3 +675,39 @@ TEST_CASE("A11 scope-parameter defaults reproduce the old constants", "[audio]")
         if (base[i] != same[i]) { identical = false; break; }
     REQUIRE(identical);
 }
+
+// A12 -- SOFT CLIP is a switch now, and its default keeps the old sound.
+//
+// The engine default is ON, which is deliberately not the device's factory
+// default: our songs were authored while the master tanh was unconditional and
+// their levels rely on it. So "default" must still mean "exactly as before",
+// and "off" must be audibly different rather than a no-op.
+TEST_CASE("A12 SOFT CLIP defaults to the old unconditional tanh", "[audio]") {
+    OfflineHost host;
+    host.engine().loadDemoSong();
+    REQUIRE(host.engine().getStateForInit().mixer.soft_clip != 0);
+    host.push(playSong(0));
+    host.renderSeconds(4.0);
+    const auto on = host.audio();
+
+    OfflineHost host2;
+    host2.engine().loadDemoSong();
+    host2.engine().getStateForInit().mixer.soft_clip = 0;
+    host2.push(playSong(0));
+    host2.renderSeconds(4.0);
+    const auto off = host2.audio();
+
+    REQUIRE(on.size() == off.size());
+
+    // Switching it off has to change the output, and in the direction that
+    // makes it louder -- tanh only ever pulls a signal down.
+    float maxDiff = 0.0f;
+    double sumOn = 0.0, sumOff = 0.0;
+    for (size_t i = 0; i < on.size(); ++i) {
+        maxDiff = std::max(maxDiff, std::fabs(on[i] - off[i]));
+        sumOn  += double(on[i])  * on[i];
+        sumOff += double(off[i]) * off[i];
+    }
+    REQUIRE(maxDiff > 0.01f);
+    REQUIRE(sumOff > sumOn);
+}
