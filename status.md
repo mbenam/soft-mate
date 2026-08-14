@@ -143,11 +143,20 @@ OTT  TIME, COLOR      header LIMITER SCOPE
 The sub-parameters are **contextual** — only the selected row's pair is drawn, which is why
 they are missing from a screenshot taken on MIX. All six are hardcoded constants in
 `Engine.cpp` today (limiter attack/release, DJF resonance, OTT envelope time and band tilt).
-**Which file bytes carry them is still unknown** and must not be guessed: six parameters do
-not fit in the four bytes the file library discards at `0xEA`–`0xED` (`40 70 12 32` on
-V4EMPTY, `00 10 00 00` on a 6.5.0 device save), so at least two live elsewhere. Settling it
-needs a save-and-diff against the `.m8s`, which needs the file off the SD card — `m8_nav` has
-no file transfer. Until then the clone preserves those bytes untouched (test L24).
+
+**One file byte is now identified. `0xEB` is limiter REL** — proven by a single-variable
+save-and-diff on the device (change REL `10`→`FF`, save, diff: that byte moved and nothing
+else in the mixer block did). `0xEA` is probably ATK on adjacency, unproven. `0xEC`/`0xED`
+remain unknown, and **TIME/COLOR are known not to be in this block** — both read `80` on the
+device while those bytes were `00`, so at least two scope parameters live elsewhere in the
+file, still unlocated. One more probe would settle the rest: set ATK, RES, TIME, COLOR and
+SOFT CLIP each to a *different* value, save once, and every moved byte identifies itself.
+Until then the clone preserves all four untouched (test L24).
+
+*Incidental, from the same diff:* `0xBD`/`0xBE` changed between two saves of an otherwise
+untouched project (`0x2474`→`0x2525`, +177 over ~3 minutes). Almost certainly the PROJECT
+screen's TIME STATS counter. **Two device saves are therefore never byte-identical** — treat
+`0xBC`–`0xCD` as volatile when diffing device files.
 
 ### EQ (`archive/EQ_SPEC.md`, 2026-08-13)
 3-band parametric EQ — 7 filter types (LOWCUT/LOWSHELF/BELL/BANDPASS/HI.SHELF/HI.CUT/ALLPASS)

@@ -117,15 +117,20 @@ static void saveBusEqs(const m8::Song& song, const engine::EngineState& state,
 // are -- and, like the bus EQs, field by field rather than through the
 // library's own `MixerSettings::write` / `EffectsSettings::write`. Those two
 // rebuild a whole block and would clobber bytes we must not touch:
-//   - the four unidentified bytes at the end of the mixer block, which
+//   - the four bytes at the end of the mixer block, which
 //     `MixerSettings::from_reader` discards and its writer emits as zeros.
-//     They are not padding: V4EMPTY.m8s and V4-1EMPTY.m8s both carry
-//     `40 70 12 32` there, and a 6.5.0 device save (artifacts/EQTEST1.m8s)
-//     carries `00 10 00 00`. What they mean is unknown — the Limiter & Mix
-//     Scope view hosts six parameters we cannot otherwise account for
-//     (limiter ATK/REL, DJF TYPE/RES, OTT TIME/COLOR), which makes this the
-//     obvious place to look, but nothing here is measured. Do not assign
-//     them meanings without a device diff.
+//     They are not padding, and one of them is now identified:
+//        0xEA  probably limiter ATK -- it sits immediately before REL, in the
+//              same order the device draws them, but its value was 00 at
+//              measurement time and 00 matches three parameters. UNPROVEN.
+//        0xEB  limiter REL. PROVEN on hardware 2026-08-13: changing REL from
+//              10 to FF on the device moved this byte and nothing else in the
+//              block (hw_findings.md UI-7).
+//        0xEC  unknown.
+//        0xED  unknown.
+//     OTT's TIME and COLOR are known NOT to live here -- both read 80 on the
+//     device while 0xEA/0xEC/0xED were all 00. Six scope parameters never fit
+//     in four bytes. Do not assign the remaining three without a device diff.
 //   - the reserved bytes inside the effects block, zeroed the same way.
 //   - the analog/USB input pair, whose right channel the library cannot
 //     represent -- rebuilding it is the data loss closed in hw_findings.md

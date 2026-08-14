@@ -758,8 +758,11 @@ which matches the large-step size the clone's own editor uses.
 ## UI-7 — The Limiter & Mix Scope view, read off the device
 
 Read from a real M8 (firmware 6.5.2, COM3) on 2026-08-13, driven by `m8_nav`.
-**Read-only: navigation keys only, no EDIT, nothing saved.** Closes §UI-4b
-("device mixer FX parameter list — BLOCKED, needs hardware").
+Closes §UI-4b ("device mixer FX parameter list — BLOCKED, needs hardware").
+
+Two parts, with different levels of intrusion: the **layout** below was read
+navigation-only, no EDIT and nothing written; the **byte identification** that
+follows it needed one parameter change and two saves to the card.
 
 **Method.** `--goto-screen MIXER`, then `--read-field MIX_VOL` to land the
 cursor on MIX, then `SHIFT+RIGHT` (`0x14`) to enter, then `DOWN` (`0x20`) three
@@ -787,35 +790,83 @@ OTT  00     TIME 80     COLOR 80          header: LIMITER SCOPE
 Top line carries `ZOOM -30DB` and `PEAK -60.00` (silent; the peak reads real
 levels during playback). `EQ` sits above MIX as its own cursor stop.
 
-### What this does NOT settle — the file bytes
+### The file bytes — 0xEB is REL (proven 2026-08-13)
 
-Six of these have no field in the file library's `MixerSettings`: SOFT CLIP,
-ATK, REL, RES, TIME, COLOR. (TYPE does — it is `dj_filter_type`.) The obvious
-suspects are the four bytes at `0xEA`–`0xED`, which `MixerSettings::from_reader`
-reads and discards, and which are demonstrably not padding:
+Settled by a single-variable save-and-diff on the device. The scratch project
+was named and saved, `REL` was taken from `10` to `FF` in the scope view, and it
+was saved again. Files pulled off the card by hand — `m8_nav` has no file
+transfer.
+
+**Both files are committed** so this is re-derivable rather than a typed-up
+table (`M8_MEASUREMENT_EVIDENCE_SPEC.md`):
 
 ```
-V4EMPTY.m8s / V4-1EMPTY.m8s   40 70 12 32
-artifacts/EQTEST1.m8s          00 10 00 00     (a 6.5.0 device save)
+tests/fixtures/device_golden/scope_rel_10.m8s     REL = 10
+tests/fixtures/device_golden/scope_rel_ff.m8s     REL = FF
 ```
 
-`ATK 00 / REL 10` on this device is *consistent* with EQTEST1's `00 10 ...`,
-which is suggestive. **It is not proof and must not be recorded as a mapping:**
+Re-run it with:
 
-- The project loaded on the device is unnamed at tempo 120.00, i.e. it is not
-  EQTEST1, so these values and those bytes come from different projects.
-- Six parameters do not fit in four bytes. At least two must live elsewhere in
-  the file, so any mapping derived from four bytes alone is incomplete by
-  construction.
-- `TIME 80 / COLOR 80` are non-zero here while EQTEST1's last two reserved bytes
-  are `00 00`, which argues against those two bytes being TIME and COLOR.
+```
+python -c "a=open('tests/fixtures/device_golden/scope_rel_10.m8s','rb').read(); \
+b=open('tests/fixtures/device_golden/scope_rel_ff.m8s','rb').read(); \
+print([(hex(i),hex(x),hex(y)) for i,(x,y) in enumerate(zip(a,b)) if x!=y])"
+```
 
-**To settle it** the decisive experiment is unchanged: change one parameter on
-the device to a distinctive value, save the project, pull the `.m8s`, and diff
-against a before copy (`tools/m8s_diff.py`). That needs the file off the SD
-card, and `m8_nav` has no file transfer — it decodes the display and presses
-buttons. Pulling the file is a physical step (USB disk mode or a card reader).
-Until someone does that, the four bytes stay unidentified and the clone keeps
-preserving them untouched, which `saveUnwrittenBlocks` and test L24 enforce.
+Four bytes differ across the whole 112,326-byte file:
+
+```
+0x009D   31 -> 32     project name, BYTEPROBE1 -> BYTEPROBE2
+0x00BD   74 -> 25     see "time counter" below
+0x00BE   24 -> 25       "
+0x00EB   10 -> FF     REL
+```
+
+**`0xEB` is the limiter REL byte.** It was the only parameter changed and it is
+the only byte in the mixer block that moved.
+
+That places it in the four bytes `MixerSettings::from_reader` reads and
+discards (`0xEA`–`0xED`), and it retires the guess that those are padding.
+
+### What is still unidentified
+
+Device state at the time of both saves: `SOFT CLIP OFF`, `ATK 00`, `REL 10`,
+`TYPE 00`, `RES 00`, `TIME 80`, `COLOR 80`. Against the block:
+
+```
+0xEA = 00    consistent with ATK 00 -- and it is the byte immediately before
+             REL, mirroring the on-screen order "ATK 00  REL 10". Likely, but
+             a value of 00 matches three different parameters, so unproven.
+0xEB = FF    REL. PROVEN.
+0xEC = 00    unknown
+0xED = 00    unknown
+```
+
+**TIME and COLOR are definitively not in this block.** Both read `80` on the
+device while `0xEA`, `0xEC` and `0xED` are all `00`. Six scope parameters were
+never going to fit in four bytes; this confirms at least two live elsewhere in
+the file, still unlocated.
+
+One more single-variable save would settle the rest cheaply: set ATK, RES, TIME,
+COLOR and SOFT CLIP each to a *different* distinctive value, save once, and diff
+— every moved byte then identifies itself by the value it now holds.
+
+### Incidental — a counter at 0xBD/0xBE that changes on every save
+
+`0xBD`/`0xBE` moved without either being touched. Read little-endian they went
+`0x2474` -> `0x2525`, a delta of 177, across roughly three minutes between the
+two saves. They sit inside the 18 bytes the library skips after `key`, and the
+PROJECT screen carries a TIME STATS entry — so this is very likely a play/edit
+time counter. Not confirmed, but the consequence holds either way: **two device
+saves of an otherwise untouched project are not byte-identical**, and anything
+comparing device saves must treat `0xBC`–`0xCD` as volatile.
+
+### Getting files off the device
+
+`m8_nav` decodes the display and presses buttons; there is no file transfer, so
+every experiment of this kind needs the `.m8s` pulled by hand (USB disk mode or
+a card reader). Note also that SAVE **refuses an unnamed project** ("ENTER A
+NAME BEFORE SAVING") and the driver has no text-entry primitive, so naming is a
+human step too.
 
 - **Date:** 2026-08-13
