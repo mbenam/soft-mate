@@ -1146,3 +1146,68 @@ track, in the wrong direction as pan sweeps — HyperSynth WIDTH at −31 dB is 
 smaller audible defect. **Stereo samples are the untested case likely to matter
 more**, since a genuinely stereo sample carries far more side content than this;
 that needs a stereo WAV on the card and has not been measured.
+
+---
+
+## UI-12 — The pan curve is linear, and stereo samples play in full stereo
+
+**Date:** 2026-08-14. Firmware 6.5.2, COM3. Probes authored by `m8_makeprobe`,
+loaded by `m8drv`, recorded by `m8_capture`, measured by `m8_analyze`. Unattended.
+
+Follows §UI-10, which established from two endpoints that the pan law is balance
+rather than constant-power but could not distinguish a linear taper from a curved
+one. This sweeps the interior.
+
+### Pan curve
+
+Macrosynth probe, `PAN` set on the device across the sweep, keyjazz C-4 at velocity
+`0x40`, all captures `clipped: 0`. L and R derived as `mid + side` and `mid - side`:
+
+| PAN | L | R | R/L | pan/0x80 |
+|---|---|---|---|---|
+| `00` | 0.006704 | 0.000000 | 0.000 | 0.000 |
+| `20` | 0.006862 | 0.001694 | 0.247 | 0.250 |
+| `40` | 0.006913 | 0.003447 | 0.499 | 0.500 |
+| `60` | 0.006968 | 0.005224 | 0.750 | 0.750 |
+| `80` | 0.007122 | 0.007122 | 1.000 | 1.000 |
+
+**R/L equals `pan/0x80` to three decimals. L is flat within 6%** (noise —
+constant-power would have moved it 41%). So the law is: near channel at unity, far
+channel attenuated **linearly**. No curve.
+
+Only the lower half was swept. The upper half is taken by symmetry; `00` and `80`
+are both pinned by measurement. Sweep `A0`/`C0`/`E0`/`FF` if that is ever in doubt.
+
+Fixed in `Engine.cpp`'s master bus, replacing `cos`/`sin`. Pinned by test `MB6`
+(`[mixer]`), whose "hard left does not raise the left channel" assertion is
+precisely the one constant-power fails.
+
+### Stereo samples
+
+Two sampler probes over WAVs built for the purpose: `STEREOL.WAV` carries a 440 Hz
+tone on L with silence on R (so side = mid, corr 0 in the file itself), and
+`MONOREF.WAV` carries the same tone identically on both (side = 0, corr +1). Same
+amplitude, same length. Instrument pan centred in both.
+
+| capture | mid RMS | side RMS | L/R corr |
+|---|---|---|---|
+| `STEREOL.WAV` on device | 0.000134 | **0.000134** | 0.0000 |
+| `MONOREF.WAV` on device | 0.000268 | 0.000000 | 1.0000 |
+
+The device reproduces each file's stereo image exactly. `MONOREF`'s mid is precisely
+2x `STEREOL`'s, which is what a hard-panned-L file versus a both-channels file must
+give when nothing sums them — and the mono control confirms the path contributes no
+stereo of its own, so the `STEREOL` result cannot be an artefact.
+
+**So the M8 plays stereo samples in full stereo.** `SynthVoice.cpp`'s
+`0.5f * (sampOut[0] + sampOut[1])` destroys a complete stereo image, not the
+-31 dB spread that HyperSynth WIDTH turned out to be (§UI-11).
+
+The same probe files through `m8_render` (`--sample-root`): side RMS 0.000053 for
+the stereo file against 0.000061 for the mono one — indistinguishable, i.e. our
+output is mono whichever it is fed.
+
+### Priority this settles
+
+Stereo **samples** are the case that justifies the stereo voice path, not the synth
+WIDTH parameters. A full stereo image is lost today where hardware keeps it.

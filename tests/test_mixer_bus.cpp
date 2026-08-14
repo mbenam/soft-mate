@@ -11,9 +11,12 @@
 //   MB5  none of the above allocates on the audio thread
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "support/OfflineHost.h"
 #include <atomic>
 #include <cmath>
+
+using Catch::Approx;
 
 extern std::atomic<int> g_allocCount;
 
@@ -65,7 +68,74 @@ Rendered renderWithMixer(void (*tweak)(MixerState&), int frames = 6000) {
     return r;
 }
 
+// Per-channel energy, for the pan law. host.audio() is interleaved L,R.
+struct Stereo {
+    float energyL = 0.0f;
+    float energyR = 0.0f;
+};
+
+Stereo renderWithPan(int panByte, int frames = 6000) {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    auto& m = state.instruments[0].macrosyn;
+    m.shape = 0x00;
+    m.timbre = 0xC0;
+    m.color = 0xC0;
+    m.amp = 0x40;
+    m.lim = 0;
+    m.filter_type = 0;
+    m.dry = 0xFF;
+    m.pan = panByte;
+
+    state.mixer.mix_vol = 0xFF;
+    state.mixer.out_vol = 0xFF;
+    state.mixer.lim_val = 0x00;   // no limiting, or it would squash the ratio
+    state.mixer.djf_freq = 0x80;
+    state.mixer.ott = 0x00;
+
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(frames);
+
+    Stereo s;
+    const auto& buf = host.audio();
+    for (size_t i = 0; i + 1 < buf.size(); i += 2) {
+        s.energyL += std::fabs(buf[i]);
+        s.energyR += std::fabs(buf[i + 1]);
+    }
+    return s;
+}
+
 } // namespace
+
+// MEASURED on hardware 2026-08-14 (hw_findings.md §UI-10, §UI-12), which is why
+// this one pins numbers rather than just wiring, unlike MB1-MB5 above. Sweeping a
+// probe's PAN and deriving L = mid+side, R = mid-side gave R/L equal to pan/0x80
+// to three decimals with L flat within 6% -- a linear taper on the far channel
+// with the near channel at unity. The bus used constant-power (cos/sin) until
+// then, which holds L^2 + R^2 constant instead.
+TEST_CASE("MB6 pan holds the near channel at unity and tapers the far one linearly",
+          "[mixer]") {
+    const Stereo centre = renderWithPan(0x80);
+    const Stereo half   = renderWithPan(0x40);
+    const Stereo left   = renderWithPan(0x00);
+
+    REQUIRE(centre.energyL > 0.0f);
+    // Centre is equal on both channels.
+    REQUIRE(centre.energyR == Approx(centre.energyL).epsilon(0.001));
+
+    // Hard left silences the right channel outright.
+    REQUIRE(left.energyR == Approx(0.0f).margin(1e-6));
+
+    // ...and leaves the LEFT one alone. This is the assertion that fails under
+    // constant-power, which would raise it by a factor of sqrt(2).
+    REQUIRE(left.energyL == Approx(centre.energyL).epsilon(0.02));
+
+    // Half-left puts the right channel at half the left: 0x40 / 0x80 = 0.5.
+    REQUIRE(half.energyR == Approx(half.energyL * 0.5f).epsilon(0.02));
+}
 
 TEST_CASE("MB1 DJ filter is off at 0x80 and sweeps both ways", "[mixer]") {
     const Rendered off  = renderWithMixer([](MixerState& mx) { mx.djf_freq = 0x80; });

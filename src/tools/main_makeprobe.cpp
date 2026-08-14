@@ -11,6 +11,7 @@
 //
 //   m8_makeprobe --type hypersynth --width 0x00 --note C-4 --out probe_w00.m8s
 //   m8_makeprobe --type hypersynth --width 0xFF --note C-4 --out probe_wff.m8s
+//   m8_makeprobe --type macrosynth --pan 0x40 --note C-4 --out probe_pan40.m8s
 //     --swarm / --width are hypersynth-only. They exist because measuring the
 //     device's stereo behaviour needs WIDTH varied, and ScreenModel.h has no
 //     HyperSynth field map, so it cannot be set on the device by field name.
@@ -94,7 +95,13 @@ static m8::Song buildProbeSong(
     // is both the only route and the reproducible one. Defaults preserve the
     // values this generator previously hardcoded.
     int hyperSwarm = 0x40,
-    int hyperWidth = 0x80)
+    int hyperWidth = 0x80,
+    // Pan, for measuring the device's pan law. Baked into the probe rather than
+    // set on the device because the instrument field maps are per-type and the
+    // HyperSynth screen's right column sits two rows lower than the Sampler map
+    // it falls back to -- `set PAN` would aim at SHIFT. Probe files also make the
+    // measurement reproducible.
+    int probePan = 0x80)
 {
     m8::Song song;
 
@@ -191,7 +198,7 @@ static m8::Song buildProbeSong(
         sp.lfo_amp_amt = 0;
         sp.lfo_flt_amt = 0;
         sp.lfo_pit_amt = 0;
-        sp.mixer_pan = 0x80;
+        sp.mixer_pan = static_cast<uint8_t>(probePan);
         sp.mixer_dry = 0xC0;
         sp.mixer_chorus = 0;
         sp.mixer_delay = 0;
@@ -399,7 +406,8 @@ static void writeSongFile(const std::string& path, const m8::Song& song) {
 static bool verifyRoundTrip(const std::string& path, const std::string& instType,
                             int shape, int timbre, int color,
                             const std::string& samplePath = "",
-                            int expectedVolume = -1) {
+                            int expectedVolume = -1,
+                            int expectedPan = 0x80) {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -500,8 +508,9 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                 return false;
             }
         }
-        if (sp->mixer_pan != 0x80) {
-            std::fprintf(stderr, "  FAIL: mixer_pan %02X != 0x80\n", sp->mixer_pan);
+        if (sp->mixer_pan != expectedPan) {
+            std::fprintf(stderr, "  FAIL: mixer_pan %02X != %02X\n",
+                         sp->mixer_pan, expectedPan);
             return false;
         }
         if (sp->mixer_dry != 0xC0) {
@@ -578,6 +587,7 @@ int main(int argc, char** argv) {
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
     float tempo = 120.0f;
     int hyperSwarm = 0x40, hyperWidth = 0x80;  // hypersynth-only, see buildProbeSong
+    int probePan = 0x80;   // instrument pan, for pan-law measurement
     int tableTick = 0xFF;  // 0xFF = table disabled (default, matches prior behavior)
     int slice = 0;         // sampler-only: 0=off, 1=FILE, 2..0x80 = N equal divisions
     int modAmt = 0xFF;
@@ -611,6 +621,7 @@ int main(int argc, char** argv) {
         else if (a == "--slice")       slice = num();
         else if (a == "--swarm")       hyperSwarm = num();
         else if (a == "--width")       hyperWidth = num();
+        else if (a == "--pan")         probePan = num();
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
@@ -731,10 +742,12 @@ int main(int argc, char** argv) {
 
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
-                               tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth);
+                               tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth,
+                               probePan);
     writeSongFile(outPath, song);
 
-    if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume)) {
+    if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume,
+                         probePan)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }

@@ -859,8 +859,41 @@ void Engine::render(float* buffer, int frames) {
                 }
             }
             
-            float panL = std::cos(pan * 1.5707963f);
-            float panR = std::sin(pan * 1.5707963f);
+            // Pan law: near channel at UNITY, far channel attenuated LINEARLY.
+            //
+            // MEASURED on hardware 2026-08-14, not assumed (hw_findings.md §UI-10
+            // and §UI-12). Sweeping a macrosynth probe's PAN across 00/20/40/60/80
+            // and deriving L = mid+side, R = mid-side from the captures:
+            //
+            //   PAN   L         R         R/L     pan/0x80
+            //   00    0.006704  0.000000  0.000   0.000
+            //   20    0.006862  0.001694  0.247   0.250
+            //   40    0.006913  0.003447  0.499   0.500
+            //   60    0.006968  0.005224  0.750   0.750
+            //   80    0.007122  0.007122  1.000   1.000
+            //
+            // R/L tracks pan/0x80 to three decimals, and L stays flat within 6%
+            // (noise). This was previously constant-power (cos/sin), which holds
+            // L*L + R*R constant instead: that renders a centred track 3 dB
+            // quieter than hardware and lifts the near channel by 3 dB as the pan
+            // sweeps. Under cos/sin, L at hard left should have measured 0.01537
+            // against 0.010866 actual.
+            //
+            // `pan` here is the byte scaled to 0..1, so centre (0x80 = 128) is
+            // 128/255 = 0.50196 rather than exactly 0.5 -- hence normalising each
+            // half by its own width instead of assuming symmetry about 0.5.
+            constexpr float kPanCentre = 128.0f / 255.0f;
+            float panL, panR;
+            if (pan <= kPanCentre) {
+                panL = 1.0f;
+                panR = pan / kPanCentre;
+            } else {
+                panL = (1.0f - pan) / (1.0f - kPanCentre);
+                panR = 1.0f;
+            }
+            // The upper half (pan > 0x80) is by symmetry with the lower, which was
+            // the half actually swept; 0x80 and 0x00 are both pinned by
+            // measurement. Sweep A0/C0/E0/FF if that assumption is ever in doubt.
 
             // Instrument EQ sits on the track's whole output, before it splits
             // into the dry path and the sends -- so the effects hear the EQ'd
