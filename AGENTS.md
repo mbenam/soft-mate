@@ -84,6 +84,24 @@ If porting becomes necessary later, we will cross that bridge then.
 
 ---
 
+## 3b. Driving real hardware
+
+Use **`tools/m8drv/m8drv.py`** (docs: `docs/tools/m8drv.md`), which supervises
+`m8_nav --serve`: one connection, per-command timeouts, and kill/restart/re-home
+recovery so a stuck device never needs a human hand.
+
+Do **not** drive the device with one `m8_nav --flag` invocation per command. Each
+pays `open()`'s 500 ms `'E'`-then-`'R'` sleep plus a read floor — about a second of
+dead time each — and, worse, that pattern *hid* a real bug: `findCursorCell` latched
+onto stale accent cells, which only shows up on the second and later reads within one
+connection, because `'R'` repaints the stale cells away
+(`M8_DRIVER_BUGS.md` #24). Five driver bugs surfaced the moment the connection was
+held open.
+
+`m8drv batch` runs many commands through one connection. `probe <KEY>` and
+`inspect` are the diagnostics — `inspect` is the only view of colour in the whole
+toolchain, since `SemanticState` carries none.
+
 ## 4. Report honestly
 
 Past reports in this project have been wrong in ways the code contradicted. Do not let
@@ -180,6 +198,18 @@ EQ freq     16-bit, coarse byte high, in Hz.  EQ gain 16-bit signed, HUNDREDTHS 
 EQ Q        plain byte 0-99, Q = 10^((b-50)/50) -- measured off the device's curve,
             so the default of 50 is exactly Q 1.0
 
+PAN law     near channel at UNITY, far channel attenuated LINEARLY. R/L == pan/0x80,
+            measured to three decimals across 00/20/40/60/80. NOT constant-power.
+            (Upper half by symmetry; 00 and 80 both measured.)
+HYPER WIDTH unipolar: 00 = no spread, FF = maximum. Not bipolar around 0x80.
+            At FF the side content is only ~-31 dB (side/mid ~= 0.029).
+Stereo      the M8 plays a stereo SAMPLE with its image intact -- L-only in the
+            file stays L-only out (side == mid, corr 0.0000).
+Capture     keyjazz VELOCITY is the level lever, not OUTPUT VOL, which does not
+            reach the USB tap at all. 0x7F clips; 0x40 gives peak ~0.43 clean.
+            Clipping destroys stereo information -- it pushes the channels
+            together, so a clipped capture can measure as mono when it is not.
+
 Sampler root note   C-4 (MIDI 60)
 DETUNE              1/16 semitone per step, 0x80 centre
 Envelope times      IN TICKS, tempo-relative. Not seconds.
@@ -206,7 +236,16 @@ red, the fix is one line in `SamplerEngine::computeRegion()` — do not redesign
   no per-slot modulation-rate scaling. Removed the dead code that computed an unused
   `rateScale` array rather than leave it looking implemented (`CODE_CLEANUP_SPEC.md` #8).
 - **Tables** are edited by the UI and ignored by the engine.
-- **The voice path is mono.** `SamplerEngine` reads both channels; `SynthVoice` sums them.
+- **The voice path is mono for the SYNTHS only.** The **sampler** is stereo end to end as of
+  2026-08-14 (`Engine` calls `SynthVoice::renderFrame`); hardware reproduces a stereo sample's
+  image intact, so summing it lost real information (`hw_findings.md` §UI-12). Every synth path
+  still returns one value duplicated into both channels. HyperSynth computes a `width` spread
+  and throws it away — measured at only ~-31 dB on hardware (§UI-11), which is why it was not
+  worth doing first.
+- **The chorus and delay returns are mono**, so their STEREO WIDTH controls do nothing. Test
+  `A7` is `[!shouldfail]` and documents it — when the returns are fixed it starts passing and
+  Catch2 flags the marker for removal. Don't "fix" A7 by restoring its old centred-dry setup;
+  that only ever passed because the retired constant-power pan law was asymmetric at centre.
 - **`loadDemoSong()` is scaffolding.** It disappears once `.m8s` loading works.
 
 If you touch one of these, say so. Do not silently "fix" a placeholder into something else.

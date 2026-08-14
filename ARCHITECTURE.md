@@ -35,7 +35,7 @@ scripting harness.
 | `m8_makeprobe` | `src/tools/main_makeprobe.cpp` | `m8_files_cpp` only | Generates minimal `.m8s` probe songs (one instrument, one note). |
 | `m8_composesong` / `m8_makesong` | `src/tools/main_composesong.cpp` / `main_makesong.cpp` | `m8_engine` | Author songs to `.m8s` as data. `m8_composesong` writes `songs/sunrise.m8s` (the startup song). |
 | `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. `--batch`, `--keyjazz`. |
-| `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop; `--load-file` loads a probe fully unattended (Tier 3). |
+| `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop. **Use `--serve` for anything multi-step**, via `tools/m8drv/m8drv.py` — one-shot invocations pay a ~1 s handshake each and hid a real bug for months (`M8_DRIVER_BUGS.md` #24). |
 | `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | 269 test cases across 32 files (static `TEST_CASE` count, 2026-08-12 — see `status.md` "Tests" for provenance; last recorded *run* was 147/147 on 2026-07-17's tree). |
 
 Third-party: `third_party/m8-files-cxx` (git submodule — `.m8s` read/write),
@@ -133,7 +133,11 @@ This is the most important thing to understand. Everything else hangs off it.
     its two parameters. Shapes above `0x2B` fall back to the polyBLEP saw. Bundled wave data:
     `braids/data/waves.bin`, `map.bin`.
   - `INST_HYPERSYN` — supersaw: `default_chord[]` notes × detuned polyBLEP saws with `swarm`
-    spread, stereo `width`, `shift` transpose, and a `subosc`.
+    spread, `shift` transpose, and a `subosc`. It computes a genuine stereo
+    `width` spread into separate L/R and then **discards it** by summing
+    (`SynthVoice.cpp`'s `0.5f * (outL + outR)`); on hardware that spread
+    measures only ~-31 dB of side content at maximum (`hw_findings.md` §UI-11),
+    which is why the stereo voice path was done for the sampler first.
   - `INST_FMSYNTH` — 4-operator / 12-algorithm FM with procedural wavetable oscillators
     (`initFMWavetables`), per-op ratio/level/feedback/retrigger + mod-slot decode. *Reference
     approximation, not hardware-verified* (see `FMSYNTH_IMPLEMENTATION.md` §10).
@@ -155,7 +159,17 @@ This is the most important thing to understand. Everything else hangs off it.
   CUTOFF (±5 octaves), RES, AMP, PAN(stored, unused), and mod-to-mod
   (`MOD_AMT`/`MOD_RATE`/`MOD_BOTH`/`MOD_BINV` scale the *next* slot).
   Amounts are bipolar around 0x80 (`bipolarAmt`).
-- Master bus: per-track volume → constant-power pan → dry + three sends →
+- The **sampler** voice path is stereo end to end: `Engine` calls
+  `SynthVoice::renderFrame`, whose sampler branch carries both channels through
+  a duplicated output stage (`m_filterR`/`m_zdfR` for the right channel; DEGRADE
+  keeps one shared sample-and-hold phase, since two would latch L and R at
+  different instants and invent stereo). Every synth path still returns one
+  value duplicated into both channels. Hardware-verified: the M8 reproduces a
+  stereo sample's image intact (`hw_findings.md` §UI-12).
+- Master bus: per-track volume → **linear balance pan** (near channel at unity,
+  far channel attenuated linearly — measured, §UI-10/§UI-12; it was
+  constant-power until 2026-08-14, which rendered centred tracks 3 dB quiet) →
+  dry + three sends →
   DaisySP Chorus / dual 2-s DelayLine with feedback + DC-blockers / ReverbSC →
   master volume → DC-block → `tanh` soft clip → hard clamp.
 
@@ -354,7 +368,11 @@ specifically built to catch.
 - The complete M8 modulation matrix shape: 4 slots × 6 modulator types ×
   14 destinations including mod-to-mod routing and cross-instrument TRIG.
 - Send-effects bus (chorus, stereo delay with smoothed times + feedback
-  clamp + DC blocking, ReverbSC), constant-power pan, master saturation.
+  clamp + DC blocking, ReverbSC), **linear balance pan** (measured on hardware,
+  `hw_findings.md` §UI-10/§UI-12), master saturation. **Caveat: the chorus and
+  delay returns are mono** — with the dry path muted their two channels are
+  bit-identical, so their STEREO WIDTH controls have nothing to act on. Test
+  `A7` is marked `[!shouldfail]` and documents it.
 - `.m8s` load/save with byte-identical round-trip for untouched data,
   missing-sample reporting, sample-root resolution, version gating.
 - 12 UI screens (Song, Chain, Phrase, Instrument ×2 layouts, Table, Project,
@@ -640,6 +658,7 @@ specifically built to catch.
 | Add a new screen | Follow `screens/<name>/` pattern: Render function + Layout header + NavNode map; wire into `ViewManager::getViewAt`, `main.cpp` input + render dispatch, and add a `.m8script`. |
 | Add a new persisted field | Extend *both* converters in `SongIO.cpp` (`convertSongToEngine` / `convertEngineToSong`) and confirm the byte-identical round-trip tests still pass. |
 | Touch `CommandRing` / rings | Re-run the TSan config (`-DM8_SANITIZE=tsan`) and `test_rt_safety`; keep capacity a power of two; keep payloads POD. |
+| Finish the stereo voice path (the **sampler** is done; the synths still sum) | `renderSample` returns one value and `renderFrame` splits it; only the sampler branch fills the channels separately. Any synth you convert needs its OWN filter state for the right channel (sharing one cross-feeds them) but must keep DEGRADE's sample-and-hold phase **shared**. It changes audio by design, so the usual proof — identical `fnv1a64` from `m8_render` — cannot be the gate; do a render diff and an A/B against a hardware capture. Only HyperSynth has a real width parameter, and it measures ~-31 dB (`hw_findings.md` §UI-11), so the payoff is small. |
 | "Clean up" the leaked-on-overflow GC pushes | Don't switch to blocking or freeing on the audio thread; the leak is a documented, deliberate trade. Enlarge the ring instead. |
 
 ---
@@ -671,6 +690,12 @@ src/tools/     main_render.cpp      offline WAV+CSV renderer
                main_analyze.cpp     WAV metric gate / diff
                main_makeprobe.cpp   probe .m8s generator
                main_capture.cpp     hardware serial+USB-audio capture
+src/tools/m8/  M8Device/ScreenModel/Primitives/Gestures/DeviceScriptRunner/Daemon
+                                    the m8_device library: serial + SLIP + verified primitives
+tools/m8drv/   m8drv.py             Python supervisor over `m8_nav --serve`: one
+                                    connection, per-command timeouts, kill/restart/
+                                    re-home recovery. The way to drive real hardware
+                                    unattended. See docs/tools/m8drv.md
 src/main.cpp   the app: event loop, input, mirrors, persistence UI, script glue
 tests/         Catch2 suite + OfflineHost + AllocGuard + ui/*.m8script
 third_party/   m8-files-cxx (submodule), kissfft, miniaudio
