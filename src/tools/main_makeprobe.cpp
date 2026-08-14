@@ -9,6 +9,12 @@
 //
 //   m8_makeprobe --sweep shape --type macrosynth --note C-4 --out-dir probes/
 //
+//   m8_makeprobe --type hypersynth --width 0x00 --note C-4 --out probe_w00.m8s
+//   m8_makeprobe --type hypersynth --width 0xFF --note C-4 --out probe_wff.m8s
+//     --swarm / --width are hypersynth-only. They exist because measuring the
+//     device's stereo behaviour needs WIDTH varied, and ScreenModel.h has no
+//     HyperSynth field map, so it cannot be set on the device by field name.
+//
 // Links m8_files_cpp only. No SDL, no engine.
 // ===========================================================================
 
@@ -81,7 +87,14 @@ static m8::Song buildProbeSong(
     int tableTick = 0xFF,
     int slice = 0,
     int modAmount = 0xFF,
-    int modHold = 0xFF)
+    int modHold = 0xFF,
+    // hypersynth-only. Exposed because the stereo-image question needs WIDTH
+    // varied, and there is no HyperSynth field map in ScreenModel.h, so it
+    // cannot be driven on the device by field name -- baking it into the probe
+    // is both the only route and the reproducible one. Defaults preserve the
+    // values this generator previously hardcoded.
+    int hyperSwarm = 0x40,
+    int hyperWidth = 0x80)
 {
     m8::Song song;
 
@@ -282,8 +295,8 @@ static m8::Song buildProbeSong(
         hs.table_tick = static_cast<uint8_t>(tableTick);
         hs.scale = 0;
         hs.shift = 0;
-        hs.swarm = 0x40;
-        hs.width = 0x80;
+        hs.swarm = static_cast<uint8_t>(hyperSwarm);
+        hs.width = static_cast<uint8_t>(hyperWidth);
         hs.subosc = 0;
         // An empty default_chord means zero active notes regardless of the
         // note actually played (SynthVoice.cpp skips any chord slot <= 0),
@@ -564,6 +577,7 @@ int main(int argc, char** argv) {
     int volume = 0x7F;
     int filterType = 0, filterCutoff = 0xFF, filterRes = 0;
     float tempo = 120.0f;
+    int hyperSwarm = 0x40, hyperWidth = 0x80;  // hypersynth-only, see buildProbeSong
     int tableTick = 0xFF;  // 0xFF = table disabled (default, matches prior behavior)
     int slice = 0;         // sampler-only: 0=off, 1=FILE, 2..0x80 = N equal divisions
     int modAmt = 0xFF;
@@ -595,6 +609,8 @@ int main(int argc, char** argv) {
         // "every tick" -- fast enough to execute within a short render.
         else if (a == "--table-tick")  tableTick = num();
         else if (a == "--slice")       slice = num();
+        else if (a == "--swarm")       hyperSwarm = num();
+        else if (a == "--width")       hyperWidth = num();
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
@@ -715,7 +731,7 @@ int main(int argc, char** argv) {
 
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
-                               tableTick, slice, modAmt, modHold);
+                               tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume)) {
