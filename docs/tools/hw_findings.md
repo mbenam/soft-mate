@@ -571,7 +571,11 @@ Three of these were one misreading of the master column, settled by the M8 manua
 section plus a photo of the device's mixer screen. No hardware session was needed after all —
 the manual answered what the framebuffer diffs could not.
 
-- **§UI-4a — the device's "OTT" is not a mislabelled RES; there is no RES.** The master column
+- **§UI-4a — SUPERSEDED 2026-08-14 by §UI-9, which measured the opposite.**
+  `dj_peak` is the DJ filter's resonance, as the library always called it; OTT
+  lives at 0xED. There *is* a RES -- it is on the Limiter & Mix Scope view,
+  which had not been read when this was written. The original text follows.
+- **§UI-4a (superseded) — the device's "OTT" is not a mislabelled RES; there is no RES.** The master column
   is MIX / LIM / DJF / **OTT**. Over The Top is a parallel multiband compressor, a real effect
   in its own right. The clone's `djf_res` was an invention; the file format's `dj_peak` is OTT's
   amount. Renamed to `ott` and implemented. The invented "TYP" row is gone too — the DJ filter's
@@ -961,5 +965,68 @@ delay and `FF C0 10 FF FF` for reverb at the measured offsets, matching the
 2026-08-14 has its effects written at the library's offsets, because
 `saveNewSong` used `EffectsSettings::write`. Both `songs/sunrise.m8s` and
 `songs/opening.m8s` have been regenerated; no committed song still carries it.
+
+- **Date:** 2026-08-14
+
+---
+
+## UI-9 — The rest of the scope/effects bytes, and a correction to §UI-4a
+
+Device probes on a real M8 (firmware 6.5.2, COM3), 2026-08-14. Method as §UI-8:
+save, change several fields to *distinct* values, save again, diff. Distinct
+values mean each moved byte identifies itself by what it now holds. Screens
+photographed before and after so every reading is the device's, not our
+parser's.
+
+### Results
+
+```
+MIXER BLOCK (base 0xCE)              EFFECTS BLOCK (base 0x1A5C1)
++26  0xE8  DJ filter RES             +22  reverb SHIMMER
++28  0xEA  Limiter ATK               +23  OTT TIME
++29  0xEB  Limiter REL  (§UI-8)      +24  OTT COLOR
++30  0xEC  SOFT CLIP  (00/01)        +25  ModFX MOD TYPE
++31  0xED  OTT amount
+```
+
+Evidence, each value matched to exactly one field that was changed:
+
+```
+RES       00 -> 30   moved 0xE8        SHIMMER   00 -> A0   moved +22
+ATK       00 -> 10   moved 0xEA        OTT TIME  80 -> 40   moved +23
+SOFT CLIP off -> on  moved 0xEC 00->01 OTT COLOR 80 -> 50   moved +24
+OTT       00 -> A0   moved 0xED        MOD TYPE  00 -> 02   moved +25
+```
+
+Committed evidence: `tests/fixtures/device_golden/probe_res30.m8s` (RES `30`,
+OTT `00`) and `probe_ottA0.m8s` (RES `00`, OTT `A0`). Pinned by test **L27**.
+
+### §UI-4a was wrong: `dj_peak` is RES, not OTT
+
+On 2026-08-12 §UI-4a concluded the file library's `dj_peak` was OTT, on the
+strength of the manual and a photo of the mixer screen, and the engine field
+was renamed `djf_res` -> `ott` to match. That was backwards. Moving RES on the
+device moves `dj_peak`; moving OTT leaves it alone and moves `0xED` instead.
+The library's original name was right, and `dj_filter / dj_peak /
+dj_filter_type` is a coherent trio: cutoff, resonance, type.
+
+The reasoning that led there is worth keeping as a caution: the mixer screen
+shows OTT and shows no RES, so a field named "peak" next to the DJ filter
+looked like a misnomer. It wasn't -- RES simply lives on a screen we hadn't
+read yet. **A control's absence from one screen is not evidence about a byte.**
+
+Consequence in the clone, fixed the same day: the mixer's OTT control had been
+writing the DJ filter's resonance byte, and the OTT compressor was being driven
+by a resonance value. `dj_peak` now maps to `mixer.djf_res` (stored and
+round-tripped, no UI -- RES is set in the scope view we do not build) and OTT
+reads and writes `0xED` through the same patch route as the other fields the
+library does not model.
+
+### Still unaccounted
+
+Effects `+4..+8` and `+14..+16` (`FD AF 26 40 FF` and `41 10 E0` in a
+device-authored file) correspond to no control on either screen. Mixer `+28`,
+`+29`, `+30` are identified but have no engine field, so they are preserved
+untouched on save (test L24).
 
 - **Date:** 2026-08-14

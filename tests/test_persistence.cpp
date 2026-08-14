@@ -1123,10 +1123,13 @@ TEST_CASE("L24 patching the mixer leaves the bytes we do not model alone", "[io]
     constexpr size_t kMixerOffset = 0xCE;
     REQUIRE(orig.size() >= kMixerOffset + 32);
 
-    // The tail must be untouched, and must not have been zeros to begin with --
-    // otherwise this test would pass without proving anything.
+    // +28 ATK, +29 REL, +30 SOFT CLIP: identified on hardware (§UI-9) but with
+    // no engine field, so they must survive untouched. +31 is OTT, which we do
+    // model and therefore do write -- it is checked separately in L27.
+    // They must also not have been zeros to begin with, or this would pass
+    // without proving anything.
     bool tailNonZero = false;
-    for (size_t i = 28; i < 32; ++i) {
+    for (size_t i = 28; i < 31; ++i) {
         if (orig[kMixerOffset + i] != 0) tailNonZero = true;
         REQUIRE(rt[kMixerOffset + i] == orig[kMixerOffset + i]);
     }
@@ -1220,4 +1223,70 @@ TEST_CASE("L26 unmodelled effects bytes survive a save", "[io]") {
     REQUIRE(rt[kFxBase + 11] == 0x55);
 
     std::remove("fx_preserve.m8s");
+}
+
+// ---------------------------------------------------------------------------
+// L27 -- OTT and the DJ filter's RES go to the bytes the device uses.
+//
+// These were swapped from 2026-08-12 until 2026-08-14: hw_findings.md §UI-4a
+// concluded the file library's `dj_peak` was OTT and the field was renamed to
+// match. A device probe then moved RES and watched `dj_peak` move with it while
+// OTT sat still, and separately moved OTT and watched 0xED follow (§UI-9). So
+// `dj_peak` is resonance -- the library's original name -- and OTT lives at
+// 0xED, which the library does not model at all.
+//
+// Like L25 for the effects block, this is anchored to committed device files
+// rather than to a round-trip, because a round-trip passes just as happily when
+// both directions are wrong in the same way.
+// ---------------------------------------------------------------------------
+TEST_CASE("L27 OTT reads 0xED and RES reads dj_peak", "[io]") {
+    constexpr size_t kMixerOffset = 0xCE;
+
+    SECTION("values come from the right bytes") {
+        // PROBEB was saved with RES = 0x30 on screen and OTT = 0x00.
+        auto raw = readFile("tests/fixtures/device_golden/probe_res30.m8s");
+        REQUIRE(raw.size() > kMixerOffset + 32);
+        REQUIRE(raw[kMixerOffset + 26] == 0x30);   // dj_peak == RES
+        REQUIRE(raw[kMixerOffset + 31] == 0x00);   // OTT
+
+        auto r = loadSong("tests/fixtures/device_golden/probe_res30.m8s", "");
+        REQUIRE(r.ok);
+        REQUIRE(r.state.mixer.djf_res == 0x30);
+        REQUIRE(r.state.mixer.ott     == 0x00);
+    }
+
+    SECTION("and the other way round") {
+        // PROBEC was saved with OTT = 0xA0 on screen and RES back at 0x00.
+        auto raw = readFile("tests/fixtures/device_golden/probe_ottA0.m8s");
+        REQUIRE(raw.size() > kMixerOffset + 32);
+        REQUIRE(raw[kMixerOffset + 26] == 0x00);
+        REQUIRE(raw[kMixerOffset + 31] == 0xA0);
+
+        auto r = loadSong("tests/fixtures/device_golden/probe_ottA0.m8s", "");
+        REQUIRE(r.ok);
+        REQUIRE(r.state.mixer.djf_res == 0x00);
+        REQUIRE(r.state.mixer.ott     == 0xA0);
+    }
+
+    SECTION("both survive a save") {
+        auto r = loadSong("tests/fixtures/device_golden/probe_ottA0.m8s", "");
+        REQUIRE(r.ok);
+        auto edited = r.state;
+        edited.mixer.ott     = 0x5A;
+        edited.mixer.djf_res = 0x2B;
+
+        std::string err;
+        REQUIRE(saveSong("ott_rt.m8s", r, r.sequencer, edited, err));
+
+        auto rt = readFile("ott_rt.m8s");
+        REQUIRE(rt[kMixerOffset + 31] == 0x5A);   // OTT
+        REQUIRE(rt[kMixerOffset + 26] == 0x2B);   // RES
+
+        auto again = loadSong("ott_rt.m8s", "");
+        REQUIRE(again.ok);
+        REQUIRE(again.state.mixer.ott     == 0x5A);
+        REQUIRE(again.state.mixer.djf_res == 0x2B);
+
+        std::remove("ott_rt.m8s");
+    }
 }

@@ -117,9 +117,20 @@ the playhead) and are drawn as font glyphs — seven fill levels at `0x01`–`0x
 levels per cell, coloured by level with red at clip. Volume settings show through as a dim bar
 under the live level, so a stopped mixer still shows the mix.
 **Model corrections:** the file's `master_volume` is MIX (was loading into the top-of-screen
-volume, which is why MIX was always a hardcoded default); `dj_peak` is **OTT**, not a filter
-resonance; SPEAKER VOL is app-level and never persisted; INPUT/USB are gone from the UI and no
-longer written on save (which also stops discarding a stereo analog input's right channel).
+volume, which is why MIX was always a hardcoded default); SPEAKER VOL is app-level and never
+persisted; INPUT/USB are gone from the UI and no longer written on save (which also stops
+discarding a stereo analog input's right channel).
+**`dj_peak` is the DJ filter's RES, not OTT — corrected 2026-08-14** (`hw_findings.md` §UI-9,
+which supersedes §UI-4a). The 2026-08-12 reading renamed the field to `ott` on the strength of
+the manual plus a mixer photo; a device probe then moved RES and watched `dj_peak` move with
+it while OTT stayed put, and moved OTT and watched `0xED` follow. So the mixer's OTT control
+had been writing the resonance byte, and the OTT compressor was driven by a resonance value.
+`dj_peak` now maps to `mixer.djf_res` (stored, round-trips, no UI — RES is set in the scope
+view we do not build, and `applyDjFilter` still uses a fixed Q); OTT reads and writes `0xED`,
+which the library does not model, through the same patch route as the other unmodeled fields.
+Pinned by **L27** against two committed device probes. *The lesson worth keeping: a control's
+absence from one screen is not evidence about a byte — RES simply lived on a screen we had not
+read.*
 Tests: `[mixer]` (5 cases). *The LIM/DJF/OTT curves are reference approximations, not
 hardware-verified* — see `MIXER_SPEC.md` §8.
 **SOFT CLIP is permanently on (2026-08-13).** The `tanh` at the end of the master chain is the

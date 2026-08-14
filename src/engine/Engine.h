@@ -295,12 +295,23 @@ struct MixerState {
     // values in the file and override these.
     int lim_val = 0x00;
     int djf_freq = 0x80;   // 0x80 IS off for the DJ filter -- it is bipolar
-    // OTT on screen, from/to the file's `dj_peak`. Over The Top is a parallel
-    // multiband compressor, not a filter resonance -- the field was misnamed
-    // `djf_res` until the device screen was read (MIXER_SPEC.md §3, closes
-    // hw_findings.md §UI-4a). 0x00..0x80 mixes in; above 0x80 fades the dry mix,
-    // so 0x00 is off and 0x80 is already fully wet.
+    // OTT: a parallel multiband compressor, shown on the mixer's master column.
+    // 0x00..0x80 mixes it in; above 0x80 the dry mix fades, so 0x00 is off and
+    // 0x80 is already fully wet.
+    //
+    // It lives at file offset 0xED, which the file library does not model at
+    // all. It is NOT `dj_peak`. That mapping was wrong from 2026-08-12 until
+    // 2026-08-14 -- hw_findings.md §UI-4a concluded `dj_peak` was OTT and
+    // renamed the field; a device probe then moved RES and watched `dj_peak`
+    // move with it while OTT sat still (§UI-9). The library's original name was
+    // right all along.
     int ott = 0x00;
+    // DJ filter resonance, from/to the file's `dj_peak`. Stored and round-
+    // tripped only: it is set in the Limiter & Mix Scope view, which we do not
+    // build, and `applyDjFilter` still uses a fixed Q -- wiring this up would
+    // change the sound of every song that has a non-default value, which wants
+    // its own before/after.
+    int djf_res = 0x00;
     // DJ filter type (LP/HP, LP/BS, BS/HP). Round-trips, but has no UI: on
     // hardware it is chosen in the Scope view, which we are not building.
     int djf_typ = 0x00;

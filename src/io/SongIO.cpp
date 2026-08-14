@@ -153,8 +153,13 @@ static void saveBusEqs(const m8::Song& song, const engine::EngineState& state,
 static constexpr size_t kTempoOffset = 0x8F;
 static constexpr size_t kMixerOffset = 0xCE;
 
-// Field offsets inside the 32-byte mixer block. The gaps are deliberate:
-// +13..+24 are the analog/USB inputs and +28..+31 the unidentified tail.
+// Field offsets inside the 32-byte mixer block. +13..+24 are the analog/USB
+// inputs, deliberately skipped.
+//
+// The last four were an unidentified tail until a device probe named them
+// (hw_findings.md §UI-9): +28 limiter ATK, +29 limiter REL, +30 SOFT CLIP,
+// +31 OTT. Only OTT has an engine field, so the other three are left alone and
+// survive a save; the file library models none of them.
 static constexpr size_t kMixMasterVolume = 0;
 static constexpr size_t kMixMasterLimit  = 1;
 static constexpr size_t kMixTrackVolume  = 2;   // 8 bytes
@@ -162,9 +167,17 @@ static constexpr size_t kMixChorusVolume = 10;
 static constexpr size_t kMixDelayVolume  = 11;
 static constexpr size_t kMixReverbVolume = 12;
 static constexpr size_t kMixDjFilter     = 25;
-static constexpr size_t kMixDjPeak       = 26;  // OTT
+static constexpr size_t kMixDjPeak       = 26;  // DJ filter RESONANCE, not OTT
 static constexpr size_t kMixDjFilterType = 27;
+static constexpr size_t kMixOtt          = 31;  // OTT amount
 static constexpr size_t kMixerBlockSize  = 32;
+
+// OTT is read here rather than through the library, which stops at +27.
+static void loadMixerTail(const std::vector<uint8_t>& bytes,
+                          engine::MixerState& mixer) {
+    if (bytes.size() < kMixerOffset + kMixerBlockSize) return;
+    mixer.ott = bytes[kMixerOffset + kMixOtt];
+}
 
 // ---- The effects block, read and written at measured offsets ----------------
 //
@@ -249,7 +262,9 @@ static void saveEffectsBlock(const engine::EffectsState& fx,
     p[kFxRevWidth]  = static_cast<uint8_t>(fx.rev_width);
 }
 
-static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& bytes) {
+static void saveUnwrittenBlocks(const m8::Song& song,
+                                const engine::EngineState& state,
+                                std::vector<uint8_t>& bytes) {
     if (!song.version.at_least(4, 0)) return;
     const m8::Offsets& o = m8::V4_OFFSETS;
 
@@ -283,6 +298,9 @@ static void saveUnwrittenBlocks(const m8::Song& song, std::vector<uint8_t>& byte
         p[kMixDjFilter]     = m.dj_filter;
         p[kMixDjPeak]       = m.dj_peak;
         p[kMixDjFilterType] = m.dj_filter_type;
+        // OTT: ours to write, and the library has no field for it. ATK, REL and
+        // SOFT CLIP sit beside it at +28..+30 and are deliberately not touched.
+        p[kMixOtt]          = static_cast<uint8_t>(state.mixer.ott);
     }
 
     // --- Grooves (32 x 16 raw bytes) -----------------------------------------
@@ -571,7 +589,9 @@ static void convertSongToEngine(const m8::Song& song,
     state.mixer.rev_vol = song.mixer_settings.reverb_volume;
     state.mixer.lim_val = song.mixer_settings.master_limit;
     state.mixer.djf_freq = song.mixer_settings.dj_filter;
-    state.mixer.ott = song.mixer_settings.dj_peak;   // OTT, not filter resonance
+    // dj_peak is the DJ filter's RESONANCE, not OTT (§UI-9). OTT lives at 0xED,
+    // which the library does not model; loadMixerTail() picks it up below.
+    state.mixer.djf_res = song.mixer_settings.dj_peak;
     state.mixer.djf_typ = song.mixer_settings.dj_filter_type;
 
     // Analog input (mono or stereo — engine takes left/mono channel)
@@ -837,7 +857,7 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     song.mixer_settings.reverb_volume = state.mixer.rev_vol;
     song.mixer_settings.master_limit = state.mixer.lim_val;
     song.mixer_settings.dj_filter = state.mixer.djf_freq;
-    song.mixer_settings.dj_peak = state.mixer.ott;   // OTT, not filter resonance
+    song.mixer_settings.dj_peak = state.mixer.djf_res;   // RES, not OTT (§UI-9)
     song.mixer_settings.dj_filter_type = state.mixer.djf_typ;
 
     // analog_input / usb_input are deliberately NOT written. soft-mate has no
@@ -1134,6 +1154,7 @@ LoadResult loadSong(const std::string& path, const std::string& sampleRoot) {
         // come straight from the file bytes (EQ_SPEC.md §4c).
         loadBusEqs(song, data, res.state);
         loadEffectsBlock(data, res.state.effects);   // library offsets are wrong
+        loadMixerTail(data, res.state.mixer);        // OTT; library stops at +27
 
         // Collect sample paths
         for (size_t i = 0; i < song.instruments.size(); ++i) {
@@ -1201,7 +1222,7 @@ bool saveSong(const std::string& path, const LoadResult& origin,
         convertEngineToSong(seq, state, song);
 
         auto out = song.write_over(origin.original);
-        saveUnwrittenBlocks(song, out);      // modeled, but Song::write never emits them
+        saveUnwrittenBlocks(song, state, out); // modeled, but Song::write never emits them
         saveEffectsBlock(state.effects, out); // measured offsets, not the library's
         saveBusEqs(song, state, out);        // not modeled by the library; patched in
         if (!writeFile(path, out)) {
@@ -1268,6 +1289,11 @@ bool saveNewSong(const std::string& path, const std::string& templatePath,
         // touch (MOD TYPE, SHIMMER, the unknown runs) keeps the template's
         // bytes, which is the same preservation rule the rest of the file gets.
         saveEffectsBlock(state.effects, out);
+        // OTT likewise. MixerSettings::write zeroes +28..+31 on its way past,
+        // which is a fine default for ATK/REL/SOFT CLIP -- we do not model
+        // those -- but would silently discard an authored OTT value.
+        if (out.size() > kMixerOffset + kMixOtt)
+            out[kMixerOffset + kMixOtt] = static_cast<uint8_t>(state.mixer.ott);
         if (!writeFile(path, out)) { error = "cannot write file: " + path; return false; }
         return true;
     } catch (const std::exception& e) {
