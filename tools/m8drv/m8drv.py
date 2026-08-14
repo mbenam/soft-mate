@@ -680,10 +680,19 @@ class M8Driver:
         # grid screen `cursor_moved` is legitimately false for LEFT/RIGHT, and
         # judging on it alone reported "NOTHING CHANGED" for a press that had
         # visibly moved the cursor three columns.
-        moved_grid = any(s["grid_moved"] for s in out["steps"])
+        #
+        # But grid coordinates only exist on grid screens. On a form screen like
+        # MIXER they are -1 throughout, and treating that as "the grid did not
+        # follow" reported a stale-read bug that was not there.
+        grid_screen = any(s["grid"][0] >= 0 for s in out["steps"])
+        out["grid_screen"] = grid_screen
+        moved_grid = grid_screen and any(s["grid_moved"] for s in out["steps"])
         moved_cursor = any(s["cursor_moved"] for s in out["steps"])
         moved_rows = any(s["rows_changed"] for s in out["steps"])
-        if moved_cursor and moved_grid:
+        if moved_cursor and not grid_screen:
+            out["verdict"] = ("press lands and the cursor tracks. Form screen -- no "
+                              "grid coordinates apply, so grid is -1 throughout.")
+        elif moved_cursor and moved_grid:
             out["verdict"] = "press lands; both cursor and grid coordinates track"
         elif moved_grid:
             out["verdict"] = ("press lands and grid coordinates track. `cursor` did "

@@ -575,6 +575,15 @@ static bool findCursorCell(const ScreenGrid& grid, int minRowY, int& y, int& x) 
 std::string cursorValueText(const ScreenGrid& grid) {
     std::string txt = grid.cursorMainText();
     while (!txt.empty() && txt.back() == '\n') txt.pop_back();
+    // Leading trim BEFORE the label match, not after. The accent run can start on
+    // a blank cell -- MIXER's OUTPUT VOL row came back as " OUTPUT VOL  F0" with
+    // an accent space at column 0 -- and then no label prefix-matches, so the
+    // whole row was returned as the value. Whether that leading blank is present
+    // varies between reads, which made it look intermittent.
+    {
+        const size_t lead = txt.find_first_not_of(" \t");
+        txt = (lead == std::string::npos) ? "" : txt.substr(lead);
+    }
     if (txt.empty()) return "";
 
     const Screen s = identifyScreen(grid);

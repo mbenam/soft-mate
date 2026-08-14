@@ -184,6 +184,25 @@ TEST_CASE("cursorValueText trims trailing padding", "[hwdecode]") {
     REQUIRE(m8::dev::cursorValueText(grid) == "40");
 }
 
+// Observed on fw 6.5.2 MIXER: the accent run can START on a blank cell, so the row
+// arrived as " OUTPUT VOL  F0". Trimming after the label match instead of before
+// meant no label prefix-matched and the whole row was returned as the value.
+// Whether the leading blank appears varies between reads, so it looked flaky.
+TEST_CASE("cursorValueText survives a leading accent blank", "[hwdecode]") {
+    ScreenGrid grid;
+    const uint8_t A0 = 0, A1 = 252, A2 = 248;
+    const uint8_t W = 255;
+
+    const char* title = "MIXER";
+    for (int i = 0; title[i]; ++i)
+        grid.handleFrame(makeCharFrame(title[i], i * 8, 30, W, W, W, 0, 0, 0));
+    const char* row = " OUTPUT VOL  F0";     // note the leading space, accent-coloured
+    for (int i = 0; row[i]; ++i)
+        grid.handleFrame(makeCharFrame(row[i], i * 8, 50, A0, A1, A2, 0, 0, 0));
+
+    REQUIRE(m8::dev::cursorValueText(grid) == "F0");
+}
+
 TEST_CASE("gridColumnEdges reads SONG's eight track columns", "[hwdecode]") {
     ScreenGrid grid;
     // SONG header at y=50: single digits 1..8, 24px apart starting at x=32.
