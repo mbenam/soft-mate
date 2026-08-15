@@ -496,23 +496,24 @@ TEST_CASE("SC2 OFFSET retunes an enabled interval", "[audio]") {
     REQUIRE(std::fabs(1200.0f * std::log2(half / 269.292f)) < 25.0f);  // +50 cents
 }
 
-TEST_CASE("SC3 a disabled interval snaps down to the nearest enabled one", "[audio]") {
-    // Only C and E enabled. C# and D# are out of scale and must not sound as
-    // written. SNAP DIRECTION IS A DOCUMENTED GUESS (see quantizeToScale) --
-    // snap-down gives C, C, E for C#, D#, F; nearest would give C, E, E.
+TEST_CASE("SC3 a disabled interval snaps up to the next enabled one", "[audio]") {
+    // Only C and E enabled, and these are the four notes the hardware probe
+    // played (hw_findings.md §UI-13). D#4 rises one semitone to E-4; F-4 rises
+    // SEVEN to the next C rather than falling one to the E right below it,
+    // which is the case that rules out both snap-down and nearest.
     const uint16_t cAndE = (1u << 0) | (1u << 4);
     auto sc = [cAndE](EngineState& st) { installScale(st, cAndE); };
 
     const float c4  = renderSamplerNote(60, 261.626f, 0x80, sc);            // in scale
-    const float cs4 = renderSamplerNote(61, 261.626f, 0x80, sc, 261.626f);  // -> C-4
-    const float e4  = renderSamplerNote(64, 261.626f, 0x80, sc, 329.628f);  // in scale
-    const float f4  = renderSamplerNote(65, 261.626f, 0x80, sc, 329.628f);  // -> E-4
-    CAPTURE(c4, cs4, e4, f4);
+    const float ds4 = renderSamplerNote(63, 261.626f, 0x80, sc, 329.628f);  // -> E-4
+    const float f4  = renderSamplerNote(65, 261.626f, 0x80, sc, 523.251f);  // -> C-5
+    const float as4 = renderSamplerNote(70, 261.626f, 0x80, sc, 523.251f);  // -> C-5
+    CAPTURE(c4, ds4, f4, as4);
 
     REQUIRE(std::fabs(1200.0f * std::log2(c4  / 261.626f)) < 25.0f);
-    REQUIRE(std::fabs(1200.0f * std::log2(cs4 / 261.626f)) < 25.0f);
-    REQUIRE(std::fabs(1200.0f * std::log2(e4  / 329.628f)) < 25.0f);
-    REQUIRE(std::fabs(1200.0f * std::log2(f4  / 329.628f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(ds4 / 329.628f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(f4  / 523.251f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(as4 / 523.251f)) < 25.0f);
 }
 
 TEST_CASE("SC4 TRANSP OFF exempts an instrument from the scale", "[audio]") {
@@ -521,8 +522,9 @@ TEST_CASE("SC4 TRANSP OFF exempts an instrument from the scale", "[audio]") {
     // sampler with TRANSP OFF must keep playing the written note.
     const uint16_t cOnly = (1u << 0);
 
+    // C only, so C#4 snaps UP eleven semitones to the next C.
     const float gated = renderSamplerNote(61, 261.626f, 0x80,
-        [cOnly](EngineState& st) { installScale(st, cOnly); }, 261.626f);
+        [cOnly](EngineState& st) { installScale(st, cOnly); }, 523.251f);
     const float exempt = renderSamplerNote(61, 261.626f, 0x80,
         [cOnly](EngineState& st) {
             installScale(st, cOnly);
@@ -530,7 +532,7 @@ TEST_CASE("SC4 TRANSP OFF exempts an instrument from the scale", "[audio]") {
         }, 277.183f);
     CAPTURE(gated, exempt);
 
-    REQUIRE(std::fabs(1200.0f * std::log2(gated  / 261.626f)) < 25.0f);  // snapped
+    REQUIRE(std::fabs(1200.0f * std::log2(gated  / 523.251f)) < 25.0f);  // snapped to C-5
     REQUIRE(std::fabs(1200.0f * std::log2(exempt / 277.183f)) < 25.0f);  // as written
 }
 

@@ -1211,3 +1211,80 @@ output is mono whichever it is fed.
 
 Stereo **samples** are the case that justifies the stereo voice path, not the synth
 WIDTH parameters. A full stereo image is lost today where hardware keeps it.
+
+---
+
+## UI-13 — Scales snap UP, constrain note entry, and store offsets as signed hundredths
+
+**Date:** 2026-08-14. Firmware 6.5.2, COM3. Probe authored by hand on the device,
+loaded by `m8drv`, recorded by `m8_capture`, measured offline.
+
+### Method
+
+A project saved on the device (`tests/fixtures/device_golden/scaleprobe.m8s`)
+with scale 00 restricted to **C and E only**, scale 01 restricted to C with its
+OFFSET set to **-00.50**, and phrase 00 holding four notes on track 1:
+
+```
+0  C-4      in scale
+1  D#4      out of scale
+2  F-4      out of scale
+3  A#4      out of scale
+```
+
+Instrument 00 was `NONE`, so it was cycled to MACROSYN/CSAW in RAM (TRANSP ON,
+which is what lets the scale act) and the tempo stepped down to 29 BPM for
+~500 ms per row. Nothing was saved back, so the card still holds the original.
+`m8_capture --seconds 4`, peak 0.221, `clipped: 0`.
+
+### Results — the snap direction
+
+Fundamental per row, by harmonic spacing and by autocorrelation (both agree):
+
+| row | written | sounded | MIDI | interval | moved |
+|---|---|---|---|---|---|
+| 0 | C-4 | C2 65.41 Hz | 36 | 0 | 0 |
+| 1 | D#4 | E2 82.41 Hz | 40 | 3 → 4 | **+1** |
+| 2 | F-4 | C3 130.81 Hz | 48 | 5 → 12 | **+7** |
+| 3 | A#4 | C3 130.81 Hz | 48 | 10 → 12 | **+2** |
+
+There is a constant -24 offset between written and sounded MIDI — MacroSynth's
+own octave reference, not a scale effect — and with it removed all four notes
+fit one rule exactly: **a disabled interval snaps UP to the next enabled one.**
+
+**Row 2 is the case that settles it.** F-4 rose *seven* semitones to the next C
+rather than falling *one* to the E directly below it. Snap-down fails rows 1, 2
+and 3; "nearest" fails row 2 for the same reason. Snap-up fits all four.
+
+### Results — entry is constrained, not snapped
+
+With scale 00 already restricted to C and E, **D# cannot be entered at all** —
+the note field steps over it. And restricting a scale *after* notes are written
+does **not** rewrite them: the phrase above still reads `D#4` and `A#4` on
+screen after the scale was narrowed. So a scale never rewrites the grid, and the
+snap rule above is reached only through playback — i.e. transpose, PIT, or a
+scale narrowed after the fact.
+
+### Results — the OFFSET encoding
+
+Scale 01's first offset reads `CE FF` in the file: `0xFFCE` little-endian, -50.
+So an OFFSET is a **signed 16-bit LE value in hundredths of a semitone**, the
+same scheme §7 of AGENTS.md records for EQ gain. We had been reading the pair as
+(signed whole semitone, unsigned hundredths), as the vendored library does —
+which agrees on every all-zero offset, i.e. every offset in every song we held,
+and cannot represent anything in `(-1.00, 0.00)` at all.
+
+The same file also confirms the **46-byte record stride** from the device side:
+records 2 and 3 still decode as untouched factory `MINOR` (`0x05AD`) and
+`DORIAN` (`0x06AD`) with names on +26 after a real hardware save.
+
+### Driver note
+
+`m8drv` cannot edit the SCALE view — `kScaleFields` maps only TUNE, NAME, LOAD
+and SAVE, so the twelve interval rows have no field model and the edit gestures
+land as no-ops on an EN cell while `inspect` shows the accent moving. That is
+the same unmodelled-column problem behind driver bugs #22-#24. The scale had to
+be set by hand; everything after that (load, retune, play, capture) was
+unattended. `SET TEMPO` also thrashes over a large gap and had to be replaced by
+coarse `EDIT+DOWN` presses — and killing it mid-run orphaned `m8_nav`, which
+holds COM3 until the process is killed.

@@ -280,14 +280,21 @@ inline constexpr float kScaleOffsetMax =  24.0f;
 // (device capture, fw 6.5.2). It is also what keeps existing songs identical --
 // every file we can load carries an all-zero interval mask.
 //
-// UNVERIFIED, and the only guess in here: what a DISABLED interval does. We
-// snap DOWN to the nearest enabled interval at or below it. The manual says
-// scales quantise but never in which direction, and nothing in the repo pins
-// it. The probe that settles it: enable only C and E, keyjazz C#, D and D#, and
-// read the captured pitch -- snap-down gives C, C, E; nearest gives C, E, E.
-// It matters less than it looks, because note ENTRY is quantised on the device
-// too, so a song authored on hardware rarely holds an out-of-scale note; this
-// governs what transpose and PIT do to one.
+// A disabled interval snaps UP to the next enabled one. MEASURED 2026-08-14 on
+// fw 6.5.2 (hw_findings.md §UI-13), not guessed -- and it is the opposite of
+// what this function did for the few hours before the capture came back.
+//
+// With only C and E enabled, a phrase holding C-4, D#4, F-4, A#4 played back as
+// C, E, C, C -- one constant octave offset, four notes, no exceptions. F-4 is
+// the note that settles it: it rose SEVEN semitones to the next C rather than
+// falling one to the E just below. Snapping down fails on three of the four,
+// and "nearest" fails on F-4 for the same reason.
+//
+// Note that this only ever governs playback of an out-of-scale note. The device
+// CONSTRAINS note entry -- with C and E enabled, D# cannot be typed at all --
+// and restricting a scale afterwards does not rewrite notes already stored. So
+// a scale never rewrites the grid, and this is reached through transpose, PIT
+// and a scale narrowed after the fact.
 inline float quantizeToScale(int midi, const Scale& scale) {
     bool any = false;
     for (int i = 0; i < 12; ++i) if (scale.notes[i].enable) { any = true; break; }
@@ -298,10 +305,10 @@ inline float quantizeToScale(int midi, const Scale& scale) {
 
     int steps = 0;
     while (!scale.notes[interval].enable && steps < 12) {
-        interval = (interval + 11) % 12;   // one semitone down, wrapping
+        interval = (interval + 1) % 12;    // one semitone up, wrapping
         ++steps;
     }
-    return static_cast<float>(midi - steps) + scale.notes[interval].offset;
+    return static_cast<float>(midi + steps) + scale.notes[interval].offset;
 }
 
 struct MixerState {

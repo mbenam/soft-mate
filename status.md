@@ -856,10 +856,15 @@ Future captures use the C++ `m8_capture`.
   And restricting the scale afterwards does **not** rewrite notes already stored: a phrase
   holding `D#4` still reads `D#4`. So the snap rule governs playback of an out-of-scale note,
   which is reached through transpose and PIT, not through what the grid shows.
-  **Also open:** the snap direction for a disabled interval (we snap DOWN, a documented guess —
-  `quantizeToScale` carries the probe that settles it); `SCA`/`SCG`, so every track reads scale
-  00, which the manual says is the default for all 8 anyway; and ARP / PIT / the FMSynth PIT
-  modifier, which the manual lists as quantised and which are not.
+  **A disabled interval snaps UP — MEASURED, and it is the opposite of what we first shipped**
+  (`hw_findings.md` §UI-13). With only C and E enabled, a phrase holding C-4 / D#4 / F-4 / A#4
+  played back as C / E / C / C, one constant octave offset, four notes, no exceptions. **F-4 is
+  the case that settles it:** it rose *seven* semitones to the next C rather than falling *one*
+  to the E right below. Snap-down fails three of the four; "nearest" fails F-4 for the same
+  reason. `SC3` now pins exactly those four notes.
+  **Also open:** `SCA`/`SCG`, so every track reads scale 00 — which the manual says is the
+  default for all 8 anyway; and ARP / PIT / the FMSynth PIT modifier, which the manual lists as
+  quantised and which are not.
   **`m8drv` cannot drive the SCALE screen** — `kScaleFields` maps only TUNE, NAME, LOAD and
   SAVE, so the 12 note rows have no field model; EDIT and EDIT+RIGHT both land as no-ops on an
   EN cell while `inspect` shows the accent moving, which is the same unmodelled-column problem
