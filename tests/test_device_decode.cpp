@@ -1170,3 +1170,79 @@ TEST_CASE("captureFromGrid palette ids resolve to correct RGB after sort", "[hwd
         }
     }
 }
+
+// ---- Transport visibility (2026-08-15) -------------------------------------
+//
+// MEASURED on fw 6.5.2: the M8 marks the playing step with a '>' (0x3E) in the
+// row-label gutter of a grid screen and removes it on stop. Nothing else on
+// screen changes -- no colour moves at all -- which is why `inspect` reported
+// "the press is not landing" for a PLAY that had worked. Without this signal
+// SemanticState had no transport field, so any playback-dependent probe was
+// unverifiable, and one measurement was abandoned because of it.
+
+TEST_CASE("playheadVisible sees the gutter marker", "[hwdecode]") {
+    ScreenGrid grid;
+    CHECK_FALSE(playheadVisible(grid));                    // nothing drawn yet
+
+    // Row label "5" then the playhead '>' beside it, as the device draws it.
+    grid.handleFrame(makeCharFrame('5', 8,  110, 255, 255, 255, 0, 0, 0));
+    CHECK_FALSE(playheadVisible(grid));
+    grid.handleFrame(makeCharFrame('>', 16, 110, 255, 255, 255, 0, 0, 0));
+    CHECK(playheadVisible(grid));
+}
+
+TEST_CASE("playheadVisible ignores the cursor marker and the chrome", "[hwdecode]") {
+    // '<' at x == 0 is the CURSOR indicator, not the playhead.
+    ScreenGrid cursorOnly;
+    cursorOnly.handleFrame(makeCharFrame('<', 0, 60, 255, 255, 255, 0, 0, 0));
+    CHECK_FALSE(playheadVisible(cursorOnly));
+
+    // The chrome's tempo readout "T>120" also contains a '>', but it lives past
+    // MAIN_X_MAX in the right-hand column. Counting it would report "playing"
+    // on every screen forever.
+    ScreenGrid chrome;
+    chrome.handleFrame(makeCharFrame('T', ScreenGrid::MAIN_X_MAX + 16, 20, 100, 100, 100, 0, 0, 0));
+    chrome.handleFrame(makeCharFrame('>', ScreenGrid::MAIN_X_MAX + 24, 20, 100, 100, 100, 0, 0, 0));
+    CHECK_FALSE(playheadVisible(chrome));
+}
+
+// ---- Compound grid columns (2026-08-15) ------------------------------------
+//
+// MEASURED by walking a row one press at a time and watching the reported
+// column: on PHRASE, leaving groups 3/4/5 took TWO presses each while 0/1/2 took
+// one; on TABLE the same held for groups 2/3/4. Those are the FX cells, drawn as
+// `SCG10` -- a 3-glyph command and a 2-glyph value, each its own cursor stop
+// under a single header label.
+
+TEST_CASE("gridSubStops splits FX cells only", "[hwdecode]") {
+    for (int g = 0; g <= 2; ++g) CHECK(gridSubStops(Screen::PHRASE, g) == 1);
+    for (int g = 3; g <= 5; ++g) CHECK(gridSubStops(Screen::PHRASE, g) == 2);
+
+    for (int g = 0; g <= 1; ++g) CHECK(gridSubStops(Screen::TABLE, g) == 1);
+    for (int g = 2; g <= 4; ++g) CHECK(gridSubStops(Screen::TABLE, g) == 2);
+
+    // SONG's columns are single values; its 8 header groups are its 8 stops.
+    for (int g = 0; g <= 7; ++g) CHECK(gridSubStops(Screen::SONG, g) == 1);
+}
+
+TEST_CASE("gridDims counts cursor stops, not header groups", "[hwdecode]") {
+    // PHRASE: N V I + three FX cells of two stops each.
+    CHECK(gridDims(Screen::PHRASE).cols == 9);
+    // TABLE said 5 until 2026-08-15 -- it counted header groups, so the FX
+    // values were uncounted and unreachable.
+    CHECK(gridDims(Screen::TABLE).cols == 8);
+    CHECK(gridDims(Screen::SONG).cols == 8);
+}
+
+TEST_CASE("isGridScreen agrees with gridDims", "[hwdecode]") {
+    for (Screen s : {Screen::SONG, Screen::CHAIN, Screen::PHRASE,
+                     Screen::TABLE, Screen::GROOVE, Screen::INST_POOL}) {
+        CHECK(isGridScreen(s));
+        CHECK(gridDims(s).cols > 0);
+    }
+    for (Screen s : {Screen::PROJECT, Screen::INSTRUMENT, Screen::SCALE,
+                     Screen::MIXER, Screen::MODS}) {
+        CHECK_FALSE(isGridScreen(s));
+        CHECK(gridDims(s).cols == 0);
+    }
+}

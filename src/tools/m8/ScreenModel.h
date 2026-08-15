@@ -687,16 +687,76 @@ struct GridDims {
     int rows, cols;
 };
 
+// Column counts here are CURSOR STOPS, not header groups -- an FX cell is two
+// stops (the command, then its value), and the header spans both. TABLE said 5
+// until 2026-08-15 and was wrong for exactly that reason; see gridSubStops.
 inline GridDims gridDims(Screen s) {
     switch (s) {
         case Screen::SONG:      return {16, 8};
         case Screen::CHAIN:     return {16, 2};
-        case Screen::PHRASE:    return {16, 9};
-        case Screen::TABLE:     return {16, 5};
+        case Screen::PHRASE:    return {16, 9};   // N V I + 3 FX x 2
+        case Screen::TABLE:     return {16, 8};   // TSP VOL + 3 FX x 2
         case Screen::GROOVE:    return {16, 1};
         case Screen::INST_POOL: return {16, 6};
         default:                return {0, 0};
     }
+}
+
+inline bool isGridScreen(Screen s) {
+    switch (s) {
+        case Screen::SONG: case Screen::CHAIN: case Screen::PHRASE:
+        case Screen::TABLE: case Screen::GROOVE: case Screen::INST_POOL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// How many cursor stops live inside header group `group` (0-based).
+//
+// MEASURED 2026-08-15 on fw 6.5.2 by walking a row one press at a time and
+// watching the reported column. On PHRASE, leaving groups 3, 4 and 5 took TWO
+// presses each while 0, 1 and 2 took one; on TABLE the same held for groups 2,
+// 3 and 4. Those are exactly the FX cells, which draw as `SCG10` -- a 3-glyph
+// command followed by a 2-glyph value, each its own cursor stop under one
+// header label.
+//
+// This is why an FX VALUE was unreachable: gridColumnEdges derives columns from
+// the header row, so both stops collapsed onto one column. It is also why
+// moveCursorToGrid timed out inside an FX cell -- a press moved the cursor but
+// not the reported column, so its closed loop saw "no progress" and gave up.
+//
+// SONG, CHAIN, GROOVE and INST_POOL are assumed single-stop. SONG's 8 matches
+// its measured behaviour; the other three are unmeasured, and one press per
+// column is the conservative reading (it can only under-count, which fails
+// loudly in moveCursorToGrid rather than silently addressing the wrong cell).
+inline int gridSubStops(Screen s, int group) {
+    if (s == Screen::PHRASE) return group >= 3 ? 2 : 1;
+    if (s == Screen::TABLE)  return group >= 2 ? 2 : 1;
+    return 1;
+}
+
+// Glyph offset of a compound column's second stop from the group's left edge:
+// the FX command is three glyphs wide and the value follows it.
+inline constexpr int kGridSubStopGlyphs = 3;
+inline constexpr int kGridGlyphWidth    = 8;
+
+// Is the transport running? The M8 marks the playing step with a '>' (0x3E) in
+// the row-label gutter of a grid screen and removes it on stop -- MEASURED
+// 2026-08-15. Nothing else changes: no colour moves at all, which is why
+// `inspect` calls a PLAY press that worked "not landing".
+//
+// The gutter bound matters. '<' (0x3C) at x == 0 is the CURSOR marker and must
+// not be confused with this, and the chrome's tempo readout "T>120" also
+// contains a '>' -- that one sits past MAIN_X_MAX and is excluded with the rest
+// of the right-hand column.
+inline bool playheadVisible(const ScreenGrid& grid) {
+    for (auto& [pos, c] : grid.cells) {
+        if (c.ch == 0x3E && pos.second < kGridGlyphWidth * 4
+            && pos.second < ScreenGrid::MAIN_X_MAX)
+            return true;
+    }
+    return false;
 }
 
 } // namespace dev

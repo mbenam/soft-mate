@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 316 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- **Tests**: Catch2 v3 — 321 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -95,9 +95,11 @@ Targets:
   press) and `inspect` (accent cells as foreground **and** background, plus rect fills — the only
   view of colour in the toolchain; `SemanticState` carries no colour at all).
 
-  `MIXER`'s compound widget and Instrument `TYPE` are refused up front rather than thrashed at
-  (`FENCED_FIELDS`), for bugs #20/#21, which remain **OPEN**. See Known issues.
-- `m8_tests` — 316 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+  `MIXER`'s compound widget is refused up front rather than thrashed at (`FENCED_FIELDS`), for
+  bug #20, which remains **OPEN**. See Known issues. *Instrument `TYPE` is NOT fenced* — this
+  line claimed it was until 2026-08-15, but `FENCED_FIELDS` holds only the four MIXER entries
+  and cycling TYPE from `m8drv` works (verified on fw 6.5.2, NONE → WAVSYNTH → MACROSYN).
+- `m8_tests` — 321 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -495,7 +497,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 316 cases
+### Tests — 321 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -515,9 +517,9 @@ runner's reported total will match this only if every case is compiled in.
 
 | | count | why |
 |---|---|---|
-| `TEST_CASE` macros in `tests/*.cpp` | 316 | the static count above |
-| runnable by default | 315 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| last recorded run | 315 | 2026-08-14, **315 cases / 897,612 assertions, all passing** — nothing skipped and nothing `[!shouldfail]`, after SCA/SCG landed and the `[io]` heap corruption was fixed |
+| `TEST_CASE` macros in `tests/*.cpp` | 321 | the static count above |
+| runnable by default | 320 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| last recorded run | 320 | 2026-08-15, **320 cases / 897,661 assertions, all passing** — nothing skipped and nothing `[!shouldfail]`, after the driver's transport-state and compound-column fixes |
 
 So: the suite is green at 312/312, and `[fuzz]` only runs when you ask for it. The two numbers
 agree exactly, which is the check that every case is compiled in.
@@ -888,10 +890,29 @@ Future captures use the C++ `m8_capture`.
   with `STATUS_HEAP_CORRUPTION` and **no output at all** the moment `EngineState`'s layout moved.
   All five now use `LoadedSongData`, which is what the app itself pushes.
   **`m8drv` cannot drive the SCALE screen** — `kScaleFields` maps only TUNE, NAME, LOAD and
-  SAVE, so the 12 note rows have no field model; EDIT and EDIT+RIGHT both land as no-ops on an
-  EN cell while `inspect` shows the accent moving, which is the same unmodelled-column problem
-  behind driver bugs #22–#24. Bake the scale into a probe `.m8s` instead, the way §UI-11 baked
-  HyperSynth WIDTH in.
+  SAVE, so the 12 note rows have no field model. Adding them is blocked on a deeper defect found
+  2026-08-15: `cursorField()` reports the **first** accent cell on a row, and a SCALE note row
+  accents the note label too, so it always reads column 1 whether the cursor sits on EN or
+  OFFSET. Mapping both would make `cursor EN04` land on the wrong cell — worse than no map at
+  all. The fix is applying the rightmost-accent rule (bug #23(c)) to `cursorField()`, which
+  touches every form screen. Until then, bake the scale into a probe `.m8s`, the way §UI-11
+  baked HyperSynth WIDTH in.
+- **Device driver: transport state and compound grid columns — FIXED 2026-08-15**
+  (`M8_DRIVER_BUGS.md` #27/#28). `SemanticState` had no notion of whether the device was
+  playing, so every playback-dependent probe was unverifiable — and `inspect`'s "the press is
+  not landing" verdict actively misled, because the M8 marks the playing step with a `>` in the
+  row-label gutter and **changes no colour at all**. `state` now reports `is_playing` plus
+  `playhead_observable` (grid screens only draw a playhead, so a false on PROJECT means "cannot
+  tell", not "stopped"). Separately, an FX cell is one header label over **two** cursor stops —
+  command and value — so PHRASE has 9 columns and TABLE 8, not 6 and 5. The value half had been
+  unaddressable, and `moveCursorToGrid` stalled *inside* an FX cell because a press moved the
+  cursor without changing the reported column. Both measured on fw 6.5.2 and verified after the
+  fix: `MOVEGRID step=0 col=4` now succeeds and EDIT+UP there moved `SCG10` → `SCG20`.
+  Also fixed: a killed `m8drv` used to orphan `m8_nav`, which holds COM3 exclusively and locked
+  out every later run until killed by hand — signal/atexit handlers now take the child down, and
+  a refused port triggers a stale-daemon reap.
+  *Still open:* `set` on decimal fields thrashes (bug #26 already flags that decimal targets need
+  per-field base handling and were deliberately not attempted).
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked

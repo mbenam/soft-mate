@@ -13,6 +13,19 @@ struct SemanticState {
     bool        isModal       = false;
     bool        isLiveMode    = false;
     bool        settled       = false;
+    // Is the transport running? MEASURED 2026-08-15 on fw 6.5.2: the M8 draws a
+    // '>' (0x3E) in the row-label gutter of a grid screen marking the step it is
+    // playing, and removes it on stop. Nothing else on screen changes -- no
+    // colour moves at all, which is why `inspect` reports "the press is not
+    // landing" for a PLAY that worked perfectly. Its absence used to make any
+    // playback-dependent probe unverifiable.
+    //
+    // GRID SCREENS ONLY. SONG, CHAIN, PHRASE and TABLE draw the playhead; form
+    // screens (PROJECT, INSTRUMENT, SCALE, MIXER...) do not, so this reads false
+    // there whatever the transport is doing. `playheadObservable` says which
+    // case you are in, so a caller can tell "stopped" from "cannot tell".
+    bool        isPlaying         = false;
+    bool        playheadObservable = false;
     std::string cursorField;
     std::string cursorValue;
     int         cursorRow     = -1;

@@ -60,14 +60,17 @@ As a library:
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
+import weakref
 from typing import Any, Dict, List, Optional
 
 # --- device constants -------------------------------------------------------
@@ -82,6 +85,69 @@ DEFAULT_EXE = os.path.join("build", "Release", "m8_nav.exe")
 # editValue refuses every SET with "gestures not pinned".
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GESTURE_FILE = "hw_buttons.json"
+
+# ---- Daemon lifetime --------------------------------------------------------
+#
+# COM3 is exclusive, so a surviving m8_nav locks every later run out of the
+# device. Python's default SIGTERM handling exits without unwinding, so a
+# `timeout` around a batch used to kill the wrapper and orphan the child; the
+# next command then failed with "could not open device port COM3" and stayed
+# broken until someone killed it by hand. Every Driver registers here and the
+# handlers below take the child down with us.
+_LIVE_DRIVERS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def _kill_live_drivers() -> None:
+    for d in list(_LIVE_DRIVERS):
+        try:
+            d._kill()
+        except Exception:
+            pass
+
+
+def _signal_exit(signum, _frame):
+    _kill_live_drivers()
+    # Re-raise as a normal exit so `finally` blocks elsewhere still run.
+    raise SystemExit(128 + signum)
+
+
+def _reap_stale_daemons() -> bool:
+    """Kill m8_nav processes we did not start. Returns True if any were killed.
+
+    Only ever called after the port has already been refused, so there is
+    nothing to race with -- the daemon holding it is by definition not ours.
+    """
+    ours = {d.proc.pid for d in _LIVE_DRIVERS if getattr(d, "proc", None)}
+    killed = False
+    if os.name == "nt":
+        try:
+            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq m8_nav.exe", "/NH"],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            return False
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].lower().startswith("m8_nav"):
+                try:
+                    pid = int(parts[1])
+                except ValueError:
+                    continue
+                if pid in ours:
+                    continue
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                               capture_output=True, timeout=10)
+                killed = True
+    if killed:
+        time.sleep(0.8)   # let the OS release the handle before we reopen
+    return killed
+
+
+atexit.register(_kill_live_drivers)
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, _signal_exit)
+    except (ValueError, OSError):
+        pass   # not on the main thread, or unsupported on this platform
 
 # Key masks, pinned on firmware 6.5.2 and recorded in hw_buttons.json.
 # `Key::` in src/tools/m8/M8Device.h is the authority.
@@ -170,6 +236,7 @@ class M8Driver:
         # (bugs #22/#23/#24), so it needs re-testing rather than trusting.
         self.unfence = unfence
         self.proc: Optional[subprocess.Popen] = None
+        _LIVE_DRIVERS.add(self)
         self._q: "queue.Queue[Dict[str, Any]]" = queue.Queue()
         self._noise: List[str] = []
         self._reader: Optional[threading.Thread] = None
@@ -231,6 +298,14 @@ class M8Driver:
             if self._startup_error:
                 err = self._startup_error
                 self._kill()
+                # A stale daemon from a killed run still holds the port. This is
+                # not hypothetical: a `timeout` on a batch kills THIS process and
+                # leaves the m8_nav child running, after which every later
+                # command fails here until someone kills it by hand. Clear it and
+                # say so, rather than reporting a device fault that isn't one.
+                if "could not open device port" in err and _reap_stale_daemons():
+                    self._log("cleared a stale m8_nav that was holding the port; retrying")
+                    return self.start(wait_ready)
                 raise M8Error(f"m8_nav failed to start: {err}")
             if self._ready.is_set():
                 break

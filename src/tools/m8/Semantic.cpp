@@ -22,6 +22,8 @@ SemanticState semanticState(M8Device& dev) {
     state.isModal = m8::dev::isModal(dev.grid());
     state.isLiveMode = m8::dev::isLiveMode(dev.grid());
     state.settled = dev.lastRead().settled;
+    state.playheadObservable = isGridScreen(state.screen);
+    state.isPlaying = state.playheadObservable && playheadVisible(dev.grid());
 
     auto cf = dev.cursorField();
     if (cf) {
@@ -58,6 +60,8 @@ std::string SemanticState::toJson() const {
     ss << "  \"is_modal\": " << (isModal ? "true" : "false") << ",\n";
     ss << "  \"is_live_mode\": " << (isLiveMode ? "true" : "false") << ",\n";
     ss << "  \"settled\": " << (settled ? "true" : "false") << ",\n";
+    ss << "  \"is_playing\": " << (isPlaying ? "true" : "false") << ",\n";
+    ss << "  \"playhead_observable\": " << (playheadObservable ? "true" : "false") << ",\n";
     ss << "  \"cursor_field\": \"" << escapeJson(cursorField) << "\",\n";
     ss << "  \"cursor_value\": \"" << escapeJson(cursorValue) << "\",\n";
     ss << "  \"cursor_row\": " << cursorRow << ",\n";

@@ -670,8 +670,24 @@ GridCursor gridCursorPosition(const ScreenGrid& grid) {
     if (!findLabelCell(grid, "0", firstStepY)) return out;   // no step-0 row label
 
     const int headerY = firstStepY - rowPitch;
-    const std::vector<int> edges = gridColumnEdges(grid, headerY);
-    if (edges.empty()) return out;
+    const std::vector<int> groups = gridColumnEdges(grid, headerY);
+    if (groups.empty()) return out;
+
+    // Expand compound header groups into their real cursor stops. An FX cell is
+    // one header label over TWO stops (command, then value) -- measured, see
+    // gridSubStops. Without this the value half is unaddressable and
+    // moveCursorToGrid stalls inside the cell, because a press moves the cursor
+    // without changing the column this reports.
+    const Screen screen = identifyScreen(grid);
+    std::vector<int> edges;
+    bool compound = false;
+    for (size_t g = 0; g < groups.size(); ++g) {
+        edges.push_back(groups[g]);
+        if (gridSubStops(screen, static_cast<int>(g)) > 1) {
+            edges.push_back(groups[g] + kGridSubStopGlyphs * kGridGlyphWidth);
+            compound = true;
+        }
+    }
     out.columns = static_cast<int>(edges.size());
 
     // Step: the topmost accent cell at or below step 0's row is that row's own
@@ -688,10 +704,17 @@ GridCursor gridCursorPosition(const ScreenGrid& grid) {
             if (edges[i] <= px) best = static_cast<int>(i);
         return best;
     };
-    for (auto& [pos, c] : grid.cells) {
-        if (pos.first == headerY && grid.isCursor(c) && c.ch != ' ') {
-            out.col = edgeIndexFor(pos.second);
-            if (out.col >= 0) { out.valid = true; return out; }
+    // The header path cannot resolve a compound column: one "FX1" label sits over
+    // both stops, so it always reports the command. On those screens go straight
+    // to the data row, whose accent cells are on the actual stop. Screens without
+    // compound columns keep the header readout exactly as it was -- it is the
+    // verified path on SONG and there is no reason to disturb it.
+    if (!compound) {
+        for (auto& [pos, c] : grid.cells) {
+            if (pos.first == headerY && grid.isCursor(c) && c.ch != ' ') {
+                out.col = edgeIndexFor(pos.second);
+                if (out.col >= 0) { out.valid = true; return out; }
+            }
         }
     }
 

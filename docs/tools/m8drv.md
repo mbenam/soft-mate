@@ -111,6 +111,22 @@ wrong produces plausible-but-wrong behaviour rather than an error.
 - **`cursor_field` on a grid screen is not a field name.** It is the row label
   glued to the cell text (`"07--"`), which names neither axis — read `grid_step`
   and `grid_col` instead. This is why the grid coordinates were added.
+- **`state` now reports the transport.** `is_playing` is true while the device is
+  playing; `playhead_observable` says whether that reading means anything. The M8
+  marks the playing step with a `>` in the row-label gutter of a GRID screen only
+  — form screens (PROJECT, INSTRUMENT, SCALE, MIXER) draw no playhead, so
+  `is_playing` is false there whatever the transport is doing. Check
+  `playhead_observable` before believing a false. Measured 2026-08-15; see
+  `M8_DRIVER_BUGS.md` #28.
+- **PLAY is a TOGGLE, so never press it blind.** Read `is_playing` first and
+  press only if you need the other state. Before #28 there was no way to do this,
+  and a probe that pressed PLAY twice across two batches silently stopped the
+  transport it was trying to measure.
+- **An FX cell is TWO grid columns, not one.** The command and its value are
+  separate cursor stops under one header label, so PHRASE has 9 columns and TABLE
+  8 — `cursor-grid 0 3` is FX1's command and `0 4` its value. Anything that
+  assumes one column per header group will stall inside an FX cell. See
+  `M8_DRIVER_BUGS.md` #27.
 - **Colour and rect information is invisible to the semantic state.** `state` and
   `dump` give text only — no cell colours, and the `highlights` array is not in
   `SemanticState` at all. Use `inspect`. It matters because
