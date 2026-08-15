@@ -517,9 +517,9 @@ runner's reported total will match this only if every case is compiled in.
 |---|---|---|
 | `TEST_CASE` macros in `tests/*.cpp` | 313 | the static count above |
 | runnable by default | 312 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| last recorded run | 312 | 2026-08-14, **312 cases / 897,306 assertions, 311 passing and one failing as expected** — `L31` is `[!shouldfail]` and documents the scale OFFSET encoding gap (see Known issues) |
+| last recorded run | 312 | 2026-08-14, **312 cases / 897,314 assertions, all passing** — nothing skipped and nothing `[!shouldfail]`, after the device probe settled the scale OFFSET encoding and `L31` went green |
 
-So: the suite is green at 312/312, counting L31's failure as the pass it is. The two numbers
+So: the suite is green at 312/312, and `[fuzz]` only runs when you ask for it. The two numbers
 agree exactly, which is the check that every case is compiled in.
 
 This table has twice gone stale by dozens of cases while the heading above it was edited alone
@@ -838,16 +838,24 @@ Future captures use the C++ `m8_capture`.
   confirmed twice — the name field ends at `0x9F` and MIDI is 27 bytes, and `0xBB + 18` lands
   exactly on `kMixerOffset`; the 18 it precedes is the `0xBC`–`0xCD` run already flagged
   volatile above.
-  **OPEN — the OFFSET encoding.** We store (signed whole semitone, unsigned hundredths), as the
-  library does. That cannot represent anything in `(-1.00, 0.00)`: `-0.50` becomes whole 0 /
-  cents 50 and reads back as `+0.50`. The M8's SCALE view offers -24.00 to +24.00, so the gap
-  is evidence the reading is wrong. The natural alternative is one signed 16-bit value in
-  hundredths — which spans that range exactly and is a scheme this machine uses elsewhere
-  (AGENTS.md §7 records EQ gain as 16-bit signed hundredths). Every committed song has all-zero
-  offsets, so no file we hold distinguishes them. **Not switched on reasoning alone.** One
-  device probe settles it: set an OFFSET to `-0.50`, save, read the pair — (whole, cents)
-  predicts `00 32`, signed-hundredths predicts `CE FF` or `FF CE`. Test **L31** is
-  `[!shouldfail]` and documents it.
+  **The OFFSET encoding is signed 16-bit LE hundredths of a semitone — MEASURED 2026-08-14, and
+  we had it wrong.** We had read the pair as (signed whole semitone, unsigned hundredths), which
+  is what the vendored library does. A device-authored probe settled it: OFFSET `-00.50` set on
+  hardware and saved comes back as `CE FF` = `0xFFCE` = -50. The old reading agreed on every
+  value whose bytes are zero — which is every offset in every song we held, so **no file in the
+  repo could distinguish the two** — and it could not represent anything in `(-1.00, 0.00)` at
+  all, since `-0.50` encoded as whole 0 / cents 50 and read back as `+0.50`. That inability to
+  express half the documented `-24.00..+24.00` range was the tell, but a tell is not a
+  measurement, so `L31` sat `[!shouldfail]` until the file arrived rather than being switched on
+  reasoning. Fixed in both `SongIO` and `ScaleIO` (the `.m8n` reader had the identical flaw).
+  The same file confirms the 46-byte stride from the device side: records 2 and 3 still decode
+  as untouched factory `MINOR`/`DORIAN` with names on +26 after a real hardware save.
+  `tests/fixtures/device_golden/scaleprobe.m8s` is committed and anchors **L31**.
+  **Also measured from that probe: the M8 CONSTRAINS note entry rather than snapping it.** With
+  scale 00 restricted to C and E, D# cannot be entered at all — the note field steps over it.
+  And restricting the scale afterwards does **not** rewrite notes already stored: a phrase
+  holding `D#4` still reads `D#4`. So the snap rule governs playback of an out-of-scale note,
+  which is reached through transpose and PIT, not through what the grid shows.
   **Also open:** the snap direction for a disabled interval (we snap DOWN, a documented guess —
   `quantizeToScale` carries the probe that settles it); `SCA`/`SCG`, so every track reads scale
   00, which the manual says is the default for all 8 anyway; and ARP / PIT / the FMSynth PIT

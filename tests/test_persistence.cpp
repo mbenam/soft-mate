@@ -1378,7 +1378,7 @@ TEST_CASE("L30 scales round-trip through a song file", "[io]") {
         s.notes[i].offset = 0.0f;
     }
     s.notes[0].offset  =  1.25f;
-    s.notes[2].offset  = -1.50f;               // the signed case
+    s.notes[2].offset  = -0.50f;               // the sub-semitone signed case
     s.notes[4].offset  = -24.0f;               // the documented lower bound
     s.notes[6].offset  =  24.0f;               // and the upper
     std::memcpy(s.name, "WHOLE TONE------", 16);
@@ -1393,7 +1393,7 @@ TEST_CASE("L30 scales round-trip through a song file", "[io]") {
     for (int i = 0; i < 12; ++i)
         REQUIRE(got.notes[i].enable == ((i % 2) == 0));
     REQUIRE(std::fabs(got.notes[0].offset -  1.25f) < 0.005f);
-    REQUIRE(std::fabs(got.notes[2].offset - -1.50f) < 0.005f);
+    REQUIRE(std::fabs(got.notes[2].offset - -0.50f) < 0.005f);
     REQUIRE(std::fabs(got.notes[4].offset - -24.0f) < 0.005f);
     REQUIRE(std::fabs(got.notes[6].offset -  24.0f) < 0.005f);
     REQUIRE(std::string(got.name, 16) == "WHOLE TONE------");
@@ -1409,44 +1409,54 @@ TEST_CASE("L30 scales round-trip through a song file", "[io]") {
     std::remove("scale_rt.m8s");
 }
 
-// L31 -- a negative offset smaller than one semitone cannot survive a save.
+// L31 -- the OFFSET encoding, read off a device-authored file.
 //
-// MARKED [!shouldfail] 2026-08-14 because the defect is real, not because the
-// test is wrong. We store each offset as the library does: a SIGNED whole-
-// semitone byte then an UNSIGNED hundredths byte. -0.50 encodes as whole 0,
-// cents 50 -- and 0 is not negative, so it reads back as +0.50. The sign is
-// simply gone for everything in (-1.00, 0.00), which the M8's own SCALE view
-// offers, since it accepts -24.00 to +24.00.
+// scaleprobe.m8s was made on hardware (fw 6.5.2, 2026-08-14) for exactly this:
+// scale 00 restricted to C and E, scale 01 restricted to C with its OFFSET set
+// to -00.50, everything else left alone. Scale 01's first offset is `CE FF` in
+// the file -- 0xFFCE little-endian, -50 -- so an offset is a SIGNED 16-BIT LE
+// value in HUNDREDTHS of a semitone, the same scheme AGENTS.md §7 records for
+// EQ gain.
 //
-// That gap is itself the argument that the (whole, cents) reading is WRONG. The
-// obvious alternative is one signed 16-bit value in hundredths, which spans
-// -24.00..+24.00 exactly and is a scheme this machine demonstrably uses
-// elsewhere -- AGENTS.md §7 records EQ gain as "16-bit signed, HUNDREDTHS of a
-// dB". Both readings agree on every file we hold, because every committed song
-// has all-zero offsets, so nothing here can distinguish them.
-//
-// Not switched on that reasoning alone: swapping one guess for another is not
-// progress, and the encoding is settled by a two-byte diff. Set one OFFSET to
-// -0.50 on the device, save, and look at the pair. (whole, cents) predicts
-// 00 32; signed-16-bit-hundredths predicts CE FF or FF CE depending on order.
-TEST_CASE("L31 a sub-semitone negative offset round-trips", "[io][!shouldfail]") {
-    auto r = loadSong("tests/fixtures/device_golden/probe_ottA0.m8s", "");
+// This case was [!shouldfail] for the few hours between implementing scales and
+// getting the probe back, because we had read the pair as (signed whole
+// semitone, unsigned hundredths) exactly as the vendored library does. That
+// reading agrees on every all-zero offset, which is every offset in every song
+// we held -- so nothing in the repo could distinguish the two -- and it cannot
+// represent anything in (-1.00, 0.00) at all: -0.50 encodes as whole 0 / cents
+// 50 and reads back as +0.50. The inability to express half the documented
+// -24.00..+24.00 range was the tell, but a tell is not a measurement, so it
+// took the file.
+TEST_CASE("L31 scale offsets are signed 16-bit hundredths", "[io]") {
+    auto r = loadSong("tests/fixtures/device_golden/scaleprobe.m8s", "");
     REQUIRE(r.ok);
 
+    // What the device was set to, straight off its own save.
+    REQUIRE(scaleMask(r.state.scales[0]) == 0x0011);   // C and E only
+    REQUIRE(scaleMask(r.state.scales[1]) == 0x0001);   // C only
+    REQUIRE(std::fabs(r.state.scales[1].notes[0].offset - -0.50f) < 0.005f);
+
+    // Untouched records still decode, which is the 46-byte stride surviving a
+    // real device save rather than only our own writer.
+    REQUIRE(scaleMask(r.state.scales[2]) == 0x05AD);   // NATURAL MINOR
+    REQUIRE(scaleName(r.state.scales[2]) == "MINOR");
+    REQUIRE(scaleName(r.state.scales[3]) == "DORIAN");
+
+    // And it survives our round-trip, negative sub-semitone included.
     auto edited = r.state;
-    edited.scales[4].notes[1].enable = true;
-    edited.scales[4].notes[1].offset = -0.50f;
+    edited.scales[5].notes[1].enable = true;
+    edited.scales[5].notes[1].offset = -0.50f;
+    edited.scales[5].notes[2].offset =  23.99f;
+    edited.scales[5].notes[3].offset = -23.99f;
 
     std::string err;
     REQUIRE(saveSong("scale_neg.m8s", r, r.sequencer, edited, err));
     auto again = loadSong("scale_neg.m8s", "");
     REQUIRE(again.ok);
-
-    // Cleanup BEFORE the assertion, because this case is [!shouldfail]: the
-    // assertion below is expected to fail every run, so anything after it never
-    // executes and the file would leak into the repo root each time.
-    const float got = again.state.scales[4].notes[1].offset;
+    const auto& got = again.state.scales[5];
     std::remove("scale_neg.m8s");
 
-    REQUIRE(std::fabs(got - -0.50f) < 0.005f);
+    REQUIRE(std::fabs(got.notes[1].offset - -0.50f)  < 0.005f);
+    REQUIRE(std::fabs(got.notes[2].offset -  23.99f) < 0.005f);
+    REQUIRE(std::fabs(got.notes[3].offset - -23.99f) < 0.005f);
 }

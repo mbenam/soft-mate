@@ -33,13 +33,12 @@ bool loadScale(const std::string& path, engine::Scale& outScale, std::string& er
         uint16_t map = reader.read_u16_le();
         for (int i = 0; i < 12; ++i) {
             outScale.notes[i].enable = ((map >> i) & 1) != 0;
-            int8_t base = static_cast<int8_t>(reader.read());
-            uint8_t cents = reader.read();
-            if (base < 0) {
-                outScale.notes[i].offset = static_cast<float>(base) - (cents / 100.0f);
-            } else {
-                outScale.notes[i].offset = static_cast<float>(base) + (cents / 100.0f);
-            }
+            // Signed 16-bit LE hundredths of a semitone -- measured off the
+            // device, see loadScalesBlock in SongIO.cpp. This used to read the
+            // pair as (signed whole, unsigned hundredths), which loses the sign
+            // for everything between -1.00 and 0.00.
+            const int16_t raw = static_cast<int16_t>(reader.read_u16_le());
+            outScale.notes[i].offset = static_cast<float>(raw) / 100.0f;
         }
 
         std::string nameStr = reader.read_string(16);
@@ -98,15 +97,13 @@ bool saveScale(const std::string& dirPath, const engine::Scale& scale, std::stri
         }
         writer.write_u16_le(map);
 
-        // 2. 12 Notes
+        // 2. 12 Notes -- signed 16-bit LE hundredths, matching the device.
         for (int i = 0; i < 12; ++i) {
-            float off = scale.notes[i].offset;
-            int8_t base = static_cast<int8_t>(off >= 0 ? std::floor(off) : std::ceil(off));
-            float frac = std::abs(off - static_cast<float>(base));
-            uint8_t cents = static_cast<uint8_t>(std::round(frac * 100.0f));
-            if (cents >= 100) cents = 99;
-            writer.write(static_cast<uint8_t>(base));
-            writer.write(cents);
+            const float off = std::clamp(scale.notes[i].offset,
+                                         engine::kScaleOffsetMin,
+                                         engine::kScaleOffsetMax);
+            const int v = static_cast<int>(std::lround(off * 100.0f));
+            writer.write_u16_le(static_cast<uint16_t>(static_cast<int16_t>(v)));
         }
 
         // 3. Name (16 bytes)

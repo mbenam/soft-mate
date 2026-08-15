@@ -288,9 +288,20 @@ static void saveEffectsBlock(const engine::EffectsState& fx,
 }
 
 // ---- Scales ----------------------------------------------------------------
-// One record is 46 bytes: a 12-bit enable mask (u16 LE) at +0, 12 pairs of
-// (signed semitone, unsigned hundredths) at +2, a 16-byte name at +26, and four
-// bytes at +42 we do not model. Sixteen sit end to end at V4_OFFSETS.scale.
+// One record is 46 bytes: a 12-bit enable mask (u16 LE) at +0, 12 offsets at +2
+// as SIGNED 16-BIT LITTLE-ENDIAN HUNDREDTHS of a semitone, a 16-byte name at
+// +26, and four bytes at +42 we do not model. Sixteen sit end to end at
+// V4_OFFSETS.scale.
+//
+// The offset encoding is MEASURED (2026-08-14, fw 6.5.2). An OFFSET of -00.50
+// set on the device and saved comes back as `CE FF` = 0xFFCE = -50. It is the
+// same scheme AGENTS.md §7 already records for EQ gain, "16-bit signed,
+// HUNDREDTHS". We previously read the pair as (signed whole semitone, unsigned
+// hundredths), which the library also does: that agrees on every value whose
+// bytes are zero, which is why no committed song could tell the two apart, and
+// it cannot represent anything in (-1.00, 0.00) at all -- -0.50 would encode as
+// whole 0 / cents 50 and read back as +0.50. `tests/fixtures/device_golden/
+// scaleprobe.m8s` is the device-authored file that settled it; L31 pins it.
 //
 // MEASURED, not assumed -- and 42 (2 + 24 + 16, the fields alone) is the wrong
 // answer that looks right. Reading three committed songs at a 42 stride put
@@ -332,11 +343,9 @@ static void loadScalesBlock(const std::vector<uint8_t>& bytes,
         const uint16_t map = static_cast<uint16_t>(p[0] | (p[1] << 8));
         for (int n = 0; n < 12; ++n) {
             dst.notes[n].enable = ((map >> n) & 1) != 0;
-            const int8_t  semis = static_cast<int8_t>(p[2 + n * 2]);
-            const uint8_t cents = p[3 + n * 2];
-            dst.notes[n].offset = semis < 0
-                ? static_cast<float>(semis) - cents / 100.0f
-                : static_cast<float>(semis) + cents / 100.0f;
+            const int16_t raw = static_cast<int16_t>(
+                static_cast<uint16_t>(p[2 + n * 2] | (p[3 + n * 2] << 8)));
+            dst.notes[n].offset = static_cast<float>(raw) / 100.0f;
         }
         std::memcpy(dst.name, p + kScaleNameAt, 16);
         dst.name[16] = '\0';
@@ -362,12 +371,9 @@ static void saveScalesBlock(const engine::EngineState& state,
             const float off = std::clamp(src.notes[n].offset,
                                          engine::kScaleOffsetMin,
                                          engine::kScaleOffsetMax);
-            const int8_t semis = static_cast<int8_t>(off >= 0.0f ? std::floor(off)
-                                                                 : std::ceil(off));
-            int cents = static_cast<int>(std::lround(std::fabs(off - static_cast<float>(semis)) * 100.0f));
-            if (cents > 99) cents = 99;
-            p[2 + n * 2] = static_cast<uint8_t>(semis);
-            p[3 + n * 2] = static_cast<uint8_t>(cents);
+            const int v = static_cast<int>(std::lround(off * 100.0f));
+            p[2 + n * 2] = static_cast<uint8_t>(v & 0xFF);
+            p[3 + n * 2] = static_cast<uint8_t>((v >> 8) & 0xFF);
         }
         // The name goes back as the 16 raw bytes it came in as, so a song we
         // did not edit round-trips byte for byte (test L4). The device pads it
