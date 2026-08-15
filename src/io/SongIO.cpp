@@ -151,6 +151,13 @@ static void saveBusEqs(const m8::Song& song, const engine::EngineState& state,
 // uses `V4_OFFSETS` for the effects block regardless of version, and both
 // tables agree on the groove offset, so this matches the reader exactly.
 static constexpr size_t kTempoOffset = 0x8F;
+// The global KEY, one byte, right after the 27-byte MIDI block and right before
+// the 18 skipped bytes. Located by arithmetic, then confirmed twice over: the
+// name field ends at 0x9F so MIDI runs 0xA0..0xBA, and 0xBB + 18 lands exactly
+// on kMixerOffset below. The 18 it precedes is the 0xBC-0xCD run status.md
+// already flags as volatile (the PROJECT screen's TIME STATS counter), which
+// pins the same boundary from the other side.
+static constexpr size_t kProjectKeyOffset = 0xBB;
 static constexpr size_t kMixerOffset = 0xCE;
 
 // Field offsets inside the 32-byte mixer block. +13..+24 are the analog/USB
@@ -280,6 +287,96 @@ static void saveEffectsBlock(const engine::EffectsState& fx,
     p[kFxModType]   = static_cast<uint8_t>(fx.modfx_type);
 }
 
+// ---- Scales ----------------------------------------------------------------
+// One record is 46 bytes: a 12-bit enable mask (u16 LE) at +0, 12 pairs of
+// (signed semitone, unsigned hundredths) at +2, a 16-byte name at +26, and four
+// bytes at +42 we do not model. Sixteen sit end to end at V4_OFFSETS.scale.
+//
+// MEASURED, not assumed -- and 42 (2 + 24 + 16, the fields alone) is the wrong
+// answer that looks right. Reading three committed songs at a 42 stride put
+// "MAJOR" four bytes late in record 1 and "MINOR" eight late in record 2, i.e.
+// drifting by exactly 4 per record. At 46 every mask decodes to a real scale
+// (0x0FFF chromatic, 0x0AB5 major, 0x05AD natural minor) and every name lands
+// on +26. The arithmetic closes it: 16 * 46 = 736, and V4_OFFSETS.scale + 736
+// is exactly where the EQ block begins.
+//
+// The trailing four are zero in every file inspected. TUNE would be the obvious
+// candidate -- the SCALE view shows it and nothing else in the record holds it
+// -- but 440.00 is not what a zero would decode to under any reading, so it is
+// unproven and these bytes are preserved untouched, the same rule the effects
+// block's unknown runs get.
+//
+// Read here rather than through the library's Scale::from_reader, the same
+// shape of reason loadEffectsBlock has (hw_findings.md §UI-8): that reader
+// takes the semitone byte UNSIGNED, so it cannot represent the negative half of
+// the M8's -24.00..+24.00 offset range; its Scale::SIZE says 32; and it reads
+// the sixteen records sequentially at the field width, so it drifts exactly as
+// described above from record 1 on. Going direct also lets the name survive as
+// raw bytes, so a save reproduces it.
+static constexpr size_t kScaleRecSize   = 46;
+static constexpr size_t kScaleNameAt    = 26;
+static constexpr size_t kScaleCount     = 16;
+static constexpr size_t kScaleBlockSpan = kScaleRecSize * kScaleCount;
+
+static bool scalesBlockFits(const std::vector<uint8_t>& bytes) {
+    return bytes.size() >= m8::V4_OFFSETS.scale + kScaleBlockSpan;
+}
+
+static void loadScalesBlock(const std::vector<uint8_t>& bytes,
+                            engine::EngineState& state) {
+    if (!scalesBlockFits(bytes)) return;
+    const uint8_t* base = bytes.data() + m8::V4_OFFSETS.scale;
+    for (size_t s = 0; s < kScaleCount; ++s) {
+        const uint8_t* p = base + s * kScaleRecSize;
+        engine::Scale& dst = state.scales[s];
+        const uint16_t map = static_cast<uint16_t>(p[0] | (p[1] << 8));
+        for (int n = 0; n < 12; ++n) {
+            dst.notes[n].enable = ((map >> n) & 1) != 0;
+            const int8_t  semis = static_cast<int8_t>(p[2 + n * 2]);
+            const uint8_t cents = p[3 + n * 2];
+            dst.notes[n].offset = semis < 0
+                ? static_cast<float>(semis) - cents / 100.0f
+                : static_cast<float>(semis) + cents / 100.0f;
+        }
+        std::memcpy(dst.name, p + kScaleNameAt, 16);
+        dst.name[16] = '\0';
+        // KEY and TUNE are not in the record -- 2 + 24 + 16 fills it exactly.
+        // The manual calls KEY "a global setting", which agrees. Both are left
+        // at their defaults until the byte that holds them is located.
+    }
+}
+
+static void saveScalesBlock(const engine::EngineState& state,
+                            std::vector<uint8_t>& bytes) {
+    if (!scalesBlockFits(bytes)) return;
+    uint8_t* base = bytes.data() + m8::V4_OFFSETS.scale;
+    for (size_t s = 0; s < kScaleCount; ++s) {
+        uint8_t* p = base + s * kScaleRecSize;
+        const engine::Scale& src = state.scales[s];
+        uint16_t map = 0;
+        for (int n = 0; n < 12; ++n)
+            if (src.notes[n].enable) map |= static_cast<uint16_t>(1u << n);
+        p[0] = static_cast<uint8_t>(map & 0xFF);
+        p[1] = static_cast<uint8_t>((map >> 8) & 0xFF);
+        for (int n = 0; n < 12; ++n) {
+            const float off = std::clamp(src.notes[n].offset,
+                                         engine::kScaleOffsetMin,
+                                         engine::kScaleOffsetMax);
+            const int8_t semis = static_cast<int8_t>(off >= 0.0f ? std::floor(off)
+                                                                 : std::ceil(off));
+            int cents = static_cast<int>(std::lround(std::fabs(off - static_cast<float>(semis)) * 100.0f));
+            if (cents > 99) cents = 99;
+            p[2 + n * 2] = static_cast<uint8_t>(semis);
+            p[3 + n * 2] = static_cast<uint8_t>(cents);
+        }
+        // The name goes back as the 16 raw bytes it came in as, so a song we
+        // did not edit round-trips byte for byte (test L4). The device pads it
+        // with 0xFF, which survives this untouched. +42..+45 are deliberately
+        // not written.
+        std::memcpy(p + kScaleNameAt, src.name, 16);
+    }
+}
+
 static void saveUnwrittenBlocks(const m8::Song& song,
                                 const engine::EngineState& state,
                                 std::vector<uint8_t>& bytes) {
@@ -301,6 +398,13 @@ static void saveUnwrittenBlocks(const m8::Song& song,
             std::memcpy(bytes.data() + kTempoOffset, &t, 4);
         }
     }
+
+    // --- Global KEY ----------------------------------------------------------
+    // Song::write does not emit the header, so an edited PROJECT KEY would
+    // otherwise save "successfully" and reload unchanged -- the same class of
+    // bug tempo, mixer and groove had.
+    if (bytes.size() > kProjectKeyOffset)
+        bytes[kProjectKeyOffset] = static_cast<uint8_t>(state.project.scale & 0xFF);
 
     // --- Mixer ---------------------------------------------------------------
     if (bytes.size() >= kMixerOffset + kMixerBlockSize) {
@@ -590,7 +694,16 @@ static void convertSongToEngine(const m8::Song& song,
     // Project
     engine::setName(state.project.name, song.name.c_str());
     state.project.transpose = song.transpose;
-    state.project.scale = 0;
+    // The PROJECT screen's SCALE/KEY byte. This used to be a hardcoded 0, so a
+    // song's key was discarded on load and the field showed C for everything.
+    // The manual calls KEY "a global setting that defines the root note for the
+    // default scale", and the library parses the same byte as `key`.
+    state.project.scale = song.key;
+    // Every scale gets seeded with that global key, so the SCALE view's KEY
+    // agrees with PROJECT's after a load. They are the same control on the
+    // device; we still hold a per-scale copy, which is the thing to unify once
+    // the SCA command gives a track its own key.
+    for (int i = 0; i < 16; ++i) state.scales[i].key = song.key & 0x0F;
     state.project.groove = 0;
 
     // Tempo
@@ -867,6 +980,11 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     // Tempo
     song.tempo = static_cast<float>(state.bpm)
                + static_cast<float>(state.bpm_frac) / 100.0f;
+
+    // Global KEY. saveNewSong writes the header itself and emits song.key, so
+    // this is what carries the field down the from-a-template path; the
+    // save-in-place path patches the same byte in saveUnwrittenBlocks.
+    song.key = static_cast<uint8_t>(state.project.scale & 0xFF);
 
     // Mixer. master_volume is the MIX control; the screen's SPEAKER VOL
     // (state.mixer.out_vol) is ours alone and is deliberately not written.
@@ -1176,6 +1294,7 @@ LoadResult loadSong(const std::string& path, const std::string& sampleRoot) {
         loadBusEqs(song, data, res.state);
         loadEffectsBlock(data, res.state.effects);   // library offsets are wrong
         loadMixerTail(data, res.state.mixer);        // OTT; library stops at +27
+        loadScalesBlock(data, res.state);            // library reads offsets unsigned
 
         // Collect sample paths
         for (size_t i = 0; i < song.instruments.size(); ++i) {
@@ -1246,6 +1365,7 @@ bool saveSong(const std::string& path, const LoadResult& origin,
         saveUnwrittenBlocks(song, state, out); // modeled, but Song::write never emits them
         saveEffectsBlock(state.effects, out); // measured offsets, not the library's
         saveBusEqs(song, state, out);        // not modeled by the library; patched in
+        saveScalesBlock(state, out);         // Song::write never emits these either
         if (!writeFile(path, out)) {
             error = "cannot write file";
             return false;
@@ -1310,6 +1430,9 @@ bool saveNewSong(const std::string& path, const std::string& templatePath,
         // touch (MOD TYPE, SHIMMER, the unknown runs) keeps the template's
         // bytes, which is the same preservation rule the rest of the file gets.
         saveEffectsBlock(state.effects, out);
+        // Scales the same way: Song::write never emits them, so without this a
+        // song authored from a template would carry the TEMPLATE's scales.
+        saveScalesBlock(state, out);
         // The mixer tail likewise: MixerSettings::write zeroes +28..+31 on its
         // way past, so every one of these has to be written back or the
         // authored value is silently lost. SOFT CLIP is the one that bites --

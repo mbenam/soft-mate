@@ -35,8 +35,18 @@ static std::string ResolveScaleValue(CursorId fieldId, const engine::Scale& scal
         return std::string(buf);
     }
     if (fieldId == C::NAME) {
-        std::string s = scale.name;
-        if (s.empty()) s = "----------------";
+        // Since 2026-08-14 this comes from the loaded song rather than a
+        // hardcoded default, so it has to cope with how the device actually
+        // pads: 0xFF, not NUL and not spaces ("CHROMATIC" then seven 0xFF, read
+        // out of three committed songs). Both 0xFF and NUL terminate here, and
+        // the field is padded out to 16 with '-' -- which is what the device
+        // draws, and why an unnamed scale shows as sixteen dashes.
+        std::string s;
+        for (int i = 0; i < 16; ++i) {
+            const unsigned char c = static_cast<unsigned char>(scale.name[i]);
+            if (c == 0x00 || c == 0xFF) break;
+            s += static_cast<char>(c);
+        }
         while (s.length() < 16) s += '-';
         if (s.length() > 16) s = s.substr(0, 16);
         return s;

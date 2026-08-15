@@ -42,6 +42,22 @@ void Engine::initChorus() {
     m_chorusR.SetDelay(kChorusDelayR);
 }
 
+// The instrument's TRANSP flag, whatever its type. It lives in a different
+// struct per synth, so this is the one place that knows all five. It gates two
+// things now -- chain/song transpose and the SCALE -- which is why it is a
+// function rather than the chain of else-ifs it used to be inline.
+static bool instTranspEnabled(const Instrument* inst) {
+    if (!inst) return true;
+    switch (inst->type) {
+    case InstType::INST_SAMPLER:  return inst->sampler.transp   != 0;
+    case InstType::INST_MACROSYN: return inst->macrosyn.transp  != 0;
+    case InstType::INST_HYPERSYN: return inst->hyper.transp     != 0;
+    case InstType::INST_FMSYNTH:  return inst->fm.transp        != 0;
+    case InstType::INST_WAVSYNTH: return inst->wav.transp       != 0;
+    default:                      return true;
+    }
+}
+
 static constexpr int TICKS_PER_ROW = 6;
 
 void Engine::recalcBPM() {
@@ -380,24 +396,31 @@ void Engine::tickTrack(int t) {
             // The instrument TRANSP flag gates chain/song transpose: ON (1, the
             // default) follows transpose; OFF (0) plays the written note unchanged
             // (used e.g. for drum samples that must not pitch-shift with transpose).
-            int effTranspose = transpose;
-            if (currentInst) {
-                if (currentInst->type == InstType::INST_SAMPLER && currentInst->sampler.transp == 0)
-                    effTranspose = 0;
-                else if (currentInst->type == InstType::INST_MACROSYN && currentInst->macrosyn.transp == 0)
-                    effTranspose = 0;
-                else if (currentInst->type == InstType::INST_HYPERSYN && currentInst->hyper.transp == 0)
-                    effTranspose = 0;
-                else if (currentInst->type == InstType::INST_FMSYNTH && currentInst->fm.transp == 0)
-                    effTranspose = 0;
-                else if (currentInst->type == InstType::INST_WAVSYNTH && currentInst->wav.transp == 0)
-                    effTranspose = 0;
-            }
+            // Per the M8 manual it gates the SCALE too -- "Enable or disable
+            // scales per-instrument by editing the TRANSP. option in Instrument
+            // view" -- so one flag decides both.
+            const bool transpOn = instTranspEnabled(currentInst);
+            int effTranspose = transpOn ? transpose : 0;
             int midi = step.note + effTranspose;
             if (midi < 0) midi = 0;
             if (midi > 127) midi = 127;
-            freq = 440.0f * std::pow(2.0f, (midi - 69) / 12.0f);
-            
+
+            // Scale 00 is the default scale for all 8 tracks (manual). Per-track
+            // assignment through the SCA/SCG FX commands is not implemented, so
+            // every track reads scale 0 for now.
+            const Scale& sc = m_state.scales[0];
+            float pitch = transpOn ? quantizeToScale(midi, sc)
+                                   : static_cast<float>(midi);
+            pitch = std::clamp(pitch, 0.0f, 127.0f);
+            // TUNE is the A4 reference, so it applies whether or not the scale
+            // does -- it retunes the machine, it does not quantise. Default
+            // 440.00 reproduces the constant it replaced exactly.
+            // UNVERIFIED: whether TUNE is per-scale or global. The 42-byte scale
+            // record has no room for it, so it is almost certainly global and
+            // stored elsewhere; we read scale 0's copy, which is the same value
+            // either way while only scale 0 is ever active.
+            freq = sc.tune * std::pow(2.0f, (pitch - 69.0f) / 12.0f);
+
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
             
             m_state.pendingFreq[t] = freq;

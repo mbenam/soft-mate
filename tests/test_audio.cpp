@@ -354,7 +354,13 @@ TEST_CASE("S-DET1 detune changes rendered pitch by the right amount", "[audio]")
 
 // Renders a single sampler note through the full engine and returns the
 // measured fundamental in Hz. Sample is a pure sine at srcHz.
-static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80) {
+// `tweak` gets the state after the instrument is set up and before the note is
+// sequenced -- the scale cases use it to install a scale. `expectHz` overrides
+// the search hint given to pitchHz, which the quantising cases need because the
+// whole point is that the note does NOT land where the written note says.
+static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80,
+                               const std::function<void(EngineState&)>& tweak = nullptr,
+                               float expectHz = 0.0f) {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();
     state.instruments[0].type = InstType::INST_SAMPLER;
@@ -390,6 +396,8 @@ static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80) {
     cmd.u.sample = sd;
     host.push(cmd);
 
+    if (tweak) tweak(state);
+
     setStep(host.sequencer(), 0, 0, midiNote, 100, 0);
     host.push(playPhrase(0, 0, 0));
     host.render(48000);
@@ -398,7 +406,9 @@ static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80) {
     std::vector<float> mono(audio.size() / 2);
     for (size_t i = 0; i < mono.size(); ++i) mono[i] = audio[i * 2];
 
-    float expected = srcHz * std::pow(2.0f, (midiNote - 60) / 12.0f);
+    float expected = expectHz > 0.0f
+                   ? expectHz
+                   : srcHz * std::pow(2.0f, (midiNote - 60) / 12.0f);
     return pitchHz(mono.data() + 500,
                    std::min(mono.size() - 500, static_cast<size_t>(24000)),
                    48000, expected);
@@ -415,6 +425,130 @@ TEST_CASE("S-NOTE1 sampler tracks the played note (C-4 root)", "[audio]") {
     REQUIRE(std::fabs(1200.0f * std::log2(c4 / 261.626f)) < 25.0f);   // C-4 at pitch
     REQUIRE(std::fabs(1200.0f * std::log2(c5 / 523.251f)) < 25.0f);   // C-5 one octave up
     REQUIRE(std::fabs(1200.0f * std::log2(c5 / c4) - 1200.0f) < 30.0f); // ratio ~2x
+}
+
+// ---------------------------------------------------------------------------
+// SC1-SC5 -- SCALE. Until 2026-08-14 the 16 scales loaded, saved and edited and
+// the engine never read one; note->frequency was a hardcoded 440 Hz 12-TET
+// line. Per the M8 manual, scales quantise note-related events and are gated
+// per instrument by TRANSP.
+// ---------------------------------------------------------------------------
+
+// Enable exactly the intervals in `mask`, offsets flat, key C.
+static void installScale(EngineState& st, uint16_t mask, float tune = 440.0f) {
+    Scale& s = st.scales[0];
+    s.key = 0;
+    s.tune = tune;
+    for (int i = 0; i < 12; ++i) {
+        s.notes[i].enable = ((mask >> i) & 1) != 0;
+        s.notes[i].offset = 0.0f;
+    }
+}
+
+TEST_CASE("SC1 a scale that quantises nothing is the exact identity", "[audio]") {
+    // Two ways of saying "no quantisation" -- every interval enabled, and none
+    // enabled -- must both reproduce the pre-scale signal path bit for bit.
+    // The second is the one that matters: every .m8s we can load carries an
+    // all-zero interval mask, so an unconfigured scale must not touch the
+    // audio. It is also what a real device shows for an untouched scale 00 --
+    // "--" in all twelve EN cells -- while playing normally.
+    auto render = [](const std::function<void(EngineState&)>& tweak) {
+        OfflineHost host;
+        host.engine().loadDemoSong();
+        if (tweak) tweak(host.engine().getStateForInit());
+        host.push(playSong(0));
+        host.renderSeconds(2.0);
+        return host.audio();
+    };
+
+    const auto base   = render(nullptr);                                   // struct defaults
+    const auto chroma = render([](EngineState& st){ installScale(st, 0x0FFF); });
+    const auto none   = render([](EngineState& st){ installScale(st, 0x0000); });
+
+    REQUIRE(base.size() == chroma.size());
+    REQUIRE(base.size() == none.size());
+    bool chromaSame = true, noneSame = true;
+    for (size_t i = 0; i < base.size(); ++i) {
+        if (base[i] != chroma[i]) chromaSame = false;
+        if (base[i] != none[i])   noneSame   = false;
+    }
+    REQUIRE(chromaSame);
+    REQUIRE(noneSame);
+}
+
+TEST_CASE("SC2 OFFSET retunes an enabled interval", "[audio]") {
+    // OFFSET is fractional semitones, so this has to come out as a pitch shift
+    // and not a snap to another note.
+    auto withOffset = [](float semis) {
+        return [semis](EngineState& st) {
+            installScale(st, 0x0FFF);
+            st.scales[0].notes[0].offset = semis;   // the C interval only
+        };
+    };
+
+    const float flat = renderSamplerNote(60, 261.626f, 0x80, withOffset(0.0f));
+    const float up1  = renderSamplerNote(60, 261.626f, 0x80, withOffset(1.0f),  277.183f);
+    const float half = renderSamplerNote(60, 261.626f, 0x80, withOffset(0.5f),  269.292f);
+    CAPTURE(flat, up1, half);
+
+    REQUIRE(std::fabs(1200.0f * std::log2(flat / 261.626f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(up1  / 277.183f)) < 25.0f);  // +1 semitone
+    REQUIRE(std::fabs(1200.0f * std::log2(half / 269.292f)) < 25.0f);  // +50 cents
+}
+
+TEST_CASE("SC3 a disabled interval snaps down to the nearest enabled one", "[audio]") {
+    // Only C and E enabled. C# and D# are out of scale and must not sound as
+    // written. SNAP DIRECTION IS A DOCUMENTED GUESS (see quantizeToScale) --
+    // snap-down gives C, C, E for C#, D#, F; nearest would give C, E, E.
+    const uint16_t cAndE = (1u << 0) | (1u << 4);
+    auto sc = [cAndE](EngineState& st) { installScale(st, cAndE); };
+
+    const float c4  = renderSamplerNote(60, 261.626f, 0x80, sc);            // in scale
+    const float cs4 = renderSamplerNote(61, 261.626f, 0x80, sc, 261.626f);  // -> C-4
+    const float e4  = renderSamplerNote(64, 261.626f, 0x80, sc, 329.628f);  // in scale
+    const float f4  = renderSamplerNote(65, 261.626f, 0x80, sc, 329.628f);  // -> E-4
+    CAPTURE(c4, cs4, e4, f4);
+
+    REQUIRE(std::fabs(1200.0f * std::log2(c4  / 261.626f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(cs4 / 261.626f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(e4  / 329.628f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(f4  / 329.628f)) < 25.0f);
+}
+
+TEST_CASE("SC4 TRANSP OFF exempts an instrument from the scale", "[audio]") {
+    // "Enable or disable scales per-instrument by editing the TRANSP. option in
+    // Instrument view" -- the same flag that already gated transpose. A drum
+    // sampler with TRANSP OFF must keep playing the written note.
+    const uint16_t cOnly = (1u << 0);
+
+    const float gated = renderSamplerNote(61, 261.626f, 0x80,
+        [cOnly](EngineState& st) { installScale(st, cOnly); }, 261.626f);
+    const float exempt = renderSamplerNote(61, 261.626f, 0x80,
+        [cOnly](EngineState& st) {
+            installScale(st, cOnly);
+            st.instruments[0].sampler.transp = 0;
+        }, 277.183f);
+    CAPTURE(gated, exempt);
+
+    REQUIRE(std::fabs(1200.0f * std::log2(gated  / 261.626f)) < 25.0f);  // snapped
+    REQUIRE(std::fabs(1200.0f * std::log2(exempt / 277.183f)) < 25.0f);  // as written
+}
+
+TEST_CASE("SC5 TUNE moves the reference pitch", "[audio]") {
+    // TUNE is the A4 reference, so it retunes everything and does not quantise.
+    // It applies with the scale off, which is why this uses an empty mask.
+    // A whole octave rather than a realistic 442, because the pitch estimator's
+    // absolute error is around 25 cents and a couple of Hz of retuning would sit
+    // inside its noise. The mapping is a plain ratio, so proving it at 2x proves
+    // it everywhere.
+    const float a440 = renderSamplerNote(60, 261.626f, 0x80,
+        [](EngineState& st) { installScale(st, 0x0000, 440.0f); });
+    const float a880 = renderSamplerNote(60, 261.626f, 0x80,
+        [](EngineState& st) { installScale(st, 0x0000, 880.0f); }, 523.251f);
+    CAPTURE(a440, a880);
+
+    REQUIRE(std::fabs(1200.0f * std::log2(a440 / 261.626f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(a880 / 523.251f)) < 25.0f);
 }
 
 TEST_CASE("S-LIM-POST POST:AD soft-clips after the filter, bounded and distinct from CLIP", "[audio]") {

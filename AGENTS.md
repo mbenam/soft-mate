@@ -210,6 +210,15 @@ Capture     keyjazz VELOCITY is the level lever, not OUTPUT VOL, which does not
             Clipping destroys stereo information -- it pushes the channels
             together, so a clipped capture can measure as mono when it is not.
 
+SCALE record        46 bytes, NOT 42. mask u16 LE at +0, 12 x (semitone, cents)
+                    at +2, 16-byte name at +26, four unmodelled bytes at +42.
+                    16 records at V4_OFFSETS.scale (0x1AA7E); 16*46 = 736 ends
+                    exactly where the EQ block starts. 42 is the trap -- it is
+                    what the fields add up to, it decodes record 0 perfectly,
+                    and it drifts 4 bytes per record after that. Names are
+                    padded with 0xFF. The global KEY is one byte at 0xBB.
+                    ^ the OFFSET encoding is NOT settled -- see status.md.
+
 Sampler root note   C-4 (MIDI 60)
 DETUNE              1/16 semitone per step, 0x80 centre
 Envelope times      IN TICKS, tempo-relative. Not seconds.

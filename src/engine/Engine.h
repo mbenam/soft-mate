@@ -250,7 +250,7 @@ struct ProjectSettings {
 
 struct ScaleNote {
     bool enable = true;
-    float offset = 0.0f; // Range usually -99.99 to 99.99
+    float offset = 0.0f; // -24.00 to +24.00 semitones (M8 manual, SCALE view)
 };
 
 struct Scale {
@@ -259,6 +259,50 @@ struct Scale {
     float tune = 440.00f;
     char name[17] = "CHROMATIC-------";
 };
+
+// Lowest and highest OFFSET the M8's SCALE view accepts.
+inline constexpr float kScaleOffsetMin = -24.0f;
+inline constexpr float kScaleOffsetMax =  24.0f;
+
+// Quantise a MIDI note to a scale. Returns FRACTIONAL semitones, because a
+// scale's OFFSET column retunes by hundredths -- the caller turns that into a
+// frequency, it does not round back to an integer note.
+//
+// The M8 manual: scales quantise "note related events" -- project transpose,
+// chain transpose, note entry, ARP, the PIT effect command, the FMSynth PIT mod
+// modifier, and the MIDIOUT CHD/ADD commands -- and are enabled per instrument
+// by the TRANSP option, which is why the caller gates this on the same flag
+// that gates transpose.
+//
+// A scale with NO interval enabled means NO quantisation, not silence. That is
+// how a real device reads with an untouched scale 00: its SCALE view shows "--"
+// in all twelve EN cells and "--.--" in every OFFSET, and songs play normally
+// (device capture, fw 6.5.2). It is also what keeps existing songs identical --
+// every file we can load carries an all-zero interval mask.
+//
+// UNVERIFIED, and the only guess in here: what a DISABLED interval does. We
+// snap DOWN to the nearest enabled interval at or below it. The manual says
+// scales quantise but never in which direction, and nothing in the repo pins
+// it. The probe that settles it: enable only C and E, keyjazz C#, D and D#, and
+// read the captured pitch -- snap-down gives C, C, E; nearest gives C, E, E.
+// It matters less than it looks, because note ENTRY is quantised on the device
+// too, so a song authored on hardware rarely holds an out-of-scale note; this
+// governs what transpose and PIT do to one.
+inline float quantizeToScale(int midi, const Scale& scale) {
+    bool any = false;
+    for (int i = 0; i < 12; ++i) if (scale.notes[i].enable) { any = true; break; }
+    if (!any) return static_cast<float>(midi);
+
+    int interval = (midi - scale.key) % 12;
+    if (interval < 0) interval += 12;
+
+    int steps = 0;
+    while (!scale.notes[interval].enable && steps < 12) {
+        interval = (interval + 11) % 12;   // one semitone down, wrapping
+        ++steps;
+    }
+    return static_cast<float>(midi - steps) + scale.notes[interval].offset;
+}
 
 struct MixerState {
     // SPEAKER VOL on screen: this application's own output level, NOT part of the

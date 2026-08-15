@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 306 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- **Tests**: Catch2 v3 — 313 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -97,7 +97,7 @@ Targets:
 
   `MIXER`'s compound widget and Instrument `TYPE` are refused up front rather than thrashed at
   (`FENCED_FIELDS`), for bugs #20/#21, which remain **OPEN**. See Known issues.
-- `m8_tests` — 306 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- `m8_tests` — 313 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -495,7 +495,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 306 cases
+### Tests — 313 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -515,11 +515,11 @@ runner's reported total will match this only if every case is compiled in.
 
 | | count | why |
 |---|---|---|
-| `TEST_CASE` macros in `tests/*.cpp` | 306 | the static count above |
-| runnable by default | 305 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| last recorded run | 305 | 2026-08-14, **305 cases / 895,482 assertions, all passing** — the whole default suite, nothing skipped and nothing `[!shouldfail]` |
+| `TEST_CASE` macros in `tests/*.cpp` | 313 | the static count above |
+| runnable by default | 312 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| last recorded run | 312 | 2026-08-14, **312 cases / 897,306 assertions, 311 passing and one failing as expected** — `L31` is `[!shouldfail]` and documents the scale OFFSET encoding gap (see Known issues) |
 
-So: the suite is green at 305/305, and `[fuzz]` only runs when you ask for it. The two numbers
+So: the suite is green at 312/312, counting L31's failure as the pass it is. The two numbers
 agree exactly, which is the check that every case is compiled in.
 
 This table has twice gone stale by dozens of cases while the heading above it was edited alone
@@ -817,6 +817,46 @@ Future captures use the C++ `m8_capture`.
   loads **zero samples** — the last part matters because the manifest's `diff` policy has no
   `--sample-root` field, so any sample-using song would render silent too. The manifest header now
   states both requirements.
+- **Scales reach the audio as of 2026-08-14, and the OFFSET encoding is the open question.**
+  The 16 scales had loaded, saved and edited for months while `note→frequency` was a hardcoded
+  `440.0f * pow(2, (midi-69)/12)` that never consulted them. Now `quantizeToScale`
+  (`Engine.h`, beside the `Scale` data) runs at that site, gated by the instrument's TRANSP
+  flag — which the manual confirms is the per-instrument scale enable, not just a transpose
+  gate. A scale with **no interval enabled means no quantisation**, which is what a real device
+  shows for an untouched scale 00 (all twelve EN cells `--`, read over the wire on fw 6.5.2)
+  while playing normally, and is what keeps every existing song identical (`SC1` asserts that
+  bit-for-bit). TUNE is the A4 reference and applies whether or not the scale does.
+  **The record is 46 bytes, not 42** — see AGENTS.md §7. 42 is what the modelled fields add up
+  to, it decodes record 0 perfectly, and it then drifts 4 bytes per record; `MAJOR` came out 4
+  bytes late and `MINOR` 8. Caught before it shipped, by dumping three committed songs. The
+  vendored library has this same drift (it reads the records sequentially at field width), on
+  top of reading the semitone byte unsigned, so `loadScalesBlock`/`saveScalesBlock` bypass it
+  the way `loadEffectsBlock` bypasses `EffectsSettings`. **L30** pins the stride by asserting
+  three known factory masks (`0x0FFF` / `0x0AB5` / `0x05AD`) and their names.
+  **The global KEY is at 0xBB** and now loads and saves; it had been a hardcoded
+  `state.project.scale = 0`, so a song's key was discarded on load. Located by arithmetic and
+  confirmed twice — the name field ends at `0x9F` and MIDI is 27 bytes, and `0xBB + 18` lands
+  exactly on `kMixerOffset`; the 18 it precedes is the `0xBC`–`0xCD` run already flagged
+  volatile above.
+  **OPEN — the OFFSET encoding.** We store (signed whole semitone, unsigned hundredths), as the
+  library does. That cannot represent anything in `(-1.00, 0.00)`: `-0.50` becomes whole 0 /
+  cents 50 and reads back as `+0.50`. The M8's SCALE view offers -24.00 to +24.00, so the gap
+  is evidence the reading is wrong. The natural alternative is one signed 16-bit value in
+  hundredths — which spans that range exactly and is a scheme this machine uses elsewhere
+  (AGENTS.md §7 records EQ gain as 16-bit signed hundredths). Every committed song has all-zero
+  offsets, so no file we hold distinguishes them. **Not switched on reasoning alone.** One
+  device probe settles it: set an OFFSET to `-0.50`, save, read the pair — (whole, cents)
+  predicts `00 32`, signed-hundredths predicts `CE FF` or `FF CE`. Test **L31** is
+  `[!shouldfail]` and documents it.
+  **Also open:** the snap direction for a disabled interval (we snap DOWN, a documented guess —
+  `quantizeToScale` carries the probe that settles it); `SCA`/`SCG`, so every track reads scale
+  00, which the manual says is the default for all 8 anyway; and ARP / PIT / the FMSynth PIT
+  modifier, which the manual lists as quantised and which are not.
+  **`m8drv` cannot drive the SCALE screen** — `kScaleFields` maps only TUNE, NAME, LOAD and
+  SAVE, so the 12 note rows have no field model; EDIT and EDIT+RIGHT both land as no-ops on an
+  EN cell while `inspect` shows the accent moving, which is the same unmodelled-column problem
+  behind driver bugs #22–#24. Bake the scale into a probe `.m8s` instead, the way §UI-11 baked
+  HyperSynth WIDTH in.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked

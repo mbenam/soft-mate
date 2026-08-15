@@ -231,7 +231,12 @@ struct EngineStateUpdater {
                         if (cmd.row >= 0 && cmd.row < 12) scale.notes[cmd.row].enable = (cmd.value != 0);
                         break;
                     case ParamID::SCALE_NOTE_OFFSET:
-                        if (cmd.row >= 0 && cmd.row < 12) scale.notes[cmd.row].offset = cmd.fValue;
+                        // -24.00..+24.00 semitones (M8 manual, SCALE view). The
+                        // file stores the whole part as a signed byte, so a
+                        // value outside this would not survive a save either.
+                        if (cmd.row >= 0 && cmd.row < 12)
+                            scale.notes[cmd.row].offset =
+                                std::clamp(cmd.fValue, kScaleOffsetMin, kScaleOffsetMax);
                         break;
                     case ParamID::SCALE_NAME:
                         if (cmd.row >= 0 && cmd.row < 16) {
