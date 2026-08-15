@@ -358,9 +358,12 @@ TEST_CASE("S-DET1 detune changes rendered pitch by the right amount", "[audio]")
 // sequenced -- the scale cases use it to install a scale. `expectHz` overrides
 // the search hint given to pitchHz, which the quantising cases need because the
 // whole point is that the note does NOT land where the written note says.
+// `fx`/`fxVal` put one FX command in slot 0 of the same step as the note, which
+// is how SC6/SC7 exercise SCA and SCG.
 static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80,
                                const std::function<void(EngineState&)>& tweak = nullptr,
-                               float expectHz = 0.0f) {
+                               float expectHz = 0.0f,
+                               FxCmd fx = FxCmd::NONE, uint8_t fxVal = 0) {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();
     state.instruments[0].type = InstType::INST_SAMPLER;
@@ -399,6 +402,10 @@ static float renderSamplerNote(int midiNote, float srcHz, int detune = 0x80,
     if (tweak) tweak(state);
 
     setStep(host.sequencer(), 0, 0, midiNote, 100, 0);
+    if (fx != FxCmd::NONE) {
+        host.sequencer().phrases[0][0].fx[0].cmd = fx;
+        host.sequencer().phrases[0][0].fx[0].val = fxVal;
+    }
     host.push(playPhrase(0, 0, 0));
     host.render(48000);
 
@@ -551,6 +558,51 @@ TEST_CASE("SC5 TUNE moves the reference pitch", "[audio]") {
 
     REQUIRE(std::fabs(1200.0f * std::log2(a440 / 261.626f)) < 25.0f);
     REQUIRE(std::fabs(1200.0f * std::log2(a880 / 523.251f)) < 25.0f);
+}
+
+// SC6/SC7 -- SCA and SCG. X is the key, Y the scale number. Note that the KEY
+// NUMBERING is unverified (see the parseFX comment); these cases use key 0 so
+// they exercise the scale-selection half, which the manual does confirm.
+TEST_CASE("SC6 SCA gives one track its own scale", "[audio]") {
+    // Scale 0 is chromatic (identity); scale 1 has only C enabled, so a C#4 on
+    // a track running scale 1 snaps up to C-5 while the project stays chromatic.
+    auto twoScales = [](EngineState& st) {
+        installScale(st, 0x0FFF);            // scale 0, all intervals
+        Scale& s1 = st.scales[1];
+        s1.key = 0; s1.tune = 440.0f;
+        for (int i = 0; i < 12; ++i) { s1.notes[i].enable = (i == 0); s1.notes[i].offset = 0.0f; }
+        st.project.scale = 0;
+        st.project.key   = 0;
+    };
+
+    // Without SCA the track follows the project's chromatic scale: C#4 as written.
+    const float plain = renderSamplerNote(61, 261.626f, 0x80, twoScales, 277.183f);
+
+    // With SCA 01 (key 0, scale 1) the same note snaps up to C-5.
+    const float scoped = renderSamplerNote(61, 261.626f, 0x80,
+        [&twoScales](EngineState& st) { twoScales(st); }, 523.251f, FxCmd::SCA, 0x01);
+    CAPTURE(plain, scoped);
+
+    REQUIRE(std::fabs(1200.0f * std::log2(plain  / 277.183f)) < 25.0f);
+    REQUIRE(std::fabs(1200.0f * std::log2(scoped / 523.251f)) < 25.0f);
+}
+
+TEST_CASE("SC7 SCG moves the whole song and clears SCA overrides", "[audio]") {
+    auto twoScales = [](EngineState& st) {
+        installScale(st, 0x0FFF);
+        Scale& s1 = st.scales[1];
+        s1.key = 0; s1.tune = 440.0f;
+        for (int i = 0; i < 12; ++i) { s1.notes[i].enable = (i == 0); s1.notes[i].offset = 0.0f; }
+        st.project.scale = 0;
+        st.project.key   = 0;
+    };
+
+    // SCG 01 selects scale 1 for the song, so the note snaps even though no SCA
+    // was issued on this track.
+    const float global = renderSamplerNote(61, 261.626f, 0x80, twoScales, 523.251f,
+                                           FxCmd::SCG, 0x01);
+    CAPTURE(global);
+    REQUIRE(std::fabs(1200.0f * std::log2(global / 523.251f)) < 25.0f);
 }
 
 TEST_CASE("S-LIM-POST POST:AD soft-clips after the filter, bounded and distinct from CLIP", "[audio]") {

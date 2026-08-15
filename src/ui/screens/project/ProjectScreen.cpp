@@ -128,12 +128,25 @@ void RenderProjectScreen(Renderer& renderer,
                 if (fieldId == CursorId::GROOVE) {
                     drawText = (engState.project.groove == 0) ? "DEFAULT" : "       ";
                 } else if (fieldId == CursorId::SCALE) {
-                    static const char* kKeyNames[16] = {
-                        " C", "C#", " D", "D#", " E", " F", "F#", " G",
-                        "G#", " A", "A#1", " B", " C1", "C#1", " D1", "D#1"
+                    // The SCALE row reads "<index> <key> <scale name>". The key
+                    // is NOT derived from the index byte -- this used to index a
+                    // key table with `scale & 0x0F`, which showed G# for scale
+                    // 08 where a device shows C. Measured on fw 6.5.2: stepping
+                    // the index from 00 to 08 left the key at C and moved the
+                    // name to MINOR PENTATON.
+                    static const char* kKeyNames[12] = {
+                        " C", "C#", " D", "D#", " E", " F",
+                        "F#", " G", "G#", " A", "A#", " B"
                     };
-                    uint8_t scaleByte = static_cast<uint8_t>(engState.project.scale);
-                    drawText = kKeyNames[scaleByte & 0x0F];
+                    const int idx = engState.project.scale & 0x0F;
+                    drawText = kKeyNames[engState.project.key % 12];
+                    drawText += " ";
+                    for (int i = 0; i < 16; ++i) {
+                        const unsigned char c =
+                            static_cast<unsigned char>(engState.scales[idx].name[i]);
+                        if (c == 0x00 || c == 0xFF) break;
+                        drawText += static_cast<char>(c);
+                    }
                 } else if (fieldId == CursorId::LIVE_QUANTIZE) {
                     drawText = (engState.project.live_quantize == 0) ? "CHAIN LEN" : "STEPS    ";
                 } else {

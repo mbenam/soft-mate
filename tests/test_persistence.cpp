@@ -151,9 +151,16 @@ TEST_CASE("L5 Engine round-trip via LOAD_SONG", "[io]") {
     auto result = loadSong(path, "");
     REQUIRE(result.ok);
 
-    auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-    *reinterpret_cast<Sequencer*>(buf) = result.sequencer;
-    *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = result.state;
+    // Use LoadedSongData, the same type the app pushes (main.cpp). All five
+    // LOAD_SONG sites in this file used to hand-roll the payload as
+    // `new uint8_t[sizeof(Sequencer) + sizeof(EngineState)]` and then ASSIGN
+    // through a reinterpret_cast. That assigns into never-constructed memory,
+    // and EngineState owns a std::vector<Instrument>, so operator= read the
+    // destination's garbage pointers and freed them -- undefined behaviour that
+    // happened to be survivable until the struct's layout moved, at which point
+    // the whole [io] tag died with STATUS_HEAP_CORRUPTION (0xC0000374) and no
+    // output at all. Do not go back to raw buffers here.
+    auto* buf = new LoadedSongData{ result.sequencer, result.state };
 
     EngineCommand cmd{};
     cmd.type = CommandType::LOAD_SONG;
@@ -177,9 +184,7 @@ TEST_CASE("L8 TEST-FILE renders 30s without crash", "[io]") {
     auto result = loadSong(path, "");
     REQUIRE(result.ok);
 
-    auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-    *reinterpret_cast<Sequencer*>(buf) = result.sequencer;
-    *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = result.state;
+    auto* buf = new LoadedSongData{ result.sequencer, result.state };
 
     EngineCommand cmd{};
     cmd.type = CommandType::LOAD_SONG;
@@ -287,9 +292,7 @@ TEST_CASE("L9 bulk load is one command, ring never fills", "[io]") {
     auto result = loadSong(path, "");
     REQUIRE(result.ok);
 
-    auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-    *reinterpret_cast<Sequencer*>(buf) = result.sequencer;
-    *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = result.state;
+    auto* buf = new LoadedSongData{ result.sequencer, result.state };
 
     EngineCommand cmd{};
     cmd.type = CommandType::LOAD_SONG;
@@ -330,9 +333,7 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
     auto resultA = loadSong(songPath("TEST-FILE.m8s"), "");
     REQUIRE(resultA.ok);
     {
-        auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-        *reinterpret_cast<Sequencer*>(buf) = resultA.sequencer;
-        *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = resultA.state;
+        auto* buf = new LoadedSongData{ resultA.sequencer, resultA.state };
         EngineCommand cmd{};
         cmd.type = CommandType::LOAD_SONG;
         cmd.u.song.data = buf;
@@ -365,9 +366,7 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
     auto resultB = loadSong(songPath("TEST-FILE.m8s"), "");
     REQUIRE(resultB.ok);
     {
-        auto* buf = new uint8_t[sizeof(Sequencer) + sizeof(EngineState)];
-        *reinterpret_cast<Sequencer*>(buf) = resultB.sequencer;
-        *reinterpret_cast<EngineState*>(buf + sizeof(Sequencer)) = resultB.state;
+        auto* buf = new LoadedSongData{ resultB.sequencer, resultB.state };
         EngineCommand cmd{};
         cmd.type = CommandType::LOAD_SONG;
         cmd.u.song.data = buf;
@@ -1459,4 +1458,40 @@ TEST_CASE("L31 scale offsets are signed 16-bit hundredths", "[io]") {
     REQUIRE(std::fabs(got.notes[1].offset - -0.50f)  < 0.005f);
     REQUIRE(std::fabs(got.notes[2].offset -  23.99f) < 0.005f);
     REQUIRE(std::fabs(got.notes[3].offset - -23.99f) < 0.005f);
+}
+
+// L32 -- SCA is library byte 0x10 and SCG is 0x11, read off a device save.
+//
+// The same probe carries the answer: a phrase authored on hardware with SCG 10
+// on row 0 and SCA 20 on row 1 stores its FX slots as `11 10` and `10 20`.
+//
+// FX_COMMANDS_SPEC.md Part K says 0x17 and 0x18, and this is what disproves it.
+// That table derives the whole 0x09..0x23 run by walking the M8 manual's FX list
+// in order, and the device's own enum is not in that order either -- stepping it
+// gives ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG,
+// with DEL/GRV/HOP where the spec puts RND/RNL/RET and RMX missing. Nothing else
+// in that table should be trusted without its own probe.
+TEST_CASE("L32 SCA/SCG decode from the bytes a device writes", "[io]") {
+    auto r = loadSong("tests/fixtures/device_golden/scaleprobe.m8s", "");
+    REQUIRE(r.ok);
+
+    const auto& row0 = r.sequencer.phrases[0][0];
+    const auto& row1 = r.sequencer.phrases[0][1];
+
+    REQUIRE(row0.fx[0].cmd == FxCmd::SCG);
+    REQUIRE(row0.fx[0].val == 0x10);
+    REQUIRE(row1.fx[0].cmd == FxCmd::SCA);
+    REQUIRE(row1.fx[0].val == 0x20);
+
+    // And they survive a save, so a song using them is not silently rewritten.
+    std::string err;
+    REQUIRE(saveSong("sca_rt.m8s", r, r.sequencer, r.state, err));
+    auto again = loadSong("sca_rt.m8s", "");
+    REQUIRE(again.ok);
+    std::remove("sca_rt.m8s");
+
+    REQUIRE(again.sequencer.phrases[0][0].fx[0].cmd == FxCmd::SCG);
+    REQUIRE(again.sequencer.phrases[0][0].fx[0].val == 0x10);
+    REQUIRE(again.sequencer.phrases[0][1].fx[0].cmd == FxCmd::SCA);
+    REQUIRE(again.sequencer.phrases[0][1].fx[0].val == 0x20);
 }

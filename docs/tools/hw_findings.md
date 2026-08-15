@@ -1248,9 +1248,15 @@ Fundamental per row, by harmonic spacing and by autocorrelation (both agree):
 | 2 | F-4 | C3 130.81 Hz | 48 | 5 → 12 | **+7** |
 | 3 | A#4 | C3 130.81 Hz | 48 | 10 → 12 | **+2** |
 
-There is a constant -24 offset between written and sounded MIDI — MacroSynth's
-own octave reference, not a scale effect — and with it removed all four notes
-fit one rule exactly: **a disabled interval snaps UP to the next enabled one.**
+**Correction (same day):** the "constant -24 offset between written and sounded
+MIDI" first recorded here was an artefact of reading the M8's note NAMES as
+standard MIDI. The file stores the note the device calls `C-4` as `0x24` = 36,
+and our engine plays 36 as 65.41 Hz — exactly what the device produced. There is
+no offset at all; M8 octave naming just sits two below the C4 = 60 convention.
+The interval arithmetic below is unchanged, since it only ever used differences.
+
+With names aligned, all four notes fit one rule exactly: **a disabled interval
+snaps UP to the next enabled one.**
 
 **Row 2 is the case that settles it.** F-4 rose *seven* semitones to the next C
 rather than falling *one* to the E directly below it. Snap-down fails rows 1, 2
@@ -1288,3 +1294,36 @@ be set by hand; everything after that (load, retune, play, capture) was
 unattended. `SET TEMPO` also thrashes over a large gap and had to be replaced by
 coarse `EDIT+DOWN` presses — and killing it mid-run orphaned `m8_nav`, which
 holds COM3 until the process is killed.
+
+### Follow-up — SCA/SCG are 0x10 and 0x11, and Part K is wrong
+
+A second save of the same probe, with `SCG 10` on phrase row 0 and `SCA 20` on
+row 1, stores those FX slots as `11 10` and `10 20`. So **SCA = 0x10 and
+SCG = 0x11**.
+
+`FX_COMMANDS_SPEC.md` Part K says `0x17` / `0x18`. That table derives the whole
+`0x09..0x23` run by walking the manual's FX list in order, and the device's own
+enum is not in that order: stepping the FX cell from `---` gives
+
+```
+ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG
+```
+
+with `DEL`/`GRV`/`HOP` where the spec puts `RND`/`RNL`/`RET`, and `RMX` absent.
+**Treat every entry in Part K past TIC as unverified.** Pinned by `L32`.
+
+### Still open — the SCA/SCG key numbering
+
+X is the key and Y the scale number, but which root note X names is **not**
+settled. An attempt to read it on-device was inconclusive and should not be
+mistaken for evidence: with `SCG 10` in the phrase, the PROJECT and SCALE views
+both still showed key `C` after pressing PLAY — but `inspect --key 0x08` reports
+that the PLAY press never landed on the PHRASE screen, so the command had not
+run. (`m8_capture` drives PLAY successfully over its own serial path, so the two
+press paths differ; unexplained.)
+
+Two candidate mappings remain: `0 = C` (what the engine implements) and
+`0 = B` (Part K's guess, from the same table `L32` just disproved elsewhere).
+To settle it, get the transport genuinely running with an AUDIBLE instrument and
+a scale narrow enough to hear the root move — the probe's instrument 00 is
+`TYPE NONE`, which is silent, so nothing about it was observable either way.

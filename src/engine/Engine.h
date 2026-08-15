@@ -241,7 +241,13 @@ struct ProjectSettings {
     char name[13] = "DEMO2-------";
     int transpose = 0;
     int groove = 0;
-    int scale = 0;
+    int scale = 0;   // ACTIVE scale index 0-15, what PROJECT > SCALE selects
+    // The global KEY, 0 = C. Separate from `scale` -- measured on fw 6.5.2:
+    // stepping PROJECT > SCALE from 00 to 08 changed the scale (the row read
+    // "08 C MINOR PENTATON" and the SCALE view followed to scale 08) while the
+    // key stayed C. NOT PERSISTED: its file byte has not been located, so this
+    // resets to C on every load. See status.md.
+    int key = 0;
     int live_quantize = 0;
 };
 
@@ -295,12 +301,16 @@ inline constexpr float kScaleOffsetMax =  24.0f;
 // and restricting a scale afterwards does not rewrite notes already stored. So
 // a scale never rewrites the grid, and this is reached through transpose, PIT
 // and a scale narrowed after the fact.
-inline float quantizeToScale(int midi, const Scale& scale) {
+// `key` is the root note, 0 = C. It is passed in rather than read off the scale
+// because the M8's KEY is GLOBAL -- measured on fw 6.5.2, where the SCALE view
+// showed the same KEY for scale 00 and scale 08 -- and the SCA command can
+// override it per track.
+inline float quantizeToScale(int midi, const Scale& scale, int key) {
     bool any = false;
     for (int i = 0; i < 12; ++i) if (scale.notes[i].enable) { any = true; break; }
     if (!any) return static_cast<float>(midi);
 
-    int interval = (midi - scale.key) % 12;
+    int interval = (midi - key) % 12;
     if (interval < 0) interval += 12;
 
     int steps = 0;
@@ -451,6 +461,13 @@ struct EngineState {
     int pendingKil[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int nextHop[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int trackGroove[8] = {-1, -1, -1, -1, -1, -1, -1, -1}; // -1 = use project.groove
+    // Per-track scale and key, set by the SCA command. -1 means "follow the
+    // project", which is what every track does until SCA says otherwise --
+    // "Scale 00 is the default scale for all 8 tracks" (M8 manual). SCG writes
+    // the project pair instead and clears these, so a later SCG overrides an
+    // earlier SCA, which is what "global" has to mean.
+    int trackScale[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    int trackKey[8]   = {-1, -1, -1, -1, -1, -1, -1, -1};
 
     std::vector<Instrument> instruments;
     ProjectSettings project;

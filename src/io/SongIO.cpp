@@ -458,9 +458,24 @@ static void saveUnwrittenBlocks(const m8::Song& song,
 // meaning to bytes past TIC — their file-format indices are not verified in this tree
 // (see FX_COMMANDS_SPEC.md), only carried through.
 
+// SCA/SCG are the one pair we decode past TIC. MEASURED 2026-08-14 on fw 6.5.2:
+// a phrase authored on the device with SCG 10 on row 0 and SCA 20 on row 1 saved
+// its FX slots as `11 10` and `10 20`. So SCA is 0x10 and SCG is 0x11.
+//
+// FX_COMMANDS_SPEC.md Part K says 0x17 and 0x18, and it is WRONG -- that table
+// derives the whole 0x09..0x23 run by walking the manual's FX list in order, and
+// the device's own list is not in that order either (stepping the FX enum gives
+// ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG, with
+// DEL/GRV/HOP where the spec puts RND/RNL/RET and RMX absent entirely). Treat
+// every other entry in that table as unverified until a probe says otherwise.
+static constexpr uint8_t kLibFxSca = 0x10;
+static constexpr uint8_t kLibFxScg = 0x11;
+
 static engine::FxCmd libFxToEngine(uint8_t cmd) {
     if (cmd == 0xFF) return engine::FxCmd::NONE;
     if (cmd <= 0x08) return static_cast<engine::FxCmd>(cmd + 1);  // VOL..TIC (modeled)
+    if (cmd == kLibFxSca) return engine::FxCmd::SCA;
+    if (cmd == kLibFxScg) return engine::FxCmd::SCG;
     return engine::FxCmd::UNKNOWN;                                // preserved, inert
 }
 
@@ -469,6 +484,8 @@ static uint8_t engineFxToLib(engine::FxCmd cmd) {
     // UNKNOWN is never routed through here — the phrase save loop preserves the
     // original byte for UNKNOWN slots instead of calling this. Guard defensively.
     if (cmd == engine::FxCmd::UNKNOWN) return 0xFF;
+    if (cmd == engine::FxCmd::SCA) return kLibFxSca;
+    if (cmd == engine::FxCmd::SCG) return kLibFxScg;
     return static_cast<uint8_t>(cmd) - 1;  // VOL..TIC -> 0x00..0x08
 }
 
@@ -700,16 +717,17 @@ static void convertSongToEngine(const m8::Song& song,
     // Project
     engine::setName(state.project.name, song.name.c_str());
     state.project.transpose = song.transpose;
-    // The PROJECT screen's SCALE/KEY byte. This used to be a hardcoded 0, so a
-    // song's key was discarded on load and the field showed C for everything.
-    // The manual calls KEY "a global setting that defines the root note for the
-    // default scale", and the library parses the same byte as `key`.
-    state.project.scale = song.key;
-    // Every scale gets seeded with that global key, so the SCALE view's KEY
-    // agrees with PROJECT's after a load. They are the same control on the
-    // device; we still hold a per-scale copy, which is the thing to unify once
-    // the SCA command gives a track its own key.
-    for (int i = 0; i < 16; ++i) state.scales[i].key = song.key & 0x0F;
+    // PROJECT > SCALE selects the ACTIVE scale index, measured on fw 6.5.2 --
+    // stepping it to 08 made the SCALE view follow to scale 08 and the row read
+    // "08 C MINOR PENTATON". It is NOT the key, which stayed C throughout; the
+    // library's name for this byte is misleading.
+    // OPEN: whether 0xBB holds the index alone or packs index and key into
+    // nibbles. Every V4 file we have reads 0 there, so nothing distinguishes
+    // them -- masking to the low nibble is safe under either reading. The key
+    // half has no located byte at all, so project.key is not loaded and resets
+    // to C. One device save with a non-zero scale index settles it.
+    state.project.scale = song.key & 0x0F;
+    state.project.key   = 0;
     state.project.groove = 0;
 
     // Tempo

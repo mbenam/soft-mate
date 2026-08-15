@@ -9,6 +9,7 @@
 #include "ui/CharPicker.h"
 #include "io/SongIO.h"
 #include "support/OfflineHost.h"
+#include <cstring>
 
 using namespace m8::ui;
 using namespace m8::ui::project;
@@ -501,19 +502,33 @@ TEST_CASE("ProjectScreen: SCALE rendering displays key signature accents", "[pro
     REQUIRE(row5_0.find("00") != std::string::npos);
     REQUIRE(row5_0.find(" C") != std::string::npos);
 
-    // When scale == 0xAA: row 5 has "SCALE         AA A#1"
-    engState.project.scale = 0xAA;
+    // ASSERTION CHANGED 2026-08-14. This used to set scale = 0xAA and require
+    // the row to contain "A#1", pinning a renderer that derived the KEY from the
+    // scale byte's low nibble (0xA -> A#). Measured on fw 6.5.2: that field is
+    // the ACTIVE SCALE INDEX, not a key. Stepping it 00 -> 08 left the key at C
+    // and moved the scale NAME to MINOR PENTATON, so the row reads
+    // "<index> <key> <scale name>" with the key coming from elsewhere. Under the
+    // old renderer scale 08 would have shown G# where the device shows C.
+    //
+    // So the key now tracks project.key, independently of the index.
+    engState.project.scale = 0x08;
+    engState.project.key   = 3;     // D#
+    std::memcpy(engState.scales[8].name, "MINOR PENTATONIC", 16);
     renderer.resetVram();
     RenderProjectScreen(renderer, engState, CursorId::SCALE);
-    const auto& vramAA = renderer.getVram();
-    std::string row5_AA;
+    const auto& vram8 = renderer.getVram();
+    std::string row5_8;
     for (int c = 0; c < 40; ++c) {
-        char ch = vramAA[5][c].ch;
-        row5_AA += (ch ? ch : ' ');
+        char ch = vram8[5][c].ch;
+        row5_8 += (ch ? ch : ' ');
     }
-    REQUIRE(row5_AA.find("SCALE") != std::string::npos);
-    REQUIRE(row5_AA.find("AA") != std::string::npos);
-    REQUIRE(row5_AA.find("A#1") != std::string::npos);
+    REQUIRE(row5_8.find("SCALE") != std::string::npos);
+    REQUIRE(row5_8.find("08") != std::string::npos);
+    REQUIRE(row5_8.find("D#") != std::string::npos);
+    REQUIRE(row5_8.find("MINOR PENTATONIC") != std::string::npos);
+
+    // The index must not leak into the key: 08 under the old renderer was G#.
+    REQUIRE(row5_8.find("G#") == std::string::npos);
 }
 
 TEST_CASE("ProjectScreen: LIVE_QUANTIZE editing with 1s and 16s and delayed commit", "[project_quantize]") {

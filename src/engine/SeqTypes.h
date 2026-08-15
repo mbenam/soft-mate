@@ -17,7 +17,10 @@ inline constexpr uint8_t PHRASE_EMPTY= 0xFF;
 // the engine does not model (file byte >= 0x09): it is carried through load/save
 // byte-for-byte (see SongIO) and is inert at tick time. Keep UNKNOWN last / distinct
 // so it never collides with a modeled value.
+// SCA/SCG sit after TIC because their file bytes (0x17/0x18) are NOT adjacent to
+// TIC's -- the enum order is ours, the file mapping is explicit in SongIO.
 enum class FxCmd : uint8_t { NONE = 0, VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC,
+                             SCA, SCG,
                              UNKNOWN = 0xFE };
 
 struct FxSlot {

@@ -191,6 +191,18 @@ void Engine::processCommands() {
                     m_state.scales[i] = data->state.scales[i];
                 for (int i = 0; i < kEqTotal; ++i)
                     m_state.eqs[i] = data->state.eqs[i];
+                // Per-track SCA overrides belong to the song that set them, so
+                // they clear here or a track would carry the previous song's
+                // scale into the new one -- the divergence invariant 11 forbids,
+                // since a fresh engine loading the same file has none.
+                // (trackGroove has the same latent problem and is left alone:
+                // fixing it is a separate change with its own test.)
+                for (int i = 0; i < 8; ++i) {
+                    m_state.trackScale[i] = -1;
+                    m_state.trackKey[i]   = -1;
+                }
+                m_state.project.scale = data->state.project.scale;
+                m_state.project.key   = data->state.project.key;
                 // Reset effects DSP state so the new song starts clean — without
                 // this, chorus/delay/reverb buffers and DC blockers carry audio
                 // from whatever was previously loaded (e.g. the demo song), causing
@@ -378,6 +390,28 @@ void Engine::tickTrack(int t) {
                 m_state.trackGroove[t] = (fx.val < Sequencer::NUM_GROOVES) ? fx.val : -1;
                 m_state.playGrooveIndex[t] = 0;
             }
+            // SCA XY / SCG XY -- X is the key, Y the scale number (manual, and
+            // FX_COMMANDS_SPEC.md §SCA). SCA is per track, SCG is the song.
+            //
+            // The KEY NUMBERING IS UNVERIFIED: 0 = C here, which is what the
+            // global key byte reads on a device whose PROJECT view shows C, but
+            // the spec's own Tier-2 list flags this exact mapping as open and
+            // guesses 0 = B instead. Settled by authoring SCA00/SCA10/SCA20 on a
+            // track and reading the key the SCALE view then shows.
+            else if (fx.cmd == FxCmd::SCA) {
+                m_state.trackKey[t]   = (fx.val >> 4) & 0x0F;
+                m_state.trackScale[t] = fx.val & 0x0F;
+            }
+            else if (fx.cmd == FxCmd::SCG) {
+                m_state.project.key   = (fx.val >> 4) & 0x0F;
+                m_state.project.scale = fx.val & 0x0F;
+                // Global means global: a track that had taken an SCA override
+                // goes back to following the project.
+                for (int k = 0; k < 8; ++k) {
+                    m_state.trackScale[k] = -1;
+                    m_state.trackKey[k]   = -1;
+                }
+            }
         };
         parseFX(step.fx[0]); parseFX(step.fx[1]); parseFX(step.fx[2]);
         
@@ -405,11 +439,18 @@ void Engine::tickTrack(int t) {
             if (midi < 0) midi = 0;
             if (midi > 127) midi = 127;
 
-            // Scale 00 is the default scale for all 8 tracks (manual). Per-track
-            // assignment through the SCA/SCG FX commands is not implemented, so
-            // every track reads scale 0 for now.
-            const Scale& sc = m_state.scales[0];
-            float pitch = transpOn ? quantizeToScale(midi, sc)
+            // A track follows the project's scale and key unless SCA gave it its
+            // own. PROJECT > SCALE selects the active scale, measured on fw
+            // 6.5.2; the manual's "Scale 00 is the default scale for all 8
+            // tracks" is just that field's default value.
+            const int scaleIdx = m_state.trackScale[t] >= 0
+                               ? m_state.trackScale[t]
+                               : (m_state.project.scale & 0x0F);
+            const int key = m_state.trackKey[t] >= 0
+                          ? m_state.trackKey[t]
+                          : m_state.project.key;
+            const Scale& sc = m_state.scales[scaleIdx & 0x0F];
+            float pitch = transpOn ? quantizeToScale(midi, sc, key)
                                    : static_cast<float>(midi);
             pitch = std::clamp(pitch, 0.0f, 127.0f);
             // TUNE is the A4 reference, so it applies whether or not the scale

@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 313 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- **Tests**: Catch2 v3 — 316 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -97,7 +97,7 @@ Targets:
 
   `MIXER`'s compound widget and Instrument `TYPE` are refused up front rather than thrashed at
   (`FENCED_FIELDS`), for bugs #20/#21, which remain **OPEN**. See Known issues.
-- `m8_tests` — 313 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- `m8_tests` — 316 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -495,7 +495,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 313 cases
+### Tests — 316 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -515,9 +515,9 @@ runner's reported total will match this only if every case is compiled in.
 
 | | count | why |
 |---|---|---|
-| `TEST_CASE` macros in `tests/*.cpp` | 313 | the static count above |
-| runnable by default | 312 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| last recorded run | 312 | 2026-08-14, **312 cases / 897,314 assertions, all passing** — nothing skipped and nothing `[!shouldfail]`, after the device probe settled the scale OFFSET encoding and `L31` went green |
+| `TEST_CASE` macros in `tests/*.cpp` | 316 | the static count above |
+| runnable by default | 315 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| last recorded run | 315 | 2026-08-14, **315 cases / 897,612 assertions, all passing** — nothing skipped and nothing `[!shouldfail]`, after SCA/SCG landed and the `[io]` heap corruption was fixed |
 
 So: the suite is green at 312/312, and `[fuzz]` only runs when you ask for it. The two numbers
 agree exactly, which is the check that every case is compiled in.
@@ -862,9 +862,31 @@ Future captures use the C++ `m8_capture`.
   the case that settles it:** it rose *seven* semitones to the next C rather than falling *one*
   to the E right below. Snap-down fails three of the four; "nearest" fails F-4 for the same
   reason. `SC3` now pins exactly those four notes.
-  **Also open:** `SCA`/`SCG`, so every track reads scale 00 — which the manual says is the
-  default for all 8 anyway; and ARP / PIT / the FMSynth PIT modifier, which the manual lists as
-  quantised and which are not.
+  **`SCA`/`SCG` are implemented (2026-08-14).** `trackScale[8]`/`trackKey[8]` sit beside
+  `trackGroove[8]`; SCA sets the pair for one track, SCG sets the project pair and clears every
+  SCA override. **Their file bytes are MEASURED: SCA is `0x10` and SCG is `0x11`** — a phrase
+  authored on hardware with `SCG 10` and `SCA 20` stored `11 10` and `10 20` (`L32`).
+  `FX_COMMANDS_SPEC.md` Part K says `0x17`/`0x18` and is **wrong**; it derives the whole
+  `0x09..0x23` run from the manual's list order, and the device's own FX enum is not in that
+  order (`DEL`/`GRV`/`HOP` sit where the spec puts `RND`/`RNL`/`RET`, and `RMX` is absent).
+  **Treat every Part K entry past TIC as unverified.**
+  **OPEN — the SCA/SCG key numbering.** X is the key, but which root note X names is unsettled:
+  `0 = C` (implemented) or `0 = B` (Part K's guess). An on-device attempt was inconclusive and
+  is not evidence — the PLAY press never landed on the PHRASE screen (`inspect` confirms), so
+  the command never ran, and the probe's instrument 00 is `TYPE NONE` and silent anyway.
+  **Also open:** ARP and phrase-level PIT are listed by the manual as quantised and are *not
+  implemented at all* — `parseFX` handles DEL/KIL/HOP/TBL/GRV/SCA/SCG only, and the FX spec's
+  own status table has PIT as "--" for the phrase engine. So "quantise PIT/ARP" is blocked on
+  those commands existing, not on scales. Table PIT *is* executed, but it lands in `SynthVoice`
+  as a frequency multiplier downstream of quantisation, and whether hardware quantises table
+  transpose is unmeasured.
+  **A latent test bug surfaced here and is worth knowing about.** All five LOAD_SONG sites in
+  `test_persistence.cpp` built the payload as `new uint8_t[sizeof(Sequencer) + sizeof(EngineState)]`
+  and then *assigned* through a `reinterpret_cast`. That assigns into never-constructed memory,
+  and `EngineState` owns a `std::vector<Instrument>`, so `operator=` read the destination's
+  garbage pointers and freed them. It survived for months and then killed the entire `[io]` tag
+  with `STATUS_HEAP_CORRUPTION` and **no output at all** the moment `EngineState`'s layout moved.
+  All five now use `LoadedSongData`, which is what the app itself pushes.
   **`m8drv` cannot drive the SCALE screen** — `kScaleFields` maps only TUNE, NAME, LOAD and
   SAVE, so the 12 note rows have no field model; EDIT and EDIT+RIGHT both land as no-ops on an
   EN cell while `inspect` shows the accent moving, which is the same unmodelled-column problem
