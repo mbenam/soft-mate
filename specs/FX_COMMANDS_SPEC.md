@@ -1014,6 +1014,24 @@ struct.
 
 ### libFxToEngine mapping
 
+> **WRONG BELOW `0x09`'s LINE — DISPROVED 2026-08-14. Do not build on this table.**
+>
+> This run was derived by walking the M8 manual's FX command list in order and
+> numbering it sequentially from `0x09`. A device measurement says it is wrong:
+> a phrase authored on fw 6.5.2 with `SCG 10` and `SCA 20` saved its FX slots as
+> `11 10` and `10 20`, so **SCA is `0x10` and SCG is `0x11`**, not `0x17`/`0x18`.
+>
+> The premise fails too. The device's own FX enum is not in this order — stepping
+> the cell from `---` gives
+> `ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG`,
+> with `DEL`/`GRV`/`HOP` where this table puts `RND`/`RNL`/`RET`, and `RMX`
+> absent entirely. So neither the order nor the base offset survives.
+>
+> `0xFF` and `0x00`–`0x08` are unaffected: those are exercised by the round-trip
+> tests and are correct. **Every entry from `0x09` on needs its own probe before
+> use.** The probe is cheap: author the command in a phrase on the device, save,
+> and read the FX byte. See `hw_findings.md` §UI-13 and test `L32`.
+
 ```
 Library  Engine
 0xFF     NONE
