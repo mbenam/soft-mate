@@ -369,10 +369,12 @@ specifically built to catch.
   14 destinations including mod-to-mod routing and cross-instrument TRIG.
 - Send-effects bus (chorus, stereo delay with smoothed times + feedback
   clamp + DC blocking, ReverbSC), **linear balance pan** (measured on hardware,
-  `hw_findings.md` §UI-10/§UI-12), master saturation. **Caveat: the chorus and
-  delay returns are mono** — with the dry path muted their two channels are
-  bit-identical, so their STEREO WIDTH controls have nothing to act on. Test
-  `A7` is marked `[!shouldfail]` and documents it.
+  `hw_findings.md` §UI-10/§UI-12), master saturation. All three returns are
+  genuinely stereo as of 2026-08-14, so their STEREO WIDTH controls act on a real
+  image (`A7`, `A17`). The chorus runs one `daisysp::ChorusEngine` per channel
+  with offset base delays — *not* `daisysp::Chorus`, which Inits both of its
+  engines identically and cross-pans them back to `L == R`, and so was mono for
+  every input.
 - `.m8s` load/save with byte-identical round-trip for untouched data,
   missing-sample reporting, sample-root resolution, version gating.
 - 12 UI screens (Song, Chain, Phrase, Instrument ×2 layouts, Table, Project,

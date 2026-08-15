@@ -588,19 +588,34 @@ TEST_CASE("A6 effect-return defaults are the exact identity", "[audio]") {
 // bit-identical. So the returns are mono, and STEREO WIDTH has nothing to act on;
 // narrowing them cannot change anything because they are already narrow.
 //
-// Engine holds m_delayL and m_delayR as separate delay lines, so the structure is
-// stereo, but they appear to receive identical input and produce identical output.
-// Left failing on purpose rather than rewritten to assert the broken behaviour:
-// when the returns are made genuinely stereo this case starts passing and Catch2
-// will flag the [!shouldfail] as needing removal, which is the right prompt.
+// [!shouldfail] REMOVED 2026-08-14 -- the defect is fixed and the fixture was half
+// wrong. Two separate things were making the returns mono, and only one of them was
+// a bug:
+//
+//   * The CHORUS was mono for every input. daisysp::Chorus holds two ChorusEngines
+//     but Inits them identically, so they produce bit-identical output, and its
+//     0.25/0.75 cross-pan sums them straight back to L == R. Fixed in Engine.cpp:
+//     one ChorusEngine per channel, offset base delays, no mono sum on the way in.
+//
+//   * The DELAY was never broken. Its two lines already got their own channel. This
+//     fixture left del_time_l == del_time_r at the struct default of 0x30 and fed a
+//     centred mono source, and a stereo delay with equal times fed a mono source is
+//     CORRECTLY mono. So the case was asserting width on a return that had no width
+//     to lose. The times are offset below, as the authored songs have them
+//     (sunrise/opening carry 2C:3A), which is what gives the delay an image at all.
 //
 // Do NOT "fix" this by restoring the old centred-dry setup. That version passed
 // only because the retired constant-power pan law was asymmetric at centre
 // (0x80/255 = 0.50196, so cos != sin), which put a rounding artefact into the
 // channel difference and made the case look like it was testing the returns.
-TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio][!shouldfail]") {
-    auto wide   = renderWithEffects([](EffectsState&) {}, /*dryLevel=*/0x00);
+TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio]") {
+    // Offset delay times, so the delay return carries a stereo image for width to
+    // act on. Under 0.5 s each, so both repeats land inside the rendered window.
+    auto wide   = renderWithEffects([](EffectsState& fx) {
+        fx.del_time_l = 0x2C; fx.del_time_r = 0x3A;
+    }, /*dryLevel=*/0x00);
     auto narrow = renderWithEffects([](EffectsState& fx) {
+        fx.del_time_l = 0x2C; fx.del_time_r = 0x3A;
         fx.cho_width = 0x00; fx.del_width = 0x00; fx.rev_width = 0x00;
     }, /*dryLevel=*/0x00);
 
@@ -619,6 +634,42 @@ TEST_CASE("A7 STEREO WIDTH narrows the returns", "[audio][!shouldfail]") {
 
     REQUIRE(dWide > 0.0f);
     REQUIRE(dNarrow < dWide);
+}
+
+TEST_CASE("A17 the chorus return is stereo on its own", "[audio]") {
+    // A7 measures all three returns together, so a chorus regression could hide
+    // behind the delay's image. This isolates the chorus: the delay and reverb
+    // returns are narrowed to exactly mono (applyStereoWidth at 0x00 sets both
+    // channels to the mid), the dry path is muted, so anything left in |L-R| can
+    // only have come from the chorus.
+    //
+    // This is the case that would have caught the daisysp::Chorus defect on its
+    // own: two engines Init'd identically, cross-panned 0.25/0.75, summing back
+    // to L == R for every possible input.
+    auto choStereo = renderWithEffects([](EffectsState& fx) {
+        fx.modfx_type = 0;
+        fx.del_width = 0x00; fx.rev_width = 0x00;
+    }, /*dryLevel=*/0x00);
+    auto choMono = renderWithEffects([](EffectsState& fx) {
+        fx.modfx_type = 0;
+        fx.cho_width = 0x00; fx.del_width = 0x00; fx.rev_width = 0x00;
+    }, /*dryLevel=*/0x00);
+
+    // Level first, so a red result says which thing is wrong: no energy means the
+    // returns are silent, which is a different bug from them being mono.
+    double acc = 0.0;
+    for (float v : choStereo) acc += std::fabs(v);
+    const float energy = static_cast<float>(acc);
+
+    const float dStereo = meanStereoDiff(choStereo);
+    const float dMono   = meanStereoDiff(choMono);
+    CAPTURE(energy, dStereo, dMono);
+
+    REQUIRE(energy > 0.0f);
+    REQUIRE(dStereo > 0.0f);
+    // Everything else is already mono, so narrowing the chorus must take the
+    // whole output to mono.
+    REQUIRE(dMono == 0.0f);
 }
 
 TEST_CASE("A8 ModFX and Delay reach the reverb through their own sends", "[audio]") {

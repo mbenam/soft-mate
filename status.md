@@ -1,6 +1,6 @@
 # M8 Tracker Clone — Status
 
-Last updated: 2026-08-12
+Last updated: 2026-08-14
 
 A software clone of the **Dirtywave M8 Tracker**: the tracker workflow, the 2D view
 navigation, the custom UI layout, and the audio engine.
@@ -38,7 +38,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
-- **Tests**: Catch2 v3 — 269 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- **Tests**: Catch2 v3 — 306 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -97,7 +97,7 @@ Targets:
 
   `MIXER`'s compound widget and Instrument `TYPE` are refused up front rather than thrashed at
   (`FENCED_FIELDS`), for bugs #20/#21, which remain **OPEN**. See Known issues.
-- `m8_tests` — 269 cases (static `TEST_CASE` count, 2026-08-12; see Tests below)
+- `m8_tests` — 306 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -185,8 +185,10 @@ would otherwise save with soft clip off and clip on reload. Test **A12**.
 **ModFX is a slot with three algorithms (2026-08-14), not a chorus.** `MOD TYPE` selects
 `00 CHORUS` / `01 PHASER` / `02 FLANGER`, and all three share MOD DEPTH, MOD FRQ, STEREO WIDTH
 and REVERB SEND — which is why the device's labels do not change as you cycle the type. Type 0
-still runs DaisySP's chorus untouched, so every song we have authored renders unchanged
-(**A13** pins that bit-for-bit). The other two are ours, in `src/engine/ModFx.h`: six swept
+runs DaisySP's chorus math (**A13** pins the dispatch as changing nothing), though as of
+2026-08-14 it runs one `ChorusEngine` per channel rather than the mono-collapsing
+`daisysp::Chorus` wrapper — see Known issues; the left channel is unchanged and the right is
+the one that moved. The other two are ours, in `src/engine/ModFx.h`: six swept
 allpass stages with feedback for the phaser, a 0.5–9 ms modulated delay with feedback for the
 flanger, sharing one LFO with the right channel a quarter cycle behind so STEREO WIDTH has an
 image to narrow. Both reset on `LOAD_SONG`. *Neither is hardware-verified* — textbook forms in
@@ -493,7 +495,7 @@ It is committed data, not baked into the binary. If the file is missing, the app
 `loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
 synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
 
-### Tests — 274 cases
+### Tests — 306 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -513,16 +515,17 @@ runner's reported total will match this only if every case is compiled in.
 
 | | count | why |
 |---|---|---|
-| `TEST_CASE` macros in `tests/*.cpp` | 274 | the static count above |
-| runnable by default | 273 | `test_ui_fuzz.cpp`'s case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
-| last recorded run | 268 | 2026-08-13 (commit `b2ebe1b`), **268 cases / 893,305 assertions, all passing**, against that day's tree — before this session's five `[io]` cases (L20–L24) |
+| `TEST_CASE` macros in `tests/*.cpp` | 306 | the static count above |
+| runnable by default | 305 | `test_ui_fuzz.cpp`'s single case is tagged `[fuzz][.]` — Catch2's leading-dot hidden convention excludes it unless asked for by name or tag |
+| last recorded run | 305 | 2026-08-14, **305 cases / 895,482 assertions, all passing** — the whole default suite, nothing skipped and nothing `[!shouldfail]` |
 
-So: the suite was green at 268/268 on 2026-08-13, `[fuzz]` only runs when you ask for it, and
-L20–L24 have **not** been run yet.
+So: the suite is green at 305/305, and `[fuzz]` only runs when you ask for it. The two numbers
+agree exactly, which is the check that every case is compiled in.
 
-This table previously carried 232/231/226 from 2026-08-12 and was not updated as the suite
-grew past it — the three figures were stale by 42 cases while the heading above said 269. If
-you add cases, re-derive all three here rather than editing the heading alone.
+This table has twice gone stale by dozens of cases while the heading above it was edited alone
+(232/231/226 from 2026-08-12; then 274/273/268 from 2026-08-13, by which point the real static
+count had reached 306). If you add cases, re-derive all three here rather than editing the
+heading.
 
 ### UI test harness — Task 3 (`M8_UI_HARNESS_SPEC.md`)
 Shadow grid (`VirtualCell[30][40]`) inside `Renderer`. Every draw call also stamps the
@@ -770,17 +773,33 @@ Future captures use the C++ `m8_capture`.
   confirmed the capture rig measures stereo correctly (centre gives `side RMS` 0.000000, `corr`
   +1.0000) and that `OUTPUT VOL` does not reach the USB tap — use keyjazz velocity for capture
   level (`0x7F` clips, `0x40` is clean).
-- **The chorus and delay returns are mono, so their STEREO WIDTH controls do nothing.** Found
-  2026-08-14 while fixing the pan law. With the instrument's dry send muted so only the returns
-  are audible, the output measures 2555.6 of energy with a mean |L-R| of **exactly 0.0**, at both
-  width `0xFF` and width `0x00` -- there is signal and its two channels are bit-identical, so
-  there is no width to narrow. `Engine` holds `m_delayL`/`m_delayR` as separate delay lines, so
-  the structure is stereo but they appear to be fed identically. Test `A7` is marked
-  `[!shouldfail]` and documents it; when the returns are made genuinely stereo it will start
-  passing and Catch2 will flag the marker for removal. Note `A7` previously passed for a bogus
-  reason: the retired constant-power pan law was asymmetric at centre (`0x80/255` = 0.50196, so
-  `cos != sin`), which injected a rounding artefact into the channel difference and made the case
-  look like it was measuring the returns.
+- **The chorus return was mono — FIXED 2026-08-14. The delay was never broken.** Found while
+  fixing the pan law: with the dry send muted so only the returns are audible, the output
+  measured 2555.6 of energy with a mean |L-R| of **exactly 0.0** at both width `0xFF` and
+  `0x00`. Two causes, and only one was a bug.
+  **The chorus was mono for every possible input.** `daisysp::Chorus` holds two `ChorusEngine`s
+  but `Init`s them identically — same LFO phase, freq, depth and delay — so both produce
+  bit-identical output, and its `0.25`/`0.75` cross-pan then sums them straight back to
+  `L == R`. No input could make it stereo, so `STEREO WIDTH` had nothing to act on. `Engine`
+  now drives one `daisysp::ChorusEngine` per channel with offset base delays
+  (`kChorusDelayL/R`), and no longer sums the send to mono on the way in, so a hard-panned
+  track's chorus return stays on the side the track sits on. **Left is bit-for-bit unchanged
+  for centred material** — it keeps `ChorusEngine::Init`'s own 0.75 base delay, and the `0.5`
+  that replaced `Chorus::gain_frac_` preserves the level — so only the right channel differs
+  from what songs rendered as before. *The offset is a choice, not a measurement*, in the same
+  class as the phaser/flanger constants; the two LFO phases stay locked because DaisySP has no
+  phase accessor.
+  **The delay's two lines already got their own channel.** `A7`'s fixture left
+  `del_time_l == del_time_r` at the struct default of `0x30` and fed a centred mono source,
+  and a stereo delay with equal times fed a mono source is *correctly* mono — so the case was
+  asserting width on a return with no width to lose. Its times are now offset to `2C:3A`, as
+  the authored songs carry them. `A7`'s `[!shouldfail]` is removed, and **A17** pins the
+  chorus's image on its own (delay and reverb returns narrowed to exactly mono, so anything
+  left in |L-R| can only be the chorus) — the case that would have caught this without the
+  delay masking it. Note `A7` had previously passed for a bogus reason: the retired
+  constant-power pan law was asymmetric at centre (`0x80/255` = 0.50196, so `cos != sin`),
+  which injected a rounding artefact into the channel difference and made the case look like
+  it was measuring the returns.
 - **The app-vs-offline-render comparison was passing on silence.** Found 2026-08-14. The `[ui]`
   suite's `live_vs_offline` section renders a reference with `m8_render` and diffs it against the
   app's own WAV, which is how ARCHITECTURE.md's hard invariant #11 ("the offline renderer and the

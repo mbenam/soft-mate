@@ -11,11 +11,35 @@ namespace engine {
 Engine::Engine(CommandRing<EngineCommand, 1024>& commandRing) 
     : m_commandRing(commandRing) 
 {
-    m_chorus.Init(kSampleRate);
+    initChorus();
     m_delayL.Init();
     m_delayR.Init();
     m_reverb.Init(kSampleRate);
     recalcBPM();
+}
+
+// The two chorus engines differ only in their base delay, and that difference is
+// the whole reason the return has a stereo image. Two identical comb filters on
+// the same input give identical output no matter how they are panned, which is
+// exactly the trap daisysp::Chorus falls into.
+//
+// Left keeps ChorusEngine::Init's own 0.75 (6.03 ms), so for centred material the
+// left channel is bit-for-bit what this path produced before. Right is offset to
+// 0.45 (3.65 ms) and is the channel that changes.
+//
+// CHOICE, not a measurement -- like the phaser sweep range and the flanger delay
+// range, in the same approximation class. The offset is within the 1-10 ms window
+// a chorus conventionally uses. The two LFO phases stay locked because DaisySP
+// exposes no way to offset them; the delay difference is what decorrelates the
+// two channels.
+static constexpr float kChorusDelayL = 0.75f;
+static constexpr float kChorusDelayR = 0.45f;
+
+void Engine::initChorus() {
+    m_chorusL.Init(kSampleRate);
+    m_chorusR.Init(kSampleRate);
+    m_chorusL.SetDelay(kChorusDelayL);
+    m_chorusR.SetDelay(kChorusDelayR);
 }
 
 static constexpr int TICKS_PER_ROW = 6;
@@ -155,7 +179,7 @@ void Engine::processCommands() {
                 // this, chorus/delay/reverb buffers and DC blockers carry audio
                 // from whatever was previously loaded (e.g. the demo song), causing
                 // the in-app render path to diverge from m8_render's fresh engine.
-                m_chorus.Init(kSampleRate);
+                initChorus();
                 // The other two ModFX algorithms carry state too -- allpass
                 // memories, a delay line and their feedback -- so they reset
                 // here for the same reason as everything else in this block
@@ -956,22 +980,21 @@ void Engine::render(float* buffer, int frames) {
 
         m_smoothChoFreq += ((m_state.effects.cho_mod_freq / 255.0f) * 10.0f - m_smoothChoFreq) * 0.005f;
         m_smoothChoDepth += (m_state.effects.cho_mod_depth / 255.0f - m_smoothChoDepth) * 0.005f;
-        m_chorus.SetLfoFreq(m_smoothChoFreq);
-        m_chorus.SetLfoDepth(m_smoothChoDepth);
-        // DaisySP's Chorus takes a mono input and produces its own stereo
-        // spread, so this one send is summed back down. Delay and reverb below
-        // take both channels.
+        m_chorusL.SetLfoFreq(m_smoothChoFreq);
+        m_chorusR.SetLfoFreq(m_smoothChoFreq);
+        m_chorusL.SetLfoDepth(m_smoothChoDepth);
+        m_chorusR.SetLfoDepth(m_smoothChoDepth);
         // ModFX is a slot with three algorithms, not a chorus (§UI-7). All
-        // three share MOD DEPTH and MOD FRQ; only the processor differs. Type 0
-        // keeps DaisySP's chorus untouched, so a song that never sets this --
-        // which is every song we have authored -- renders exactly as before.
+        // three share MOD DEPTH and MOD FRQ; only the processor differs.
         float choL = 0.0f, choR = 0.0f;
         if (m_state.effects.modfx_type == 0) {
-            // DaisySP's Chorus takes a mono input and makes its own stereo
-            // spread, so this one send is summed back down.
-            m_chorus.Process(0.5f * (sendChoL + sendChoR));
-            choL = m_chorus.GetLeft();
-            choR = m_chorus.GetRight();
+            // One DaisySP ChorusEngine per channel, differing in base delay --
+            // see kChorusDelayL/R for why, and for what daisysp::Chorus got
+            // wrong. The 0.5 reproduces that class's gain_frac_, whose cross-pan
+            // summed to unity, so the level here is unchanged and centred
+            // material still gives the identical left channel.
+            choL = 0.5f * m_chorusL.Process(sendChoL);
+            choR = 0.5f * m_chorusR.Process(sendChoR);
         } else {
             // Phaser and flanger get a shared LFO, with the right channel a
             // quarter cycle behind the left so there is a stereo image for

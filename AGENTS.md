@@ -242,10 +242,15 @@ red, the fix is one line in `SamplerEngine::computeRegion()` — do not redesign
   still returns one value duplicated into both channels. HyperSynth computes a `width` spread
   and throws it away — measured at only ~-31 dB on hardware (§UI-11), which is why it was not
   worth doing first.
-- **The chorus and delay returns are mono**, so their STEREO WIDTH controls do nothing. Test
-  `A7` is `[!shouldfail]` and documents it — when the returns are fixed it starts passing and
-  Catch2 flags the marker for removal. Don't "fix" A7 by restoring its old centred-dry setup;
-  that only ever passed because the retired constant-power pan law was asymmetric at centre.
+- **The ModFX chorus's stereo spread is a CHOICE, not a measurement.** Its two channels are
+  `daisysp::ChorusEngine`s differing only in base delay (`kChorusDelayL/R` = 6.03 / 3.65 ms),
+  and their LFO phases stay locked because DaisySP exposes no way to offset them. Same
+  approximation class as the phaser sweep range and the flanger delay range. *(Until
+  2026-08-14 this return was mono for every input — `daisysp::Chorus` Inits both of its
+  engines identically and cross-pans them back to `L == R`. Fixed; `A7`'s `[!shouldfail]` is
+  gone and `A17` pins the chorus's image on its own.)* Don't "fix" A7 by restoring its old
+  centred-dry setup; that only ever passed because the retired constant-power pan law was
+  asymmetric at centre.
 - **`loadDemoSong()` is scaffolding.** It disappears once `.m8s` loading works.
 
 If you touch one of these, say so. Do not silently "fix" a placeholder into something else.

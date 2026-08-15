@@ -769,6 +769,7 @@ public:
 private:
     void recalcBPM();
     void syncSongRow();
+    void initChorus();
 
     // ---- Master bus stages (MIXER_SPEC.md §4) --------------------------------
     // Order is fixed by the manual: OTT -> [EQ, not built] -> LIM -> DJF -> MIX.
@@ -821,7 +822,16 @@ private:
     float m_dcRevR = 0.0f;
     float m_dcMixL = 0.0f;
     float m_dcMixR = 0.0f;
-    daisysp::Chorus m_chorus;
+    // Two ChorusEngines, one per channel -- NOT daisysp::Chorus, which is
+    // structurally stereo and degenerately so: it Inits both of its engines
+    // identically (same LFO phase, freq, depth and delay), so they produce
+    // bit-identical output, and its 0.25/0.75 cross-pan then sums them back to
+    // L == R exactly. Its return was mono for every input, which is why STEREO
+    // WIDTH had nothing to act on. Driving one engine per channel also stops
+    // the send being summed to mono on the way in, so a hard-panned track's
+    // chorus return stays on the side the track sits on.
+    daisysp::ChorusEngine m_chorusL;
+    daisysp::ChorusEngine m_chorusR;
     // The other two ModFX algorithms. Which one runs is chosen per sample by
     // effects.modfx_type; all three share MOD DEPTH / MOD FRQ and the return's
     // width and reverb send.
