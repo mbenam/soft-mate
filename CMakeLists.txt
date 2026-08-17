@@ -75,6 +75,7 @@ add_library(m8_engine STATIC
     src/engine/SamplerEngine.cpp
     src/io/SongIO.cpp
     src/io/ScaleIO.cpp
+    src/io/InstrumentIO.cpp
     src/io/RenderAudio.cpp
     src/io/BundleExport.cpp
     src/analysis/AudioMetrics.cpp
@@ -236,6 +237,7 @@ add_executable(m8_tests
     tests/test_audio.cpp
     tests/test_ui_scripts.cpp
     tests/test_macrosynth.cpp
+    tests/test_instrument_io.cpp
     tests/test_fmsynth.cpp
     tests/test_wavsynth.cpp
     tests/test_tables.cpp
@@ -273,6 +275,14 @@ target_compile_definitions(m8_tests PRIVATE THIRD_PARTY_DIR="${CMAKE_CURRENT_SOU
 
 if(MSVC)
     target_compile_options(m8_tests PRIVATE /FS /bigobj)
+endif()
+
+if(BUILD_CLONE)
+add_custom_command(TARGET m8_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_RUNTIME_DLLS:m8_tests> $<TARGET_FILE_DIR:m8_tests>
+    COMMAND_EXPAND_LISTS
+)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")

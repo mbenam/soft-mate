@@ -607,53 +607,13 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
         sample = applyDegrade(sample, s.degrade, mt.degrade);
 
-        // NOT applyAmpLimFilter -- deliberately. This inline chain predates the
-        // sampler's Phase 4 DSP work (ZDF filters, LIM POST modes) and never
-        // received it, so folding it into the shared helper would CHANGE
-        // MACROSYN AUDIO, not just deduplicate it (ARCHITECTURE.md §5.2 #8):
-        //   - LIM 04/05 (POST/POST:AD): here they fall into `default:` (hard
-        //     clamp) and keep the amp->lim->filter order. The helper would give
-        //     them the POST ordering (filter first) and make 05 a tanh.
-        //   - LIM 06-08: same clamp, but the helper reorders them too.
-        //   - FILTER 05 (LP>HP): here m_filter.Process() still runs (advancing
-        //     SVF state) while the sample passes through unfiltered; the helper
-        //     returns early and leaves the SVF state alone, so subsequent
-        //     samples diverge as well.
-        //   - FILTER 06/07 (ZDF): here they are silently a no-op; the helper
-        //     would actually apply the ZDF filter.
-        // LIM 00-03 with FILTER 00-04 -- the common case -- is already
-        // identical math in the same order, which is why this reads as a pure
-        // duplicate at a glance. Unifying it is a real fix worth doing, but it
-        // is an audio change that needs a render diff + the golden/diff scripts
-        // re-checked, so it is deliberately not bundled into a cleanup commit.
-        float ampVal = std::clamp(1.0f + (s.amp / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
-        sample *= ampVal;
-
-        int limMode = s.lim;
-        switch (limMode) {
-        case 0: sample = std::clamp(sample, -1.0f, 1.0f); break;
-        case 1: sample = std::sin(sample * 1.5707963f); break;
-        case 2: sample = std::clamp(sample * 2.0f, -1.0f, 1.0f) - std::clamp(sample, -0.5f, 0.5f); break;
-        case 3: { float x = sample - std::floor(sample); sample = x * 4.0f - 1.0f; } break;
-        default: sample = std::clamp(sample, -1.0f, 1.0f); break;
+        if (s.redux > 0) {
+            float bits = 16.0f - (s.redux / 255.0f) * 14.0f;
+            float steps = std::pow(2.0f, bits);
+            sample = std::round(sample * steps) / steps;
         }
 
-        int filterType = s.filter_type;
-        float baseCutoff = 20.0f * std::pow(2.0f, (s.cutoff / 255.0f) * 10.0f);
-        float baseRes = s.res / 255.0f;
-        float finalCutoff = baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f);
-        finalCutoff = std::clamp(finalCutoff, 20.0f, 20000.0f);
-        float finalRes = std::clamp(baseRes + mt.res, 0.0f, 1.0f);
-
-        if (filterType > 0) {
-            m_filter.SetFreq(finalCutoff);
-            m_filter.SetRes(finalRes);
-            m_filter.Process(sample);
-            if (filterType == 1) sample = m_filter.Low();
-            else if (filterType == 2) sample = m_filter.High();
-            else if (filterType == 3) sample = m_filter.Band();
-            else if (filterType == 4) sample = sample - m_filter.Band();
-        }
+        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type, s.cutoff, s.res, mt);
     }
 
     if (m_instrument && m_instrument->type == InstType::INST_HYPERSYN) {

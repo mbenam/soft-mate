@@ -40,9 +40,7 @@ assert_field TYPE SAMPLER
 key X+UP
 assert_field TYPE MACROSYN
 
-# SHAPE (UI-clamped to [0,3] in InstrumentScreen.cpp even though the Braids
-# engine models 0x00-0x2B; still enough to prove the edit path works and
-# audibly changes the output)
+# SHAPE: models 0x00 to 0x2B (44 models)
 key DOWN
 key DOWN
 key DOWN
@@ -50,7 +48,7 @@ assert_field SHAPE 00CSAW
 repeat 3 {
     key X+UP
 }
-assert_field SHAPE 03SQU
+assert_field SHAPE 03SINE TRIANGLE
 
 # TIMBRE (default 0x80, range 0-255)
 key DOWN

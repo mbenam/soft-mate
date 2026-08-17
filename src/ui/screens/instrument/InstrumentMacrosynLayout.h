@@ -29,7 +29,7 @@ inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetMacrosynInterac
         {C::CMD_SAVE, { {"SAVE", 27, 2, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::NAME, { {"NAME", 0, 3, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"------------", 8, 3, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::TRANSP, { {"TRANSP.", 0, 4, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"ON", 8, 4, "VALUE", "LABEL_LITE", "value", true, 0} }},
-        {C::TBL_TIC, { {"TBL.TIC", 13, 4, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"FF", 21, 4, "VALUE", "LABEL_LITE", "value", true, 0} }},
+        {C::TBL_TIC, { {"TBL.TIC", 13, 4, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"01", 21, 4, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::EQ, { {"EQ", 26, 4, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"--", 29, 4, "VALUE", "LABEL_LITE", "value", true, 0} }},
 
         // Macrosyn Left Column
@@ -47,7 +47,7 @@ inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetMacrosynInterac
         {C::LIM, { {"LIM", 17, 9, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"00", 21, 9, "VALUE", "LABEL_LITE", "value", true, 0}, {"CLIP", 23, 9, "ACCENT", "LABEL_LITE", "accent", false, 0} }},
         {C::PAN, { {"PAN", 17, 10, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"80", 21, 10, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 23, 10, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }},
         {C::DRY, { {"DRY", 17, 11, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"C0", 21, 11, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 23, 11, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }},
-        {C::CHO, { {"CHO", 17, 12, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"00", 21, 12, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 23, 12, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }},
+        {C::CHO, { {"MFX", 17, 12, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"00", 21, 12, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 24, 12, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }},
         {C::DEL, { {"DEL", 17, 13, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"00", 21, 13, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 23, 13, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }},
         {C::REV, { {"REV", 17, 14, "LABEL_DIM", "LABEL_LITE", "label", false, 0}, {"00", 21, 14, "VALUE", "LABEL_LITE", "value", true, 0}, {"", 23, 14, "SLIDER_BG", "LABEL_LITE", "slider", false, 6} }}
     };

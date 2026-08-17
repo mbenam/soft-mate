@@ -71,6 +71,33 @@ static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instru
     return "--";
 }
 
+static const char* const kMacroShapes[44] = {
+    "CSAW", "MORPH", "SAW SQUARE", "SINE TRIANGLE", "BUZZ",
+    "SQUARE SUB", "SAW SUB", "SQUARE SYNC", "SAW SYNC",
+    "TRIPLE SAW", "TRIPLE SQUARE", "TRIPLE TRIANGLE", "TRIPLE SIN", "TRIPLE RNG",
+    "SAW SWARM", "SAW COMB", "TOY",
+    "DIGITAL FILTER LP", "DIGITAL FILTER PK", "DIGITAL FILTER BP", "DIGITAL FILTER HP",
+    "VOSIM", "VOWEL", "VOWEL FOF", "HARMONICS",
+    "FM", "FEEDBACK FM", "CHAOTIC FEEDBACK FM",
+    "PLUCKED", "BOWED", "BLOWN", "FLUTED",
+    "STRUCK BELL", "STRUCK DRUM", "KICK", "CYMBAL", "SNARE",
+    "WAVETABLES", "WAVE MAP", "WAV LINE", "WAV PARAPHONIC",
+    "FILTERED NOISE", "TWIN PEAKS NOISE", "CLOCKED NOISE"
+};
+
+static const char* const kFilterModes[8] = {
+    "OFF", "LOWPASS", "HIGHPAS", "BANDPAS", "BANDSTP", "LP>HP", "ZDF LP", "ZDF HP"
+};
+
+static const char* const kLimModes[9] = {
+    "CLIP", "SIN", "FOLD", "WRAP", "POST", "POST:AD", "POST:W1", "POST:W2", "POST:W3"
+};
+
+static const char* const kPlayModes[15] = {
+    "FWD", "REV", "FWDLOOP", "REVLOOP", "FWD PP", "REV PP", "OSC", "OSC REV",
+    "OSC PP", "REPITCH", "REP.REV", "REP.PP", "REP.BPM", "BPM.REV", "BPM.PP"
+};
+
 // Helper: Resolves the accent string for enums
 static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instrument& inst, const std::string& fallback) {
     using C = CursorId;
@@ -78,28 +105,22 @@ static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instr
 
     if (fieldId == C::FILTER) {
         int filter_type = isMac ? inst.macrosyn.filter_type : inst.sampler.filter_type;
-        if (filter_type == 0) return "OFF";
-        if (filter_type == 1) return "LP ";
-        if (filter_type == 2) return "HP ";
-        if (filter_type == 3) return "BP ";
+        if (filter_type >= 0 && filter_type < 8) return kFilterModes[filter_type];
     }
     if (fieldId == C::PLAY) {
-        if (inst.sampler.play == 0) return "FWD";
-        if (inst.sampler.play == 1) return "REV";
+        if (inst.sampler.play >= 0 && inst.sampler.play < 15) return kPlayModes[inst.sampler.play];
     }
     if (fieldId == C::LIM) {
         int lim = isMac ? inst.macrosyn.lim : inst.sampler.lim;
-        if (lim == 0) return "CLIP";
-        if (lim == 1) return "SIN ";
+        if (lim >= 0 && lim < 9) return kLimModes[lim];
     }
     if (fieldId == C::SLICE) {
         return inst.sampler.slice == 0 ? "OFF" : "ON ";
     }
     if (fieldId == C::SHAPE) {
-        if (inst.macrosyn.shape == 0) return "CSAW";
-        if (inst.macrosyn.shape == 1) return "TRI ";
-        if (inst.macrosyn.shape == 2) return "SIN ";
-        if (inst.macrosyn.shape == 3) return "SQU ";
+        if (inst.macrosyn.shape >= 0 && inst.macrosyn.shape < 44) {
+            return kMacroShapes[inst.macrosyn.shape];
+        }
     }
     return fallback;
 }
@@ -185,7 +206,15 @@ void RenderInstrumentScreen(Renderer& renderer,
                 renderer.drawString(drawText, comp.col, comp.row, color);
 
                 if (isActive && comp.has_cursor_box) {
-                    renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                    int bracketLen = static_cast<int>(drawText.length());
+                    for (const auto& other : components) {
+                        if (other.role == "accent") {
+                            std::string acc = ResolveInstrumentAccent(fieldId, currentInst, other.text);
+                            bracketLen += static_cast<int>(acc.length());
+                            break;
+                        }
+                    }
+                    renderer.drawBracket(comp.col, comp.row, bracketLen, {0, 255, 255, 255});
                 }
             }
         }
@@ -196,7 +225,7 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
                             engine::EngineState& uiEngineState, int currentInstIndex,
                             CursorId& cursor_id, CommandSink& commandSink,
                             ViewManager& viewManager, bool& browserForSongLoad,
-                            ::FileBrowser& fileBrowser) {
+                            ::FileBrowser& fileBrowser, InstrumentBrowserMode& instrumentBrowserMode) {
     using C = CursorId;
     bool isMac = (uiEngineState.instruments[currentInstIndex].type == m8::engine::InstType::INST_MACROSYN);
     auto navMap = isMac ? GetMacrosynNavMap() : GetSamplerNavMap();
@@ -216,23 +245,23 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
         // instrument type has an eq field.
         else if (cursor_id == C::EQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(inst.getEq() + step, 0, uiEngineState.eqBankCount - 1), currentInstIndex);
         else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac2 ? inst.macrosyn.amp : inst.sampler.amp) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac2 ? inst.macrosyn.lim : inst.sampler.lim) + step, 0, 1), currentInstIndex);
+        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac2 ? inst.macrosyn.lim : inst.sampler.lim) + step, 0, 8), currentInstIndex);
         else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac2 ? inst.macrosyn.pan : inst.sampler.pan) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::DRY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>((isMac2 ? inst.macrosyn.dry : inst.sampler.dry) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>((isMac2 ? inst.macrosyn.cho : inst.sampler.cho) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>((isMac2 ? inst.macrosyn.del : inst.sampler.del) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>((isMac2 ? inst.macrosyn.rev : inst.sampler.rev) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::DEGRADE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, std::clamp<int>((isMac2 ? inst.macrosyn.degrade : inst.sampler.degrade) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac2 ? inst.macrosyn.filter_type : inst.sampler.filter_type) + step, 0, 3), currentInstIndex);
+        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac2 ? inst.macrosyn.filter_type : inst.sampler.filter_type) + step, 0, 7), currentInstIndex);
         else if (cursor_id == C::CUTOFF) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isMac2 ? inst.macrosyn.cutoff : inst.sampler.cutoff) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isMac2 ? inst.macrosyn.res : inst.sampler.res) + step, 0, 255), currentInstIndex);
         else if (!isMac2 && cursor_id == C::SLICE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 1), currentInstIndex);
+        else if (!isMac2 && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 14), currentInstIndex);
         else if (!isMac2 && cursor_id == C::START) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start + step, 0, 255), currentInstIndex);
         else if (!isMac2 && cursor_id == C::LOOP_ST) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st + step, 0, 255), currentInstIndex);
         else if (!isMac2 && cursor_id == C::LENGTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length + step, 0, 255), currentInstIndex);
         else if (!isMac2 && cursor_id == C::DETUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune + step, 0, 255), currentInstIndex);
-        else if (isMac2 && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape + step, 0, 3), currentInstIndex);
+        else if (isMac2 && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape + step, 0, 43), currentInstIndex);
         else if (isMac2 && cursor_id == C::TIMBRE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, std::clamp<int>(inst.macrosyn.timbre + step, 0, 255), currentInstIndex);
         else if (isMac2 && cursor_id == C::COLOR) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, std::clamp<int>(inst.macrosyn.color + step, 0, 255), currentInstIndex);
         else if (isMac2 && cursor_id == C::REDUX) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, std::clamp<int>(inst.macrosyn.redux + step, 0, 255), currentInstIndex);
@@ -254,10 +283,23 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
                 cursor_id = navMap[cursor_id].left;
             }
         } else if (event.key.key == SDLK_RETURN) {
-            if (cursor_id == C::SAMPLE_LOAD || cursor_id == C::CMD_LOAD) {
+            if (cursor_id == C::CMD_LOAD) {
+                browserForSongLoad = false;
+                fileBrowser.init("Instruments", ".m8i");
+                fileBrowser.setTitle("LOAD INSTRUMENT");
+                instrumentBrowserMode = InstrumentBrowserMode::LOAD;
+                viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+            } else if (cursor_id == C::CMD_SAVE) {
+                browserForSongLoad = false;
+                fileBrowser.init("Instruments", "");
+                fileBrowser.setTitle("SAVE INSTRUMENT TO DIR");
+                instrumentBrowserMode = InstrumentBrowserMode::SAVE_DIR;
+                viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+            } else if (cursor_id == C::SAMPLE_LOAD) {
                 browserForSongLoad = false;
                 fileBrowser.init("Samples", ".wav");
                 fileBrowser.setTitle("LOAD SAMPLE");
+                instrumentBrowserMode = InstrumentBrowserMode::NONE;
                 viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
             }
         }
@@ -265,11 +307,25 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
 }
 
 void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
-                                  ::FileBrowser& fileBrowser, ViewManager& viewManager) {
-    if (cursor_id == CursorId::SAMPLE_LOAD || cursor_id == CursorId::CMD_LOAD) {
+                                  ::FileBrowser& fileBrowser, ViewManager& viewManager,
+                                  InstrumentBrowserMode& instrumentBrowserMode) {
+    if (cursor_id == CursorId::CMD_LOAD) {
+        browserForSongLoad = false;
+        fileBrowser.init("Instruments", ".m8i");
+        fileBrowser.setTitle("LOAD INSTRUMENT");
+        instrumentBrowserMode = InstrumentBrowserMode::LOAD;
+        viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+    } else if (cursor_id == CursorId::CMD_SAVE) {
+        browserForSongLoad = false;
+        fileBrowser.init("Instruments", "");
+        fileBrowser.setTitle("SAVE INSTRUMENT TO DIR");
+        instrumentBrowserMode = InstrumentBrowserMode::SAVE_DIR;
+        viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+    } else if (cursor_id == CursorId::SAMPLE_LOAD) {
         browserForSongLoad = false;
         fileBrowser.init("Samples", ".wav");
         fileBrowser.setTitle("LOAD SAMPLE");
+        instrumentBrowserMode = InstrumentBrowserMode::NONE;
         viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
     } else if (cursor_id == CursorId::EQ) {
         // An X tap on EQ opens the editor for whichever bank this instrument

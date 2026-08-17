@@ -50,6 +50,127 @@ TEST_CASE("Macrosynth Phase 2 exhaustive shape checks", "[macrosynth]") {
     }
 }
 
+TEST_CASE("Macrosynth timbre and color affect rendered audio", "[macrosynth]") {
+    auto renderMacro = [](uint8_t shape, uint8_t timbre, uint8_t color, uint8_t degrade, uint8_t redux, uint8_t filter, uint8_t cutoff, uint8_t lim) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        auto& m = state.instruments[0].macrosyn;
+        m.shape = shape;
+        m.timbre = timbre;
+        m.color = color;
+        m.degrade = degrade;
+        m.redux = redux;
+        m.filter_type = filter;
+        m.cutoff = cutoff;
+        m.lim = lim;
+        m.amp = 0x40;
+        m.pan = 0x80;
+        m.dry = 0xC0;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+        float sum = 0.0f;
+        for (float v : host.audio()) sum += std::abs(v);
+        return sum;
+    };
+
+    float a1 = renderMacro(0, 0x20, 0x80, 0, 0, 0, 0xFF, 0);
+    float a2 = renderMacro(0, 0xE0, 0x80, 0, 0, 0, 0xFF, 0);
+    REQUIRE(a1 != a2);
+
+    float c1 = renderMacro(0, 0x80, 0x20, 0, 0, 0, 0xFF, 0);
+    float c2 = renderMacro(0, 0x80, 0xE0, 0, 0, 0, 0xFF, 0);
+    REQUIRE(c1 != c2);
+}
+
+TEST_CASE("Macrosynth degrade and redux modify audio signal", "[macrosynth]") {
+    auto renderMacro = [](uint8_t degrade, uint8_t redux) -> std::vector<float> {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        auto& m = state.instruments[0].macrosyn;
+        m.shape = 0;
+        m.timbre = 0x80;
+        m.color = 0x80;
+        m.degrade = degrade;
+        m.redux = redux;
+        m.amp = 0x40;
+        m.pan = 0x80;
+        m.dry = 0xC0;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(500);
+        return host.audio();
+    };
+
+    auto clean = renderMacro(0, 0);
+    auto degraded = renderMacro(0x80, 0);
+    auto reduxt = renderMacro(0, 0xC0);
+
+    bool diffDegrade = false;
+    for (size_t i = 0; i < clean.size(); ++i) {
+        if (std::abs(clean[i] - degraded[i]) > 0.01f) diffDegrade = true;
+    }
+    REQUIRE(diffDegrade);
+
+    bool diffRedux = false;
+    for (size_t i = 0; i < clean.size(); ++i) {
+        if (std::abs(clean[i] - reduxt[i]) > 0.01f) diffRedux = true;
+    }
+    REQUIRE(diffRedux);
+}
+
+TEST_CASE("Macrosynth filter modes and lim modes render finite output", "[macrosynth]") {
+    for (int filt = 0; filt <= 7; ++filt) {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        auto& m = state.instruments[0].macrosyn;
+        m.shape = 0;
+        m.timbre = 0x80;
+        m.color = 0x80;
+        m.filter_type = filt;
+        m.cutoff = 0x80;
+        m.res = 0x80;
+        m.amp = 0x40;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(500);
+
+        bool finite = true;
+        for (float v : host.audio()) {
+            if (!std::isfinite(v)) finite = false;
+        }
+        REQUIRE(finite);
+    }
+
+    for (int lim = 0; lim <= 8; ++lim) {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_MACROSYN;
+        auto& m = state.instruments[0].macrosyn;
+        m.shape = 0;
+        m.timbre = 0x80;
+        m.color = 0x80;
+        m.lim = lim;
+        m.amp = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(500);
+
+        bool finite = true;
+        for (float v : host.audio()) {
+            if (!std::isfinite(v)) finite = false;
+        }
+        REQUIRE(finite);
+    }
+}
+
 TEST_CASE("HyperSynth renders supersaw chord without NaN/clipping", "[hypersynth]") {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();

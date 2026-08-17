@@ -8,6 +8,7 @@
 #include "ui/ScriptRunner.h"
 #include "io/SongIO.h"
 #include "io/ScaleIO.h"
+#include "io/InstrumentIO.h"
 #include <ui/screens/song/SongScreen.h>
 #include "ui/screens/chain/ChainScreen.h"
 #include "ui/screens/phrase/PhraseScreen.h"
@@ -395,7 +396,9 @@ int main(int argc, char* argv[]) {
     std::string sampleRoot = "Samples";
     bool browserForSongLoad = false;  // true = browser filters .m8s for song load
     m8::ui::scale::ScaleBrowserMode scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+    m8::ui::instrument::InstrumentBrowserMode instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
     m8::io::ensureFactoryScales("Scales");
+    m8::io::ensureFactoryInstruments("Instruments");
     bool textInputActive = false;
     std::string textInputBuffer;
     std::string textInputPrompt;
@@ -404,8 +407,93 @@ int main(int argc, char* argv[]) {
     std::string songStatusMsg;
     uint64_t songStatusExpireTime = 0;
 
+    auto pushFullInstrument = [&](int instIdx, const m8::engine::Instrument& inst, const std::optional<m8::engine::EqBank>& eq) {
+        uiEngineState.instruments[instIdx] = inst;
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, static_cast<int>(inst.type), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.transp : inst.sampler.transp), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, inst.getTblTic(), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, inst.getEq(), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.amp : inst.sampler.amp), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.lim : inst.sampler.lim), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.pan : inst.sampler.pan), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.dry : inst.sampler.dry), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.cho : inst.sampler.cho), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.del : inst.sampler.del), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.rev : inst.sampler.rev), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.degrade : inst.sampler.degrade), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.filter_type : inst.sampler.filter_type), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.cutoff : inst.sampler.cutoff), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.res : inst.sampler.res), instIdx);
+
+        if (inst.type == m8::engine::InstType::INST_MACROSYN) {
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, inst.macrosyn.shape, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, inst.macrosyn.timbre, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, inst.macrosyn.color, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, inst.macrosyn.redux, instIdx);
+        } else if (inst.type == m8::engine::InstType::INST_SAMPLER) {
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, inst.sampler.play, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, inst.sampler.slice, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, inst.sampler.start, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, inst.sampler.loop_st, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, inst.sampler.length, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, inst.sampler.detune, instIdx);
+            if (inst.sampler.samplePath[0] != '\0') {
+                m8::engine::SampleData buf;
+                if (FileBrowser::loadWavFile(inst.sampler.samplePath, buf)) {
+                    std::strncpy(buf.path, inst.sampler.samplePath, 127);
+                    buf.path[127] = '\0';
+                    EngineCommand cmd;
+                    cmd.type = CommandType::LOAD_SAMPLE;
+                    cmd.targetId = instIdx;
+                    cmd.u.sample = buf;
+                    if (!commandSink.send(cmd)) FileBrowser::freeWavFile(buf);
+                }
+            }
+        }
+
+        for (int m = 0; m < 4; ++m) {
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_TYPE, inst.mods[m].type, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_DEST, inst.mods[m].dest, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_AMT, inst.mods[m].amt, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P1, inst.mods[m].p1, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P2, inst.mods[m].p2, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P3, inst.mods[m].p3, instIdx, m);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::MOD_P4, inst.mods[m].p4, instIdx, m);
+        }
+
+        if (eq.has_value() && inst.getEq() > 0 && inst.getEq() < uiEngineState.eqBankCount) {
+            uiEngineState.eqs[inst.getEq()] = *eq;
+            const auto& bank = *eq;
+            const m8::engine::EqBand* bands[3] = { &bank.low, &bank.mid, &bank.high };
+            for (int b = 0; b < 3; ++b) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::EQ_TYPE, bands[b]->type, inst.getEq(), b);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::EQ_MODE, bands[b]->mode, inst.getEq(), b);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::EQ_FREQ, bands[b]->freq, inst.getEq(), b);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::EQ_GAIN, bands[b]->gain, inst.getEq(), b);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::EQ_Q, bands[b]->q, inst.getEq(), b);
+            }
+        }
+    };
+
     auto handleFileBrowserSelection = [&](const std::string& path) {
-        if (scaleBrowserMode == m8::ui::scale::ScaleBrowserMode::LOAD) {
+        if (instrumentBrowserMode == m8::ui::instrument::InstrumentBrowserMode::LOAD) {
+            m8::engine::Instrument loadedInst;
+            std::optional<m8::engine::EqBank> loadedEq;
+            std::string err;
+            if (m8::io::loadInstrument(path, loadedInst, loadedEq, err)) {
+                pushFullInstrument(currentInstIndex, loadedInst, loadedEq);
+            }
+            instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
+        } else if (instrumentBrowserMode == m8::ui::instrument::InstrumentBrowserMode::SAVE_DIR) {
+            std::string outPath, err;
+            std::optional<m8::engine::EqBank> eq = std::nullopt;
+            int eqIdx = uiEngineState.instruments[currentInstIndex].getEq();
+            if (eqIdx > 0 && eqIdx < uiEngineState.eqBankCount) {
+                eq = uiEngineState.eqs[eqIdx];
+            }
+            m8::io::saveInstrument(path, uiEngineState.instruments[currentInstIndex], eq, outPath, err);
+            instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
+        } else if (scaleBrowserMode == m8::ui::scale::ScaleBrowserMode::LOAD) {
             m8::engine::Scale loadedScale;
             std::string err;
             if (m8::io::loadScale(path, loadedScale, err)) {
@@ -736,7 +824,7 @@ int main(int argc, char* argv[]) {
                     m8::ui::instrument::HandleInstrumentInput(event, editHeld, arrowPressedDuringEdit,
                                                               uiEngineState, currentInstIndex, active_cursor,
                                                               commandSink, viewManager, browserForSongLoad,
-                                                              fileBrowser);
+                                                              fileBrowser, instrumentBrowserMode);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
                     m8::ui::table::HandleTableInput(event, editHeld, table_cursor_x, table_cursor_y);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
@@ -881,7 +969,7 @@ int main(int argc, char* argv[]) {
                             if (!arrowPressedDuringEdit) {
                                 eqScreenState.bank =
                                     uiEngineState.instruments[currentInstIndex].getEq();
-                                m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager);
+                                m8::ui::instrument::HandleInstrumentEditRelease(active_cursor, browserForSongLoad, fileBrowser, viewManager, instrumentBrowserMode);
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
                             m8::ui::project::ProjectActionState projActions{
@@ -911,6 +999,7 @@ int main(int argc, char* argv[]) {
                                 SDL_StartTextInput(SDL_GetKeyboardFocus());
                             } else if (result == FileBrowser::Result::CANCELLED) {
                                 scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+                                instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
