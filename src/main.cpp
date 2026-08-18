@@ -330,7 +330,8 @@ int main(int argc, char* argv[]) {
     };
     static AudioCtx g_audioCtx;
 
-    CommandRing<EngineCommand, 1024> commandRing;
+    auto commandRing_ptr = std::make_unique<CommandRing<EngineCommand, 1024>>();
+    CommandRing<EngineCommand, 1024>& commandRing = *commandRing_ptr;
 
     m8::ui::CommandSink commandSink{commandRing};
 
