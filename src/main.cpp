@@ -365,8 +365,10 @@ int main(int argc, char* argv[]) {
         if (recStream) { SDL_ResumeAudioStreamDevice(recStream); }
     }
     
-    m8::engine::Sequencer uiSequencer;
-    m8::engine::EngineState uiEngineState;
+    auto uiSequencer_ptr = std::make_unique<m8::engine::Sequencer>();
+    m8::engine::Sequencer& uiSequencer = *uiSequencer_ptr;
+    auto uiEngineState_ptr = std::make_unique<m8::engine::EngineState>();
+    m8::engine::EngineState& uiEngineState = *uiEngineState_ptr;
     auto& phrases = uiSequencer.phrases;
     auto& chains = uiSequencer.chains;
     auto& song = uiSequencer.song;
@@ -397,7 +399,8 @@ int main(int argc, char* argv[]) {
     CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
     m8::ui::render::RenderScreenState renderScreenState;
     m8::ui::eq::EqScreenState eqScreenState;
-    m8::ui::sample_editor::SampleEditorState sampleEditorState;
+    auto sampleEditorState_ptr = std::make_unique<m8::ui::sample_editor::SampleEditorState>();
+    m8::ui::sample_editor::SampleEditorState& sampleEditorState = *sampleEditorState_ptr;
 
     // Song persistence state
     m8::io::LoadResult currentLoadResult;
