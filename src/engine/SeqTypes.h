@@ -52,8 +52,8 @@ struct TableStep {
 };
 
 struct Groove {
-    uint8_t steps[16] = {6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6}; // ticks per row, 1..255
-    uint8_t length = 16;      // active steps
+    uint8_t steps[16] = {6, 6, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // ticks per row, 1..255, 0xFF = empty
+    uint8_t length = 2;      // active steps
 };
 
 } // namespace m8::engine

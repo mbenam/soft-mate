@@ -4,6 +4,7 @@ build_asan/
 *.obj
 *.zip
 artifacts/
+scratch/
 test_out_ui/
 # Song bundles written by PROJECT > EXPORT/SHARE (src/io/BundleExport.cpp
 # defaults its destination to "Bundles"). Output, not source — the songs and

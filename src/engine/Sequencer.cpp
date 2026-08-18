@@ -6,12 +6,18 @@
 namespace m8::engine {
 
 Sequencer::Sequencer() {
-    for (int i = 0; i < 16; ++i) grooves[0].steps[i] = 6;
-    grooves[0].length = 16;
+    for (int g = 0; g < NUM_GROOVES; ++g) {
+        grooves[g].steps[0] = 6;
+        grooves[g].steps[1] = 6;
+        for (int i = 2; i < 16; ++i) grooves[g].steps[i] = 0xFF;
+        grooves[g].length = 2;
+    }
 
-    // Groove 1: light swing — long-short pairs. Same bar length (6+6 = 7+5).
-    for (int i = 0; i < 16; ++i) grooves[1].steps[i] = (i % 2 == 0) ? 7 : 5;
-    grooves[1].length = 16;
+    // Groove 1: light swing — long-short pairs (7, 5)
+    grooves[1].steps[0] = 7;
+    grooves[1].steps[1] = 5;
+    for (int i = 2; i < 16; ++i) grooves[1].steps[i] = 0xFF;
+    grooves[1].length = 2;
 }
 
 void Sequencer::clear() {

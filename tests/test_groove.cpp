@@ -1,8 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
+#include "ui/screens/groove/GrooveScreen.h"
+#include "ui/UiCommands.h"
+#include "engine/CommandRing.h"
 
 using namespace m8::test;
 using namespace m8::engine;
+using namespace m8::ui;
+using namespace m8::ui::groove;
 
 TEST_CASE("B5.9 Swing groove", "[groove]") {
     OfflineHost host;
@@ -74,4 +79,156 @@ TEST_CASE("B5.11 Groove index bounds", "[groove]") {
     // The bounds check happens at doTick(). Since length is 3, 15 is invalid and should snap to 0.
     // Then it advances by 1, so it should be 1 after the first row finishes playing, or at least bounded.
     REQUIRE(host.engine().getStateForInit().playGrooveIndex[0] < 3);
+}
+
+TEST_CASE("Groove default values and 2-step loop", "[groove]") {
+    Sequencer seq;
+    REQUIRE(seq.grooves[0].steps[0] == 6);
+    REQUIRE(seq.grooves[0].steps[1] == 6);
+    REQUIRE(seq.grooves[0].steps[2] == 0xFF);
+    REQUIRE(seq.grooves[0].length == 2);
+
+    REQUIRE(seq.grooves[1].steps[0] == 7);
+    REQUIRE(seq.grooves[1].steps[1] == 5);
+    REQUIRE(seq.grooves[1].steps[2] == 0xFF);
+    REQUIRE(seq.grooves[1].length == 2);
+}
+
+TEST_CASE("Groove UI: Dual-row swing pair editing", "[groove]") {
+    Sequencer seq;
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+
+    int currentGroove = 0;
+    int cursor_x = 0;
+    int cursor_y = 0;
+    uint8_t lastVal = 6;
+    bool arrowPressed = false;
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+
+    // Row 0 EDIT+UP: 6/6 -> 7/5
+    ev.key.key = SDLK_UP;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 7);
+    REQUIRE(seq.grooves[0].steps[1] == 5);
+
+    // Row 0 EDIT+UP: 7/5 -> 8/4
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 8);
+    REQUIRE(seq.grooves[0].steps[1] == 4);
+
+    // Row 0 EDIT+DOWN: 8/4 -> 7/5
+    ev.key.key = SDLK_DOWN;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 7);
+    REQUIRE(seq.grooves[0].steps[1] == 5);
+
+    // Move to row 1
+    cursor_y = 1;
+    // Row 1 EDIT+UP: 7/5 -> 6/6 (row 1 increments to 6, row 0 decrements to 6)
+    ev.key.key = SDLK_UP;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 6);
+    REQUIRE(seq.grooves[0].steps[1] == 6);
+}
+
+TEST_CASE("Groove UI: Single step adjustment", "[groove]") {
+    Sequencer seq;
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+
+    int currentGroove = 0;
+    int cursor_x = 0;
+    int cursor_y = 0;
+    uint8_t lastVal = 6;
+    bool arrowPressed = false;
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+
+    // EDIT+RIGHT on row 0: increments only row 0 without modifying row 1
+    ev.key.key = SDLK_RIGHT;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 7);
+    REQUIRE(seq.grooves[0].steps[1] == 6);
+
+    // EDIT+LEFT on row 0: decrements only row 0
+    ev.key.key = SDLK_LEFT;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 6);
+    REQUIRE(seq.grooves[0].steps[1] == 6);
+}
+
+TEST_CASE("Groove UI: PPQ column scaling", "[groove]") {
+    Sequencer seq;
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+
+    int currentGroove = 0;
+    int cursor_x = 1; // PPQ column
+    int cursor_y = 0;
+    uint8_t lastVal = 6;
+    bool arrowPressed = false;
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+
+    // Initially 24 PPQ (steps 6, 6)
+    // Scale up: 24 -> 48 PPQ (steps 12, 12)
+    ev.key.key = SDLK_RIGHT;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 12);
+    REQUIRE(seq.grooves[0].steps[1] == 12);
+
+    // Scale up again: 48 -> 96 PPQ (steps 24, 24)
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 24);
+    REQUIRE(seq.grooves[0].steps[1] == 24);
+
+    // Scale up again: 96 -> 192 PPQ (steps 48, 48)
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 48);
+    REQUIRE(seq.grooves[0].steps[1] == 48);
+
+    // Scale down: 192 -> 96 PPQ (steps 24, 24)
+    ev.key.key = SDLK_LEFT;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[0].steps[0] == 24);
+    REQUIRE(seq.grooves[0].steps[1] == 24);
+}
+
+TEST_CASE("Groove UI: Option groove switching and delete", "[groove]") {
+    Sequencer seq;
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+
+    int currentGroove = 0;
+    int cursor_x = 0;
+    int cursor_y = 0;
+    uint8_t lastVal = 6;
+    bool arrowPressed = false;
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+
+    // OPT+RIGHT: switches to groove 1
+    ev.key.key = SDLK_RIGHT;
+    HandleGrooveInput(ev, false, true, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(currentGroove == 1);
+
+    // OPT+DOWN: jumps +16 to groove 17
+    ev.key.key = SDLK_DOWN;
+    HandleGrooveInput(ev, false, true, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(currentGroove == 17);
+
+    // Delete step on row 0 of groove 17
+    ev.key.key = SDLK_DELETE;
+    HandleGrooveInput(ev, true, false, false, arrowPressed, seq, currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[17].steps[0] == 0xFF);
+
+    // Tap edit release to restore
+    HandleGrooveEditRelease(seq.grooves[17], currentGroove, cursor_x, cursor_y, lastVal, sink);
+    REQUIRE(seq.grooves[17].steps[0] == 6);
 }

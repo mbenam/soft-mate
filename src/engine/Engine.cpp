@@ -173,8 +173,18 @@ void Engine::processCommands() {
             if (cmd.targetId >= 0 && cmd.targetId < Sequencer::SONG_ROWS && cmd.row >= 0 && cmd.row < 8)
                 m_sequencer.song[cmd.targetId].tracks[cmd.row] = cmd.value;
         } else if (cmd.type == CommandType::SET_GROOVE_STEP) {
-            if (cmd.targetId >= 0 && cmd.targetId < Sequencer::NUM_GROOVES && cmd.row >= 0 && cmd.row < 16)
+            if (cmd.targetId >= 0 && cmd.targetId < Sequencer::NUM_GROOVES && cmd.row >= 0 && cmd.row < 16) {
                 m_sequencer.grooves[cmd.targetId].steps[cmd.row] = cmd.value;
+                uint8_t len = 16;
+                for (int i = 0; i < 16; ++i) {
+                    if (m_sequencer.grooves[cmd.targetId].steps[i] == 0xFF) {
+                        len = static_cast<uint8_t>(i);
+                        break;
+                    }
+                }
+                if (len == 0) len = 1;
+                m_sequencer.grooves[cmd.targetId].length = len;
+            }
         } else if (cmd.type == CommandType::LOAD_SONG) {
             auto* data = static_cast<LoadedSongData*>(cmd.u.song.data);
             if (data) {
@@ -310,7 +320,11 @@ void Engine::tickTrack(int t) {
         if (maxGrooveLen == 0) maxGrooveLen = 1;
         if (!valid(m_state.playGrooveIndex[t], maxGrooveLen)) m_state.playGrooveIndex[t] = 0;
         uint8_t g = m_sequencer.grooves[grooveId].steps[m_state.playGrooveIndex[t]];
-        if (g != 0) grooveLength = g;
+        if (g == 0xFF) {
+            m_state.playGrooveIndex[t] = 0;
+            g = m_sequencer.grooves[grooveId].steps[0];
+        }
+        if (g != 0 && g != 0xFF) grooveLength = g;
     }
 
     if (m_state.playTick[t] == 0) {

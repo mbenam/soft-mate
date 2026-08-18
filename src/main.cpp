@@ -288,6 +288,7 @@ int main(int argc, char* argv[]) {
     m8::ui::ViewManager viewManager;
     
     bool shiftHeld = false;
+    bool optHeld = false;
     bool editHeld = false;
     bool arrowPressedDuringEdit = false;
     
@@ -315,7 +316,9 @@ int main(int argc, char* argv[]) {
     int table_cursor_y = 0;
 
     int currentGrooveIndex = 0;
+    int groove_cursor_x = 0; // 0 = TIC, 1 = PPQ
     int groove_cursor_y = 0; // Ranges 0 to 15
+    uint8_t groove_last_value = 6;
 
     m8::ui::scale::CursorId scale_cursor_id = m8::ui::scale::CursorId::KEY;
     int currentScaleIndex = 0; // Ranges 0 to 15
@@ -742,7 +745,7 @@ int main(int argc, char* argv[]) {
                             chainRow = 0; chainCol = 0;
                             currentPhrase = 0; currentChain = 0; currentInstIndex = 0;
                             table_cursor_x = 0; table_cursor_y = 0;
-                            currentGrooveIndex = 0; groove_cursor_y = 0;
+                            currentGrooveIndex = 0; groove_cursor_x = 0; groove_cursor_y = 0; groove_last_value = 6;
                             currentScaleIndex = 0;
                             pool_cursor_x = 0; pool_cursor_y = 0;
                             project_cursor_id = m8::ui::project::CursorId::TEMPO_INT;
@@ -815,8 +818,10 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
 
-                if (event.key.key == SDLK_LSHIFT) {
+                if (event.key.key == SDLK_LSHIFT || event.key.key == SDLK_RSHIFT) {
                     shiftHeld = true;
+                } else if (event.key.key == SDLK_Z || event.key.key == SDLK_LALT || event.key.key == SDLK_RALT) {
+                    optHeld = true;
                 } else if (event.key.key == SDLK_X) {
                     if (!editHeld) {
                         editHeld = true;
@@ -905,9 +910,9 @@ int main(int argc, char* argv[]) {
                     m8::ui::project::HandleProjectInput(event, editHeld, arrowPressedDuringEdit,
                                                         uiEngineState, project_cursor_id, nameCharIndex, commandSink, projActions);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
-                    m8::ui::groove::HandleGrooveInput(event, editHeld, arrowPressedDuringEdit,
-                                                      grooves[currentGrooveIndex], currentGrooveIndex,
-                                                      groove_cursor_y, commandSink);
+                    m8::ui::groove::HandleGrooveInput(event, editHeld, optHeld, shiftHeld, arrowPressedDuringEdit,
+                                                      uiSequencer, currentGrooveIndex,
+                                                      groove_cursor_x, groove_cursor_y, groove_last_value, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
                     m8::ui::scale::ScaleActionState scaleActions{
                         fileBrowser, viewManager, scaleBrowserMode
@@ -986,8 +991,10 @@ int main(int argc, char* argv[]) {
                 }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
-                if (event.key.key == SDLK_LSHIFT) {
+                if (event.key.key == SDLK_LSHIFT || event.key.key == SDLK_RSHIFT) {
                     shiftHeld = false;
+                } else if (event.key.key == SDLK_Z || event.key.key == SDLK_LALT || event.key.key == SDLK_RALT) {
+                    optHeld = false;
                 } else if (event.key.key == SDLK_X) {
                     if (editHeld) {
                         editHeld = false;
@@ -1091,7 +1098,7 @@ int main(int argc, char* argv[]) {
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
-                            m8::ui::groove::HandleGrooveEditRelease(grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y, commandSink);
+                            m8::ui::groove::HandleGrooveEditRelease(grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_x, groove_cursor_y, groove_last_value, commandSink);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
                             m8::ui::scale::ScaleActionState scaleActions{
                                 fileBrowser, viewManager, scaleBrowserMode
@@ -1197,7 +1204,7 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {
             m8::ui::project::RenderProjectScreen(renderer, uiEngineState, project_cursor_id, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
-            m8::ui::groove::RenderGrooveScreen(renderer, uiEngineState, uiSequencer.grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_y);
+            m8::ui::groove::RenderGrooveScreen(renderer, uiEngineState, uiSequencer.grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_x, groove_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
             m8::ui::scale::RenderScaleScreen(renderer, uiEngineState, currentScaleIndex, scale_cursor_id, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_POOL) {
