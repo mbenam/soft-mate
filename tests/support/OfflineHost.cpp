@@ -7,8 +7,9 @@ extern std::atomic<bool> g_inAudioThread;
 
 namespace m8::test {
 
-OfflineHost::OfflineHost() {
-    m_engine = std::make_unique<engine::Engine>(m_ring);
+OfflineHost::OfflineHost()
+    : m_ring(std::make_unique<engine::CommandRing<engine::EngineCommand, 1024>>()) {
+    m_engine = std::make_unique<engine::Engine>(*m_ring);
     m_engine->getSequencerForInit().clear();
 }
 
@@ -45,7 +46,7 @@ void OfflineHost::render(int frames, int chunk) {
 }
 
 bool OfflineHost::push(const engine::EngineCommand& cmd) {
-    return m_ring.push(cmd);
+    return m_ring->push(cmd);
 }
 
 std::vector<engine::EngineEvent> OfflineHost::eventsOfType(engine::EventType t) const {

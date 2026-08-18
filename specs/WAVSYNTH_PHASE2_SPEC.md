@@ -795,14 +795,31 @@ These are unmeasured. Implement what this spec says, leave the marker comment,
 and restate them in the completion report so they can be A/B'd against hardware
 later.
 
-- **O1 — SIZE.** Read literally from the manual as the table's sample count
-  (§3.6). Plausible, and it produces the right lo-fi character, but the mapping
-  from the byte has not been compared against the device.
-- **O2 — MULT.** `1 + (MULT >> 4)`, giving 1–16 repeats. Both the range and the
-  quantisation are this spec's choice. The M8's "hard sync" character suggests it
-  may go considerably higher.
-- **O3 — WARP curve.** The piecewise-linear skew is a guess at the shape of the
-  curve. Its *neutral point* (`00`) is measured and is not in question.
+- **O1 — SIZE. [VERIFIED & CLOSED 2026-08-18 on fw 6.5.2 COM4]** Read literally
+  from the manual as the table's sample count (§3.6). Measured on hardware:
+  the parameter range is `0x02`–`0xFF` (2 to 255 samples). Tested across `02`,
+  `04`, `08`, `10`, `20`, `40`, `80`, `FF` on SAW and wave tables: confirmed
+  decimation matches N-sample linear interpolation, and fundamental pitch is
+  invariant across all SIZE values (exact 367 samples / 130.8 Hz at C-3).
+  Engine and UI clamps updated to `2..255`.
+- **O2 — MULT. [VERIFIED & CLOSED 2026-08-18 on fw 6.5.2 COM4]** Parameter range
+  on hardware is `0x00`–`0xFF`. Audio sweeps and cycle analysis over fine
+  transitions (`00`, `04`, `08`, `0C`, `0F`, `10`, `14`, `18`, `1F`, `20`, `30`,
+  `40`, `80`, `F0`, `FF`) prove MULT is not quantized to 16 integer steps.
+  It is a continuous linear phase multiplier:
+  $\text{multFactor} = 1.0 + \frac{\text{MULT}}{16.0}$, ranging from $1.000$ (`0x00`)
+  to $16.9375$ (`0xFF`). Cross-correlation between this formula and hardware captures
+  exceeds $0.96$ across all values ($0.9986$ at `00`, $0.9972$ at `08`, $0.9922$ at `10`,
+  $0.9931$ at `20`). Engine updated to `1.0f + mult / 16.0f`.
+- **O3 — WARP curve. [VERIFIED & CLOSED 2026-08-18 on fw 6.5.2 COM4]** Parameter
+  range on hardware is `0x00`–`0xFF`. Audio captures of SINE across `0x00`,
+  `0x10`, `0x20`, `0x30`, `0x40`, `0x60`, `0x80`, `0xA0`, `0xC0`, `0xE0`, `0xFF`
+  were analyzed to track the exact zero-crossing inflection point (pivot).
+  Measurements reveal a quartic power-law response curve:
+  $\text{pivot} = 0.012 + (0.5 - 0.012) \cdot (1 - \text{WARP}/255)^4$.
+  Each $+0\text{x}20$ (+32) in WARP approximately halves the pivot ($0.50 \to 0.30 \to 0.16 \to 0.078 \to 0.040$),
+  compressing the positive cycle into an impulse of minimum width $\sim 0.012$ ($3$ samples at full resolution).
+  Engine updated in `wavWarpPhase`.
 - **O4 — right-column x-position.** All five instrument layouts draw their right
   column one cell left of where the hardware capture puts it (§5.1). This spec
   keeps WavSynth consistent with its four siblings rather than correcting one

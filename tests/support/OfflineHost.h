@@ -19,6 +19,7 @@ public:
     engine::Engine&    engine()    { return *m_engine; }
     engine::Sequencer& sequencer() { return m_engine->getSequencerForInit(); }
 
+    engine::SamplePool&       pool()       { return m_engine->m_samplePool; }
     const engine::SamplePool& pool() const { return m_engine->m_samplePool; }
 
     // Render `frames` in chunks of `chunk`. Drains the event ring after every chunk.
@@ -39,7 +40,7 @@ public:
     void clearEvents() { m_events.clear(); }
 
 private:
-    engine::CommandRing<engine::EngineCommand, 1024> m_ring;
+    std::unique_ptr<engine::CommandRing<engine::EngineCommand, 1024>> m_ring;
     std::unique_ptr<engine::Engine> m_engine;
     std::vector<engine::EngineEvent> m_events;
     std::vector<float> m_audio;

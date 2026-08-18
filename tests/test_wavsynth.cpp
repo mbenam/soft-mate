@@ -71,7 +71,7 @@ TEST_CASE("WavSynth SIZE parameter changes output", "[wavsynth]") {
         auto& state = host.engine().getStateForInit();
         state.instruments[0].type = InstType::INST_WAVSYNTH;
         auto& ws = state.instruments[0].wav;
-        ws.shape = 6; ws.size = size; ws.amp = 0x40;
+        ws.shape = 4; ws.size = size; ws.amp = 0x40;
         ws.lim = 0; ws.filter_type = 0; ws.dry = 0xC0; ws.pan = 0x80;
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
         host.push(playPhrase(0, 0, 0));
@@ -80,8 +80,11 @@ TEST_CASE("WavSynth SIZE parameter changes output", "[wavsynth]") {
         for (float v : host.audio()) sum += std::abs(v);
         return sum;
     };
+    float sumMin   = renderWavSize(0x02);
     float sumSmall = renderWavSize(0x20);
     float sumLarge = renderWavSize(0xF0);
+    REQUIRE(sumMin > 0.0f);
+    REQUIRE(sumMin != sumSmall);
     REQUIRE(sumSmall != sumLarge);
 }
 
@@ -100,9 +103,13 @@ TEST_CASE("WavSynth MULT parameter changes output", "[wavsynth]") {
         for (float v : host.audio()) sum += std::abs(v);
         return sum;
     };
-    float sumNoMult = renderWavMult(0x00);
+    float sum00 = renderWavMult(0x00);
+    float sum08 = renderWavMult(0x08);
+    float sum10 = renderWavMult(0x10);
     float sumHighMult = renderWavMult(0xF0);
-    REQUIRE(sumNoMult != sumHighMult);
+    REQUIRE(sum00 != sum08);
+    REQUIRE(sum08 != sum10);
+    REQUIRE(sum00 != sumHighMult);
 }
 
 TEST_CASE("WavSynth RT safety -- zero allocations", "[wavsynth]") {
@@ -220,7 +227,7 @@ TEST_CASE("WavSynth loop point is continuous", "[wavsynth]") {
     REQUIRE(maxStep < 0.015f);
 }
 
-TEST_CASE("WavSynth WARP 00 is the identity", "[wavsynth]") {
+TEST_CASE("WavSynth WARP 00 is the identity and non-zero WARP follows quartic curve", "[wavsynth]") {
     float testPoints[] = {0.0f, 0.05f, 0.12f, 0.25f, 0.5f, 0.75f, 0.88f, 0.99f};
     bool allEqual = true;
     for (float u : testPoints) {
@@ -229,6 +236,19 @@ TEST_CASE("WavSynth WARP 00 is the identity", "[wavsynth]") {
         }
     }
     REQUIRE(allEqual);
+
+    // Verify monotonicity across u in [0, 1) for various warp amounts
+    for (float warp : {0.25f, 0.5f, 0.75f, 1.0f}) {
+        float prev = -1.0f;
+        bool mono = true;
+        for (int i = 0; i <= 100; ++i) {
+            float u = i / 100.0f;
+            float out = SynthVoice::wavWarpPhase(u, warp);
+            if (out < prev) { mono = false; break; }
+            prev = out;
+        }
+        REQUIRE(mono);
+    }
 
     auto renderWarp = [](int warpVal) -> float {
         OfflineHost host;
@@ -246,7 +266,9 @@ TEST_CASE("WavSynth WARP 00 is the identity", "[wavsynth]") {
     };
     float sum00 = renderWarp(0x00);
     float sum80 = renderWarp(0x80);
+    float sumFF = renderWarp(0xFF);
     REQUIRE(std::abs(sum00 - sum80) > 0.001f);
+    REQUIRE(std::abs(sum80 - sumFF) > 0.001f);
 }
 
 TEST_CASE("WavSynth SCAN mirrors PULSE 50% into PWM", "[wavsynth]") {

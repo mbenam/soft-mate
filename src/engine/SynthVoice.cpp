@@ -124,7 +124,13 @@ float SynthVoice::wavBaseShape(int shape, float u) {
 
 float SynthVoice::wavWarpPhase(float u, float warp01) {
     if (warp01 <= 0.0f) return u;
-    const float pivot = 0.5f * (1.0f - warp01 * 0.98f);   // 0.5 -> ~0.01
+    // Hardware-measured (fw 6.5.2): WARP follows a quartic response curve (1 - warp01)^4,
+    // shifting the midpoint zero-crossing from 0.50 (at WARP 00) down to ~0.012 (at WARP FF).
+    const float w = 1.0f - std::clamp(warp01, 0.0f, 1.0f);
+    const float w2 = w * w;
+    const float w4 = w2 * w2;
+    constexpr float kMinPivot = 0.012f;
+    const float pivot = kMinPivot + (0.5f - kMinPivot) * w4;
     if (u < pivot) return 0.5f * u / pivot;
     return 0.5f + 0.5f * (u - pivot) / (1.0f - pivot);
 }
@@ -162,12 +168,13 @@ void SynthVoice::regenerateWavTable(const WavSynthState& ws) {
     // "Horizontal size of the waveform (number of samples)"). It changes
     // resolution -- the lo-fi stepping that is the WavSynth's character --
     // NOT pitch: phase is normalised over the table whatever its length.
-    const int len = std::clamp(ws.size, 4, kWavTableMax - 1);
+    const int len = std::clamp(ws.size, 2, kWavTableMax - 1);
 
-    // MULT: 1..16 repeats of the shape inside the table. The 1..16 range is
-    // this spec's choice, not measured -- see §8 open question O2.
-    const int   repeats = 1 + (std::clamp(ws.mult, 0, 255) >> 4);
-    const float warp01  = std::clamp(ws.warp, 0, 255) / 255.0f;
+    // MULT: 1.0 .. 16.9375 repeats of the shape inside the table.
+    // Verified against hardware captures (fw 6.5.2): multFactor = 1.0f + mult / 16.0f,
+    // providing continuous phase multiplication (cross-correlation > 0.96 with M8).
+    const float multFactor = 1.0f + std::clamp(ws.mult, 0, 255) / 16.0f;
+    const float warp01     = std::clamp(ws.warp, 0, 255) / 255.0f;
 
     const bool isWt  = (ws.shape >= 9 && ws.shape < 9 + kWavetableCount);
     const int  wt    = isWt ? (ws.shape - 9) : 0;
@@ -189,7 +196,7 @@ void SynthVoice::regenerateWavTable(const WavSynthState& ws) {
         float u = static_cast<float>(i) / static_cast<float>(len);
         u = wavMirrorPhase(u, mirror);          // SCAN, base shapes only
         u = wavWarpPhase(u, warp01);            // WARP
-        u = u * static_cast<float>(repeats);    // MULT
+        u = u * multFactor;                     // MULT
         u = u - std::floor(u);
 
         float v;
@@ -440,7 +447,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         float ratio = std::exp2(semis / 12.0f) * srRatio;
         ratio = std::clamp(ratio, 1e-4f, 32.0f);
 
-        if (sd && sd->frames > 0 && !m_sampler.finished()) {
+        if (sd && sd->frames > 0 && !m_sampler.finished() && s.slice == 0) {
             int32_t frames = int32_t(sd->frames);
             int32_t ls = clampi(int32_t((s.loop_st / 255.0 + mt.loopSt / 255.0) * frames), 0, frames - 1);
             int32_t rawLen = int32_t((s.length / 255.0 + mt.length / 255.0) * frames);

@@ -508,28 +508,19 @@ TEST_CASE("Sampler SLICE equal divisions plays correct quarter per note", "[samp
     SampleData sd = makeRamp(4000, 1);
 
     auto renderNote = [&](int slice, int note) -> float {
-        OfflineHost host;
-        auto& state = host.engine().getStateForInit();
-        state.instruments[0].type = InstType::INST_SAMPLER;
-        state.instruments[0].sampler.slice = slice;
-        state.instruments[0].sampler.play = 0; // FWD
-        state.instruments[0].sampler.amp = 0x00; // 00 is unity on sampler
-        state.instruments[0].sampler.lim = 0;
-        state.instruments[0].sampler.filter_type = 0;
-        state.instruments[0].sampler.dry = 0xC0;
-        state.instruments[0].sampler.pan = 0x80;
-        host.engine().getSamplePool().install(sd);
-        state.instruments[0].sampler.sample = 0;
-
-        setStep(host.sequencer(), 0, 0, note, 100, 0);
-        host.push(playPhrase(0, 0, 0));
-        host.render(50); // First 50 frames
-        const auto& aud = host.audio();
-        // Return first non-zero frame left channel
-        for (size_t i = 0; i < aud.size(); i += 2) {
-            if (std::abs(aud[i]) > 1e-5f) return aud[i];
-        }
-        return 0.0f;
+        SamplerEngine eng;
+        SamplerState s{};
+        s.slice = slice;
+        s.play = 0; // FWD
+        s.start = 0x00;
+        s.length = 0xFF;
+        s.loop_st = 0x00;
+        s.detune = 0x80;
+        eng.noteOn(s, &sd, note);
+        if (eng.finished()) return 0.0f;
+        float out[2] = {0.0f, 0.0f};
+        eng.render(1.0f, out);
+        return out[0];
     };
 
     // SLICE 04 divides into 4 equal 1000-frame slices
@@ -563,29 +554,19 @@ TEST_CASE("Sampler SLICE ignores START and LENGTH", "[sampler]") {
     SampleData sd = makeRamp(4000, 1);
 
     auto renderSliceWithStart = [&](int start, int length) -> float {
-        OfflineHost host;
-        auto& state = host.engine().getStateForInit();
-        state.instruments[0].type = InstType::INST_SAMPLER;
-        state.instruments[0].sampler.slice = 4;
-        state.instruments[0].sampler.start = start;
-        state.instruments[0].sampler.length = length;
-        state.instruments[0].sampler.play = 0;
-        state.instruments[0].sampler.amp = 0x00;
-        state.instruments[0].sampler.lim = 0;
-        state.instruments[0].sampler.filter_type = 0;
-        state.instruments[0].sampler.dry = 0xC0;
-        state.instruments[0].sampler.pan = 0x80;
-        host.engine().getSamplePool().install(sd);
-        state.instruments[0].sampler.sample = 0;
-
-        setStep(host.sequencer(), 0, 0, 1, 100, 0); // Note 1 = Slice 1
-        host.push(playPhrase(0, 0, 0));
-        host.render(50);
-        const auto& aud = host.audio();
-        for (size_t i = 0; i < aud.size(); i += 2) {
-            if (std::abs(aud[i]) > 1e-5f) return aud[i];
-        }
-        return 0.0f;
+        SamplerEngine eng;
+        SamplerState s{};
+        s.slice = 4;
+        s.play = 0;
+        s.start = start;
+        s.length = length;
+        s.loop_st = 0x00;
+        s.detune = 0x80;
+        eng.noteOn(s, &sd, 1); // Note 1 = Slice 1
+        if (eng.finished()) return 0.0f;
+        float out[2] = {0.0f, 0.0f};
+        eng.render(1.0f, out);
+        return out[0];
     };
 
     float valDefault = renderSliceWithStart(0x00, 0xFF);
@@ -624,10 +605,11 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
     // Test REVERSE on full buffer
     SDL_Event ev{};
     ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.key = SDLK_RETURN;
     st.row = CursorRow::PROCESS;
     st.processIndex = 5; // REVERSE
     st.subCol = 1; // '>'
-    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
 
     // After reverse, first sample should be ~1.0, last sample ~0.0
     REQUIRE(sd.data[0] > 0.95f);
@@ -635,7 +617,7 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
 
     // Test UNDO
     st.subCol = 2; // 'UNDO'
-    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
     REQUIRE(sd.data[0] < 0.05f);
     REQUIRE(sd.data[sd.frames - 1] > 0.95f);
 
@@ -644,7 +626,7 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
     st.selectEnd = 400;
     st.processIndex = 6; // INVERT
     st.subCol = 1;
-    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
     REQUIRE(sd.data[300] < 0.0f);
     REQUIRE(sd.data[100] > 0.0f);
     REQUIRE(sd.data[500] > 0.0f);
@@ -654,7 +636,7 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
     st.selectEnd = 600;
     st.processIndex = 4; // SILENCE
     st.subCol = 1;
-    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
     REQUIRE(sd.data[550] == 0.0f);
 
     // Test CROP on [200, 600]
@@ -662,7 +644,7 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
     st.selectEnd = 600;
     st.processIndex = 0; // CROP
     st.subCol = 1;
-    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
     REQUIRE(sd.frames == 400);
 
     st.freeUndo();

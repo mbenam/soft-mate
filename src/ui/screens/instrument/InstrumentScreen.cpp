@@ -530,7 +530,7 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
 
         // WavSynth-specific
         else if (isWav && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SHAPE, std::clamp<int>(inst.wav.shape + step, 0, 0x45), currentInstIndex);
-        else if (isWav && cursor_id == C::WAV_SIZE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SIZE, std::clamp<int>(inst.wav.size + step, 0, 255), currentInstIndex);
+        else if (isWav && cursor_id == C::WAV_SIZE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SIZE, std::clamp<int>(inst.wav.size + step, 2, 255), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_MULT) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_MULT, std::clamp<int>(inst.wav.mult + step, 0, 255), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_WARP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_WARP, std::clamp<int>(inst.wav.warp + step, 0, 255), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_SCAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SCAN, std::clamp<int>(inst.wav.scan + step, 0, 255), currentInstIndex);

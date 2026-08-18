@@ -333,7 +333,7 @@ bool FileBrowser::loadWavFile(const std::string& path, m8::engine::SampleData& o
             std::sort(outData.sliceMarkers, outData.sliceMarkers + outData.sliceMarkerCount);
         } else if (wav.pMetadata[i].type == drwav_metadata_type_smpl) {
             const auto& smpl = wav.pMetadata[i].data.smpl;
-            if (smpl.loopCount > 0 && smpl.pLoops) {
+            if (smpl.sampleLoopCount > 0 && smpl.pLoops) {
                 outData.loopStartFrame = smpl.pLoops[0].firstSampleOffset;
                 outData.loopEndFrame = smpl.pLoops[0].lastSampleOffset;
             }

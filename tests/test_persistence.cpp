@@ -322,8 +322,8 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
     constexpr int kFrames = 48000;  // 1 second
 
     // --- Engine A: load demo song first, then load TEST-FILE, render 1s ---
-    CommandRing<EngineCommand, 1024> ringA;
-    auto engineA = std::make_unique<Engine>(ringA);
+    auto ringA = std::make_unique<CommandRing<EngineCommand, 1024>>();
+    auto engineA = std::make_unique<Engine>(*ringA);
     engineA->loadDemoSong();
     {
         std::vector<float> warmup(512 * 2);
@@ -337,13 +337,13 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
         EngineCommand cmd{};
         cmd.type = CommandType::LOAD_SONG;
         cmd.u.song.data = buf;
-        ringA.push(cmd);
+        ringA->push(cmd);
     }
     {
         EngineCommand play{};
         play.type = CommandType::PLAY_START;
         play.value = 3;  // SONG
-        ringA.push(play);
+        ringA->push(play);
     }
     std::vector<float> audioA;
     audioA.reserve(kFrames * 2);
@@ -359,8 +359,8 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
     }
 
     // --- Engine B: fresh engine, load TEST-FILE only, render 1s ---
-    CommandRing<EngineCommand, 1024> ringB;
-    auto engineB = std::make_unique<Engine>(ringB);
+    auto ringB = std::make_unique<CommandRing<EngineCommand, 1024>>();
+    auto engineB = std::make_unique<Engine>(*ringB);
     engineB->getSequencerForInit().clear();
 
     auto resultB = loadSong(songPath("TEST-FILE.m8s"), "");
@@ -370,13 +370,13 @@ TEST_CASE("L9 LOAD_SONG resets effects buffers — in-app render matches fresh e
         EngineCommand cmd{};
         cmd.type = CommandType::LOAD_SONG;
         cmd.u.song.data = buf;
-        ringB.push(cmd);
+        ringB->push(cmd);
     }
     {
         EngineCommand play{};
         play.type = CommandType::PLAY_START;
         play.value = 3;  // SONG
-        ringB.push(play);
+        ringB->push(play);
     }
     std::vector<float> audioB;
     audioB.reserve(kFrames * 2);
