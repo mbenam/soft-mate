@@ -795,9 +795,9 @@ These are unmeasured. Implement what this spec says, leave the marker comment,
 and restate them in the completion report so they can be A/B'd against hardware
 later.
 
-- **O1 — SIZE.** **ANSWERED (Phase 3 §7.3):** Verified on hardware (fw 6.5.2) — SIZE
-  decimates the wave table to ~32 samples at 0x20 and preserves the full table at 0xFF,
-  with pitch unchanged.
+- **O1 — SIZE.** Read literally from the manual as the table's sample count
+  (§3.6). Plausible, and it produces the right lo-fi character, but the mapping
+  from the byte has not been compared against the device.
 - **O2 — MULT.** `1 + (MULT >> 4)`, giving 1–16 repeats. Both the range and the
   quantisation are this spec's choice. The M8's "hard sync" character suggests it
   may go considerably higher.
