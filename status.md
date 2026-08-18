@@ -649,8 +649,11 @@ is implemented and verified.
   measured** (2026-08-18, `SAMPLER_EDITOR_SPEC.md` §G): REPITCH *repitches* rather than
   time-stretching (2x-stretched 240 BPM capture matches the 120 BPM one at r=0.918), it loops
   while the note is held, and its loop period scales exactly as STEPS/BPM (tempo x2 -> period
-  x0.501; STEPS x0.5 -> period x0.500). Still open: the absolute constant, and whether 0C-0E
-  (the BPM family) shares the law. Screen-mapped (device photos,
+  x0.501; STEPS x0.5 -> period x0.500; re-measured 2026-08-18 with a better estimator as x0.5014
+  and x0.5005). Still open: the absolute constant -- an attempt to close it with a percussive
+  sample FAILED (a 1100-frame drum under REPITCH has no measurable periodicity at all), and the
+  model may be wrong: the loop period may simply be proportional to sample length, in which case
+  there is no musical constant to find. Also open: whether 0C-0E (the BPM family) shares the law. Screen-mapped (device photos,
   2026-07-17): REPITCH modes expose a **STEPS** parameter, BPM modes a **BPM** parameter, in the row
   under PLAY (default `0x80`). Confirmed STEPS is **not** the DETUNE/`fine_pitch` byte — it's a
   separate stored byte (likely `synth_params.pitch`, unconfirmed). Still blocked on the **tempo

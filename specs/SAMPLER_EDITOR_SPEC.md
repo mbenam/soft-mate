@@ -191,7 +191,8 @@ So:
 
 Measured: at `STEPS = 0x80` and 120 BPM the loop period is **0.2298 s**, which is
 0.460 beats, or **1.84 sixteenth-steps**. That gives `k = 0.460/128 = 0.003594`
-beats per STEPS unit.
+beats per STEPS unit. Re-measured 2026-08-18 with a better estimator: 229.812 ms,
+r = 0.884 — the same number, so the value is solid *for this sample*.
 
 1.84 sixteenths is suspiciously close to 2, and `k = 1/256` would make
 `loopBeats = STEPS/256` — exactly 0.5 beats at `0x80`. But the measurement is 8%
@@ -203,20 +204,39 @@ it is only the absolute that is soft. The likely culprit is the measurement, not
 the device: the loop period came from autocorrelating the envelope of a sustained
 sample, where the true loop point is not sharply defined.
 
-**How to close it — no file transfer needed.** The reason the number above is
-soft is that this session used `ANALOGSTRING.WAV`, a *sustained* sample whose
-loop point smears under envelope autocorrelation. Use a **percussive factory
-sample instead** — `ST-01/BASSDRUM1.WAV` and its neighbours are already on the
-card: sharp transient, silence after, so the loop period is unmistakable
-click-to-click and measurable to the sample.
+**An attempt to close it failed, 2026-08-18.** An earlier draft of this section
+said to use a percussive sample — `BASSDRUM1.WAV` — on the theory that a sharp
+transient makes the loop point unambiguous. **That advice was wrong and has been
+removed.** Four captures at `STEPS` `0x20`/`0x40`/`0x80`/`0xC0` produced
+recordings with **no periodicity at all** anywhere between 1 ms and 400 ms
+(normalised autocorrelation never exceeds 0.5). The drum is only 1100 frames;
+under REPITCH at note 60 it is squeezed into a few milliseconds and becomes
+continuous noise rather than a repeating hit. There is no loop left to measure.
 
-Then: PLAY `09`, one tempo, capture at `STEPS` = `0x20`, `0x40`, `0x80`, `0xC0`,
-fit `k`, and check the fit is linear through the origin. Four captures, one
-session, and the constant is exact.
+Worse, the first analysis of those captures *appeared* to give a beautiful
+1 : 2 : 4 : 6 result. It was an artifact: each search window had been centred on
+a prediction scaled by STEPS, every "peak" landed exactly on its window's lower
+bound, and the ratio recovered was the ratio of the windows, not of the audio.
+**Any peak sitting on a search bound is not a measurement.** Check for that
+explicitly before believing a period.
 
-Nothing has to be written to the SD card, and nothing has to be copied onto it.
-Reach for a drum before reaching for a file transfer — that is the whole lesson
-of the first attempt.
+What *does* work is the sustained sample. `ANALOGSTRING.WAV` (8800 frames) gives
+genuine interior peaks — 229.8 ms / 115.2 ms / 57.7 ms at r = 0.88–0.97, all far
+from their window edges — and re-measuring it with the better estimator
+reproduced the law exactly (tempo ×2 → ×0.5014; STEPS ÷2 → ×0.5005).
+
+**What to try next.** The reason no round number has appeared may be that the
+question is wrong. If REPITCH simply sets a *playback rate* from tempo and STEPS,
+then the loop period is `sampleFrames / rate` and is **proportional to the sample
+length** — in which case `loopBeats = k * STEPS` is the wrong model, there is no
+musical constant to find, and what needs measuring is the rate law instead.
+
+That is one experiment: capture two samples of **very different lengths** at
+identical settings. If the periods are in the same ratio as the sample lengths,
+the model above is wrong and should be rewritten as a rate law. `ANALOGSTRING`
+(8800 frames, 229.8 ms at `STEPS 0x80` / 120 BPM) is already one data point; pick
+a second sample several times longer, and make sure it is long enough that its
+loop period stays well above its own pitch period.
 
 ### G.3 Untested
 
