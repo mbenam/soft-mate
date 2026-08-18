@@ -314,6 +314,7 @@ int main(int argc, char* argv[]) {
     
     int table_cursor_x = 0;
     int table_cursor_y = 0;
+    int currentTableIndex = 0;
 
     int currentGrooveIndex = 0;
     int groove_cursor_x = 0; // 0 = TIC, 1 = PPQ
@@ -744,7 +745,7 @@ int main(int argc, char* argv[]) {
                             songRow = 0; songCol = 0;
                             chainRow = 0; chainCol = 0;
                             currentPhrase = 0; currentChain = 0; currentInstIndex = 0;
-                            table_cursor_x = 0; table_cursor_y = 0;
+                            currentTableIndex = 0; table_cursor_x = 0; table_cursor_y = 0;
                             currentGrooveIndex = 0; groove_cursor_x = 0; groove_cursor_y = 0; groove_last_value = 6;
                             currentScaleIndex = 0;
                             pool_cursor_x = 0; pool_cursor_y = 0;
@@ -879,6 +880,8 @@ int main(int argc, char* argv[]) {
                             if (phrases[currentPhrase][cursorRow].instr != INST_EMPTY) {
                                 currentInstIndex = phrases[currentPhrase][cursorRow].instr;
                             }
+                        } else if (oldView == m8::ui::ViewType::INSTRUMENT && newView == m8::ui::ViewType::TABLE) {
+                            currentTableIndex = currentInstIndex;
                         }
                         
                         continue;
@@ -897,7 +900,9 @@ int main(int argc, char* argv[]) {
                                                               nameCharIndex, commandSink, viewManager,
                                                               browserForSongLoad, fileBrowser, instrumentBrowserMode);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
-                    m8::ui::table::HandleTableInput(event, editHeld, table_cursor_x, table_cursor_y);
+                    m8::ui::table::HandleTableInput(event, editHeld, optHeld, shiftHeld, arrowPressedDuringEdit,
+                                                    uiSequencer, currentTableIndex,
+                                                    table_cursor_x, table_cursor_y, commandSink);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
                     m8::ui::mods::HandleModInput(event, editHeld, arrowPressedDuringEdit,
                                                  uiEngineState, currentInstIndex, active_cursor_mod, commandSink);
@@ -1097,6 +1102,11 @@ int main(int argc, char* argv[]) {
                                 instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
                                 viewManager.popModal();
                             }
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::table::HandleTableEditRelease(uiSequencer.tables[currentTableIndex][table_cursor_y],
+                                                                      currentTableIndex, table_cursor_x, table_cursor_y, commandSink);
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::GROOVE) {
                             m8::ui::groove::HandleGrooveEditRelease(grooves[currentGrooveIndex], currentGrooveIndex, groove_cursor_x, groove_cursor_y, groove_last_value, commandSink);
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SCALE) {
@@ -1198,7 +1208,7 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
             m8::ui::instrument::RenderInstrumentScreen(renderer, uiEngineState, currentInstIndex, active_cursor, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
-            m8::ui::table::RenderTableScreen(renderer, uiSequencer, uiEngineState, currentInstIndex, table_cursor_x, table_cursor_y);
+            m8::ui::table::RenderTableScreen(renderer, uiSequencer, uiEngineState, currentTableIndex, table_cursor_x, table_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
             m8::ui::mods::RenderModScreen(renderer, uiEngineState, currentInstIndex, active_cursor_mod);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::PROJECT) {

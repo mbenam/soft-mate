@@ -185,6 +185,9 @@ void Engine::processCommands() {
                 if (len == 0) len = 1;
                 m_sequencer.grooves[cmd.targetId].length = len;
             }
+        } else if (cmd.type == CommandType::SET_TABLE_STEP) {
+            if (cmd.targetId >= 0 && cmd.targetId < Sequencer::NUM_TABLES && cmd.row >= 0 && cmd.row < Sequencer::ROWS)
+                m_sequencer.tables[cmd.targetId][cmd.row] = cmd.u.tableStep;
         } else if (cmd.type == CommandType::LOAD_SONG) {
             auto* data = static_cast<LoadedSongData*>(cmd.u.song.data);
             if (data) {

@@ -21,6 +21,7 @@ enum class CommandType {
     SET_CHAIN_STEP,
     SET_SONG_STEP,
     SET_GROOVE_STEP,
+    SET_TABLE_STEP,
     LOAD_SONG
 };
 
@@ -88,6 +89,7 @@ struct EngineCommand {
     union {
         Step step;
         ChainStep chainStep;
+        TableStep tableStep;
         SampleData sample;
         SongPayload song;
     } u{};

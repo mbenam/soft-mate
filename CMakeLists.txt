@@ -266,6 +266,7 @@ add_executable(m8_tests
     src/ui/screens/project/ProjectScreen.cpp
     src/ui/screens/groove/GrooveScreen.cpp
     src/ui/screens/scale/ScaleScreen.cpp
+    src/ui/screens/table/TableScreen.cpp
     src/ui/screens/render/RenderScreen.cpp
     src/ui/screens/inst_pool/InstPoolScreen.cpp
     src/ui/screens/eq/EqScreen.cpp

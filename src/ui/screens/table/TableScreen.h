@@ -1,8 +1,8 @@
 #pragma once
 #include "../../ui_types.h"
 #include "../../Renderer.h"
+#include "../../UiCommands.h"
 #include "../../../engine/Engine.h"
-#include <vector>
 #include <SDL3/SDL.h>
 
 namespace m8 {
@@ -13,12 +13,21 @@ void RenderTableScreen(Renderer& renderer,
                        const engine::Sequencer& uiSequencer,
                        const engine::EngineState& engState,
                        int currentTableIndex,
-                       int cursor_x, int cursor_y);
+                       int cursor_x, int cursor_y,
+                       int activeTableRow = -1);
 
-// Cursor-only navigation (SDL_EVENT_KEY_DOWN dispatch) -- Table has no edit
-// mode wired up yet (AGENTS.md §8: "Tables are edited by the UI and ignored
-// by the engine"), so this is pure cursor movement, no command pushes.
-void HandleTableInput(const SDL_Event& event, bool editHeld, int& cursor_x, int& cursor_y);
+void HandleTableInput(const SDL_Event& event,
+                      bool editHeld, bool optHeld, bool shiftHeld,
+                      bool& arrowPressedDuringEdit,
+                      engine::Sequencer& uiSequencer,
+                      int& currentTableIndex,
+                      int& cursor_x, int& cursor_y,
+                      CommandSink& commandSink);
+
+void HandleTableEditRelease(engine::TableStep& step,
+                            int currentTableIndex,
+                            int cursor_x, int cursor_y,
+                            CommandSink& commandSink);
 
 } // namespace table
 } // namespace ui

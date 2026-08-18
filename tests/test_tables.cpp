@@ -1,5 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
+#include "ui/screens/table/TableScreen.h"
+#include "ui/UiCommands.h"
+#include "engine/CommandRing.h"
 #include <atomic>
 #include <cmath>
 
@@ -7,6 +10,8 @@ extern std::atomic<int> g_allocCount;
 
 using namespace m8::test;
 using namespace m8::engine;
+using namespace m8::ui;
+using namespace m8::ui::table;
 
 TEST_CASE("Table auto-assigns on note-on", "[tables]") {
     OfflineHost host;
@@ -148,4 +153,90 @@ TEST_CASE("Tables RT safety -- zero allocations", "[tables]") {
     host.render(5000);
 
     REQUIRE(g_allocCount == 0);
+}
+
+TEST_CASE("SET_TABLE_STEP command updates engine state", "[tables]") {
+    OfflineHost host;
+    EngineCommand cmd;
+    cmd.type = CommandType::SET_TABLE_STEP;
+    cmd.targetId = 3;
+    cmd.row = 2;
+    cmd.u.tableStep.transp = 7;
+    cmd.u.tableStep.vol = 0x7F;
+    cmd.u.tableStep.fx[0] = {FxCmd::HOP, 0};
+
+    host.push(cmd);
+    host.render(100);
+
+    const auto& table = host.engine().getSequencer().tables[3];
+    REQUIRE(table[2].transp == 7);
+    REQUIRE(table[2].vol == 0x7F);
+    REQUIRE(table[2].fx[0].cmd == FxCmd::HOP);
+    REQUIRE(table[2].fx[0].val == 0);
+}
+
+TEST_CASE("Table UI: Navigation and Editing", "[tables]") {
+    Sequencer seq;
+    CommandRing<EngineCommand, 1024> ring;
+    CommandSink sink{ring};
+
+    int currentTable = 0;
+    int cursor_x = 0;
+    int cursor_y = 0;
+    bool arrowPressed = false;
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+
+    // 1. Option navigation across tables
+    ev.key.key = SDLK_RIGHT;
+    HandleTableInput(ev, false, true, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(currentTable == 1);
+
+    ev.key.key = SDLK_DOWN;
+    HandleTableInput(ev, false, true, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(currentTable == 17); // +16
+
+    // 2. Transpose editing (cursor_x = 0)
+    cursor_x = 0; cursor_y = 0;
+    ev.key.key = SDLK_UP;
+    // EDIT+UP: transpose coarse +12 semitones
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].transp == 12);
+
+    // EDIT+RIGHT: transpose fine +1 semitone -> 13
+    ev.key.key = SDLK_RIGHT;
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].transp == 13);
+
+    // 3. Volume editing (cursor_x = 1)
+    cursor_x = 1;
+    // Initially empty, EDIT+UP sets default 0x64
+    ev.key.key = SDLK_UP;
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].vol == 0x64);
+    // Next EDIT+UP steps by +0x10 -> 0x74
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].vol == 0x74);
+
+    // 4. FX Command and Value editing (cursor_x = 2 and 3)
+    cursor_x = 2; // FX1 Command
+    ev.key.key = SDLK_UP;
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].fx[0].cmd == FxCmd::VOL);
+
+    cursor_x = 3; // FX1 Value
+    ev.key.key = SDLK_RIGHT;
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].fx[0].val == 1);
+
+    // 5. Delete cell value
+    ev.key.key = SDLK_DELETE;
+    HandleTableInput(ev, true, false, false, arrowPressed, seq, currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].fx[0].cmd == FxCmd::NONE);
+
+    // 6. Release tap insert default
+    cursor_x = 2;
+    HandleTableEditRelease(seq.tables[17][0], currentTable, cursor_x, cursor_y, sink);
+    REQUIRE(seq.tables[17][0].fx[0].cmd == FxCmd::VOL);
 }

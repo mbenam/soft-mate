@@ -700,6 +700,19 @@ static void convertSongToEngine(const m8::Song& song,
         }
     }
 
+    // Tables (library: 0..255, engine: 0..255)
+    for (size_t t = 0; t < song.tables.size() && t < engine::Sequencer::NUM_TABLES; ++t) {
+        for (int r = 0; r < 16; ++r) {
+            const auto& src = song.tables[t].steps[r];
+            auto& dst = seq.tables[t][r];
+            dst.transp = static_cast<int8_t>(src.transpose);
+            dst.vol = src.velocity;
+            dst.fx[0] = {libFxToEngine(src.fx1.command), src.fx1.value};
+            dst.fx[1] = {libFxToEngine(src.fx2.command), src.fx2.value};
+            dst.fx[2] = {libFxToEngine(src.fx3.command), src.fx3.value};
+        }
+    }
+
     // Song steps — library flat array is row-major: steps[row * 8 + track]
     for (int row = 0; row < 256; ++row) {
         for (int t = 0; t < 8; ++t) {
@@ -992,6 +1005,20 @@ static void convertEngineToSong(const engine::Sequencer& seq,
     for (int row = 0; row < 256; ++row)
         for (int t = 0; t < 8; ++t)
             song.song.steps[row * 8 + t] = seq.song[row].tracks[t];
+
+    // Tables
+    song.tables.resize(m8::Song::N_TABLES);
+    for (size_t t = 0; t < m8::Song::N_TABLES; ++t) {
+        for (int r = 0; r < 16; ++r) {
+            const auto& src = seq.tables[t][r];
+            auto& dst = song.tables[t].steps[r];
+            dst.transpose = static_cast<uint8_t>(src.transp);
+            dst.velocity = src.vol;
+            dst.fx1 = {engineFxToLib(src.fx[0].cmd), src.fx[0].val};
+            dst.fx2 = {engineFxToLib(src.fx[1].cmd), src.fx[1].val};
+            dst.fx3 = {engineFxToLib(src.fx[2].cmd), src.fx[2].val};
+        }
+    }
 
     // Grooves
     song.grooves.resize(m8::Song::N_GROOVES);

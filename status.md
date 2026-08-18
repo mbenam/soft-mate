@@ -1043,6 +1043,10 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
   DSP rebuild with cached tables, guard sample continuous loop, unipolar WARP, PWM via SCAN mirror,
   70 shape names, 12 filter modes, and the 61 digitised wave tables with linear SCAN morphing across 64 frames.
   MacroSynth/Braids has no standalone spec — the port lives in `src/engine/braids/` + `stmlib/`.
+- `TABLE_SCREEN` — **implemented (2026-08-18).** Full Table screen (`src/ui/screens/table/`) and engine synchronization:
+  8 interactive sub-columns (`N` signed transpose, `V` hex volume, 3 $\times$ `FX Cmd` + `FX Val`), option navigation
+  across all 256 tables (`00`–`FF`), `[EDIT]+[UP/DOWN]` coarse and `[EDIT]+[LEFT/RIGHT]` fine adjustments, delete/cut
+  and insert defaults, `SET_TABLE_STEP` audio thread command push, and table file round-trip persistence. Tests: `[tables]`.
 - `GROOVE_SCREEN` — **implemented (2026-08-18).** Full Groove screen implementation (`src/ui/screens/groove/`):
   `TIC`, `PPQ`, and `SWING` columns, dual-row swing pair editing (`EDIT+UP/DOWN` balances pairs while preserving total tick count),
   single-step editing (`EDIT+LEFT/RIGHT`), PPQ resolution scaling (24, 48, 96, 192) with automatic step multiplication/division,
