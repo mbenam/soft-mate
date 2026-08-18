@@ -45,8 +45,7 @@ inline std::vector<UI_GridCell> GetHypersynStaticText() {
 
 inline std::vector<UI_GridCell> GetHypersynDynamicTextDefaults() {
     return {
-        {"13", 6, 0, "TITLE", "TITLE", "inst_num", false, 0},
-        {"T>128", 29, 2, "LABEL_LITE", "LABEL_LITE", "tempo", false, 0}
+        {"13", 6, 0, "TITLE", "TITLE", "inst_num", false, 0}
     };
 }
 
