@@ -184,6 +184,8 @@ struct SampleEditorState {
         }
     }
 
+    engine::SampleData editorSample{};
+
     void freeUndo() {
         if (undoBuffer) {
             free(undoBuffer);
@@ -191,6 +193,10 @@ struct SampleEditorState {
             undoFrames = 0;
         }
         freeRecordBuffer();
+        if (editorSample.data) {
+            free(editorSample.data);
+            editorSample.data = nullptr;
+        }
     }
 };
 
