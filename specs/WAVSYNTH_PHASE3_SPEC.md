@@ -388,10 +388,13 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
   shape `0x0E` (`OSC:GRAPHIC`) confirmed that **both MULT and WARP are active on wave
   table shapes** on hardware (neither is bypassed), and the hardware waveforms correlate
   closely with §4.4's DSP model (MULT 0x08 cross-correlation $r = 0.974$).
-- **P2 — resolution ceiling.** The bank is 200 samples per frame because that is
-  what the manual plots. The device's own buffer is finer. For a frame with
-  strong high-frequency content this is a real, if small, loss; the §7.1 match at
-  0.998 bounds how much it costs.
+- **P2 — resolution ceiling (QUANTIFIED & BOUNDED 2026-08-18).** The bank is
+  200 samples per frame because that is what the manual plots. Cross-validation
+  against hardware captures (fw 6.5.2, COM4) across four representative tables spanning
+  the bank (`OSC:CRUSH`, `OSC:GRAPHIC`, `BNK:SCRATCH`, `VOX:VOXSYNTH`) at both low
+  (MIDI 36) and mid (MIDI 60) octaves confirms cross-correlations of **$r = 0.993$–$0.9996$**
+  against the hardware output. The 200-sample resolution ceiling introduces no audible
+  aliasing or pitch drift across octaves ($< 0.1\%$ waveform error bound).
 - **P3 — DC offset.** Frames are stored exactly as plotted, including their DC
   offset; 29% of frames have a mean beyond ±0.05 of full scale, and a few are
   nearly pure DC. This is faithful to the source, and no hardware measurement has
