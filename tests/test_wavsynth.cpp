@@ -585,3 +585,41 @@ TEST_CASE("Wavetable rendering allocates nothing", "[wavsynth]") {
 
     REQUIRE(g_allocCount == 0);
 }
+
+TEST_CASE("Wavetable MULT and WARP alter rendered output", "[wavsynth]") {
+    auto renderWtParams = [](int mult, int warp) -> std::vector<float> {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_WAVSYNTH;
+        auto& ws = state.instruments[0].wav;
+        ws.shape = 0x0E; // OSC:GRAPHIC
+        ws.size = 0xFF;
+        ws.mult = mult;
+        ws.warp = warp;
+        ws.scan = 0x00;
+        ws.amp = 0x40;
+        ws.lim = 0;
+        ws.filter_type = 0;
+        ws.dry = 0xC0;
+        ws.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 36, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+        return host.audio();
+    };
+
+    auto base = renderWtParams(0x00, 0x00);
+    auto mult10 = renderWtParams(0x10, 0x00);
+    auto warp80 = renderWtParams(0x00, 0x80);
+
+    float diffMult = 0.0f;
+    float diffWarp = 0.0f;
+    for (size_t i = 0; i < base.size(); ++i) {
+        diffMult += std::abs(base[i] - mult10[i]);
+        diffWarp += std::abs(base[i] - warp80[i]);
+    }
+
+    REQUIRE(diffMult > 10.0f);
+    REQUIRE(diffWarp > 10.0f);
+}

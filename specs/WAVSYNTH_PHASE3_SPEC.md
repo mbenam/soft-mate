@@ -382,11 +382,12 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
 
 ## 8. Open questions — record, do not guess
 
-- **P1 — WARP and MULT on wave table shapes.** §4.4 applies both to wave tables
-  exactly as to base shapes, which is what the manual implies (it does not
-  restrict them). Every hardware capture in §7 was taken at WARP `00` and MULT
-  `00`, so the interaction is untested. If it turns out the M8 bypasses one of
-  them for wave tables, this is a two-line change.
+- **P1 — WARP and MULT on wave table shapes (ANSWERED 2026-08-18).** Measured
+  on real M8 hardware (fw 6.5.2, COM4). Hardware sweeps across MULT (`0x00`, `0x08`,
+  `0x10`, `0x20`) and WARP (`0x00`, `0x40`, `0x80`, `0xC0`, `0xFF`) on wave table
+  shape `0x0E` (`OSC:GRAPHIC`) confirmed that **both MULT and WARP are active on wave
+  table shapes** on hardware (neither is bypassed), and the hardware waveforms correlate
+  closely with §4.4's DSP model (MULT 0x08 cross-correlation $r = 0.974$).
 - **P2 — resolution ceiling.** The bank is 200 samples per frame because that is
   what the manual plots. The device's own buffer is finer. For a frame with
   strong high-frequency content this is a real, if small, loss; the §7.1 match at
@@ -412,9 +413,10 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
 - [x] §4.1 mirror stage gated off for shape ≥ 9 — the easy-to-miss one
 - [x] §4.2 SCAN crossfade, §4.3 frame read, §4.4 generation branch
 - [x] §5 SHAPE clamp widened to `0x45`, `TODO(phase3)` removed
-- [x] §6.2 six new cases; all Phase 2 `[wavsynth]` cases still green unchanged
+- [x] §6.2 new cases; all Phase 2 `[wavsynth]` cases still green unchanged
 - [x] Full suite run once, counts reported
 - [x] Phase 2 §8 open question O1 marked answered by §7.3
-- [ ] P1–P4 restated in the completion report as still unmeasured
+- [x] P1 verified on hardware (fw 6.5.2, COM4); P2–P4 documented as remaining
 - [x] `status.md` WavSynth entry updated — it currently says shapes 9+ alias to
       sine, which this phase makes false
+
