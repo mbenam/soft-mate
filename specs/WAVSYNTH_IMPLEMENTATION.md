@@ -1,5 +1,8 @@
 # WavSynth Implementation Plan (Phase 1: 9 Base Shapes)
 
+> **NOTE (2026-08-18):** §3 (DSP, `generateWavShape`, render path) of this document is **superseded**
+> by `specs/WAVSYNTH_PHASE2_SPEC.md`. This document remains in the tree as historical record of Phase 1.
+
 ## Overview
 
 A wavetable synthesizer that generates waveforms in real-time from 9 basic shapes, with size/mult/warp/scan controls. Wavetables (shapes 9+) deferred to a later phase.

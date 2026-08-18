@@ -174,13 +174,41 @@ private:
     void initFMWavetables();
     static float readFMWavetable(const float* table, float phase);
 
-    // WavSynth state
-    static constexpr int kWavBufSize = 2048;
-    float m_wavBuf[kWavBufSize] = {};
-    int m_wavBufLen = 0;
+    // WavSynth state.
+    // The table is at most 256 samples because SIZE is a byte and the manual
+    // defines it as the sample count of the wave table. The +1 slot is a guard
+    // holding a copy of [0], so linear interpolation at the loop point needs no
+    // wrap branch and cannot read stale data (Phase 1 defect D2).
+    static constexpr int kWavTableMax = 256;
+    float    m_wavTable[kWavTableMax + 1] = {};
+    int      m_wavTableLen = 0;
     uint32_t m_wavPhase = 0;
-    void generateWavShape(const WavSynthState& ws, float noteFreq);
-    static float readWavBuf(const float* buf, int len, float phase);
+    uint32_t m_wavNoiseLfsr = 1u;   // shape 08 (NOISE); reset on note-on
+    daisysp::Svf m_wavShaper;       // FILTER 08-0B only -- must NOT be m_filter,
+                                    // which is the output-stage filter
+
+    // Cache key: the parameters the current m_wavTable was generated from.
+    // -1 means "nothing generated yet". WARP and SCAN are in the key because
+    // they are baked into the table (§3.1); cutoff/res only matter when
+    // filter_type is 08-0B but are always compared, which is harmless.
+    int m_wavKeyShape  = -1;
+    int m_wavKeySize   = -1;
+    int m_wavKeyMult   = -1;
+    int m_wavKeyWarp   = -1;
+    int m_wavKeyScan   = -1;
+    int m_wavKeyFilter = -1;
+    int m_wavKeyCutoff = -1;
+    int m_wavKeyRes    = -1;
+
+    bool  wavTableStale(const WavSynthState& ws) const;
+    void  regenerateWavTable(const WavSynthState& ws);
+    float readWavTable(uint32_t phase) const;
+public:
+    static float wavBaseShape(int shape, float u);
+    static float wavWarpPhase(float u, float warp01);
+    static float wavMirrorPhase(float u, float mirror);
+    static float wavLfsrNext(uint32_t& state);
+private:
 
     static constexpr float kGateTime = 0.003f;
 };

@@ -5,9 +5,9 @@ namespace m8 {
 namespace ui {
 namespace instrument {
 
-// Shared between the Sampler and Macrosyn layouts -- most fields are common
-// to both instrument types, so one enum covers the union of both variants'
-// field sets rather than having two incompatible cursor types per screen.
+// Shared between the Sampler, Macrosyn, FMSynth, HyperSynth and WavSynth layouts --
+// most fields are common to instrument types, so one enum covers the union of all
+// variants' field sets rather than having incompatible cursor types per screen.
 enum class CursorId : uint8_t {
     NONE = 0,
     TYPE, CMD_LOAD, CMD_SAVE, NAME, TRANSP, TBL_TIC, EQ,
@@ -29,6 +29,9 @@ enum class CursorId : uint8_t {
     HYP_SCALE, HYP_CHORD_BANK,
     HYP_CHORD_N1, HYP_CHORD_N2, HYP_CHORD_N3, HYP_CHORD_N4, HYP_CHORD_N5, HYP_CHORD_N6,
     HYP_SHIFT, HYP_SWARM, HYP_WIDTH, HYP_SUBOSC,
+    // Wavsynth-only (SHAPE, FILTER, CUTOFF, RES and the whole right-hand
+    // column are shared with the other layouts)
+    WAV_SIZE, WAV_MULT, WAV_WARP, WAV_SCAN,
 };
 
 } // namespace instrument

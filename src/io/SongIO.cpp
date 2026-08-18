@@ -1268,9 +1268,9 @@ static m8::Song buildSongFromEngine(const engine::Sequencer& seq,
             wvs.number = static_cast<uint8_t>(i);
             wvs.name = trimName(e.name);
             wvs.shape = m8::WavShape::Sine;
-            wvs.size = 0x80;
+            wvs.size = 0x20;
             wvs.mult = 0x00;
-            wvs.warp = 0x80;
+            wvs.warp = 0x00;
             wvs.scan = 0x00;
             wvs.synth_params = {};
             wvs.synth_params.mixer_pan = 0x80;

@@ -97,9 +97,9 @@ struct WavSynthState {
     int eq = 0;            // 0 = --
 
     int shape = 0;         // 0=Pulse12..8=Noise (9 base shapes), 9+=wavetable index
-    int size = 0x80;       // horizontal size (0-255, controls waveform width)
+    int size = 0x20;       // was 0x80 -- hardware default, measured 2026-08-17
     int mult = 0x00;       // multiplication / repeat count (hard-sync-like effect)
-    int warp = 0x80;       // push shape to one side (0=left, 0x80=center, 0xFF=right)
+    int warp = 0x00;       // was 0x80 -- WARP is unipolar; 00 is neutral (D3)
     int scan = 0x00;       // on base shapes: mirror position (0-200%)
 
     int filter_type = 0;   // 0-7 standard, 8-11 WAV filter modes

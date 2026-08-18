@@ -96,74 +96,130 @@ float SynthVoice::readFMWavetable(const float* table, float phase) {
     return table[i] * (1.0f - frac) + table[next] * frac;
 }
 
-void SynthVoice::generateWavShape(const WavSynthState& ws, float noteFreq) {
-    int shape = std::clamp(ws.shape, 0, 8);
-    int waveLen = std::clamp((ws.size * kWavBufSize) / 256, 4, kWavBufSize);
-    int repeats = 1 + std::clamp(ws.mult, 0, 15);
-    float warpShift = (ws.warp - 128) / 128.0f;
-    float mirrorPos = ws.scan / 200.0f;
-
-    for (int i = 0; i < waveLen; ++i) {
-        float t = float(i) / float(waveLen);
-        float shaped_t = std::fmod(t * repeats + warpShift, 1.0f);
-        if (shaped_t < 0.0f) shaped_t += 1.0f;
-
-        float val = 0.0f;
-        switch (shape) {
-        case 0: val = (shaped_t < 0.12f) ? 1.0f : -1.0f; break;
-        case 1: val = (shaped_t < 0.25f) ? 1.0f : -1.0f; break;
-        case 2: val = (shaped_t < 0.50f) ? 1.0f : -1.0f; break;
-        case 3: val = (shaped_t < 0.75f) ? 1.0f : -1.0f; break;
-        case 4: val = 2.0f * shaped_t - 1.0f; break;
-        case 5:
-            val = (shaped_t < 0.5f) ? (4.0f * shaped_t - 1.0f) : (3.0f - 4.0f * shaped_t);
-            break;
-        case 6: val = std::sin(shaped_t * 6.2831853f); break;
-        case 7: {
-            uint32_t seed = static_cast<uint32_t>(i * repeats) * 2654435761u;
-            seed ^= seed >> 13;
-            val = (static_cast<float>(seed >> 8) / 8388608.0f) - 1.0f;
-            break;
-        }
-        case 8: {
-            uint32_t seed = static_cast<uint32_t>(i) * 2654435761u;
-            seed ^= seed >> 13;
-            val = (static_cast<float>(seed >> 8) / 8388608.0f) - 1.0f;
-            break;
-        }
-        }
-
-        if (t > mirrorPos && mirrorPos > 0.0f) {
-            float mirrorT = 2.0f * mirrorPos - t;
-            if (mirrorT >= 0.0f) {
-                float mt = std::fmod(mirrorT * repeats + warpShift, 1.0f);
-                if (mt < 0.0f) mt += 1.0f;
-                float mirrorVal = 0.0f;
-                switch (shape) {
-                case 0: mirrorVal = (mt < 0.12f) ? 1.0f : -1.0f; break;
-                case 1: mirrorVal = (mt < 0.25f) ? 1.0f : -1.0f; break;
-                case 2: mirrorVal = (mt < 0.50f) ? 1.0f : -1.0f; break;
-                case 3: mirrorVal = (mt < 0.75f) ? 1.0f : -1.0f; break;
-                case 4: mirrorVal = 2.0f * mt - 1.0f; break;
-                case 5: mirrorVal = (mt < 0.5f) ? (4.0f * mt - 1.0f) : (3.0f - 4.0f * mt); break;
-                case 6: mirrorVal = std::sin(mt * 6.2831853f); break;
-                default: mirrorVal = val; break;
-                }
-                val = mirrorVal;
-            }
-        }
-
-        m_wavBuf[i] = std::clamp(val, -1.0f, 1.0f);
+float SynthVoice::wavBaseShape(int shape, float u) {
+    switch (shape) {
+    case 0: return (u < 0.12f) ? 1.0f : -1.0f;   // PULSE 12%
+    case 1: return (u < 0.25f) ? 1.0f : -1.0f;   // PULSE 25%
+    case 2: return (u < 0.50f) ? 1.0f : -1.0f;   // PULSE 50%
+    case 3: return (u < 0.75f) ? 1.0f : -1.0f;   // PULSE 75%
+    case 4: return 2.0f * u - 1.0f;              // SAW
+    case 5: return (u < 0.5f) ? (4.0f * u - 1.0f)
+                              : (3.0f - 4.0f * u);  // TRIANGLE
+    case 7: {                                    // NOISE PITCHED
+        // A deterministic hash of the slot position, NOT a running LFSR: the
+        // value must depend only on u, so the table is stable and the noise
+        // repeats at the note pitch. That periodicity is what makes this shape
+        // "in-tune tonal" rather than hiss.
+        uint32_t s = static_cast<uint32_t>(u * 4294967296.0f);
+        s ^= s >> 16; s *= 2246822519u;
+        s ^= s >> 13; s *= 3266489917u;
+        s ^= s >> 16;
+        return static_cast<float>(s >> 8) * (1.0f / 8388608.0f) - 1.0f;
     }
-    m_wavBufLen = waveLen;
+    case 6:
+    default: return std::sin(u * 6.2831853f);    // SINE (and shapes >= 9)
+    }
 }
 
-float SynthVoice::readWavBuf(const float* buf, int len, float phase) {
-    float idx = phase * len;
-    int i = static_cast<int>(idx) & (kWavBufSize - 1);
-    float frac = idx - std::floor(idx);
-    int next = (i + 1) & (kWavBufSize - 1);
-    return buf[i] * (1.0f - frac) + buf[next] * frac;
+float SynthVoice::wavWarpPhase(float u, float warp01) {
+    if (warp01 <= 0.0f) return u;
+    const float pivot = 0.5f * (1.0f - warp01 * 0.98f);   // 0.5 -> ~0.01
+    if (u < pivot) return 0.5f * u / pivot;
+    return 0.5f + 0.5f * (u - pivot) / (1.0f - pivot);
+}
+
+float SynthVoice::wavMirrorPhase(float u, float mirror) {
+    if (mirror <= 0.0f || u <= mirror) return u;
+    float v = 2.0f * mirror - u;
+    v = std::fabs(v);
+    v = std::fmod(v, 2.0f);
+    if (v > 1.0f) v = 2.0f - v;
+    return v;
+}
+
+bool SynthVoice::wavTableStale(const WavSynthState& ws) const {
+    return m_wavKeyShape  != ws.shape  || m_wavKeySize   != ws.size
+        || m_wavKeyMult   != ws.mult   || m_wavKeyWarp   != ws.warp
+        || m_wavKeyScan   != ws.scan   || m_wavKeyFilter != ws.filter_type
+        || m_wavKeyCutoff != ws.cutoff || m_wavKeyRes    != ws.res;
+}
+
+void SynthVoice::regenerateWavTable(const WavSynthState& ws) {
+    // SIZE is literally the number of samples in the wave table (manual:
+    // "Horizontal size of the waveform (number of samples)"). It changes
+    // resolution -- the lo-fi stepping that is the WavSynth's character --
+    // NOT pitch: phase is normalised over the table whatever its length.
+    const int len = std::clamp(ws.size, 4, kWavTableMax - 1);
+
+    // MULT: 1..16 repeats of the shape inside the table. The 1..16 range is
+    // this spec's choice, not measured -- see §8 open question O2.
+    const int   repeats = 1 + (std::clamp(ws.mult, 0, 255) >> 4);
+    const float warp01  = std::clamp(ws.warp, 0, 255) / 255.0f;
+    const float mirror  = std::clamp(ws.scan, 0, 255) / 255.0f * 2.0f;
+    const int   shape   = std::clamp(ws.shape, 0, 8);   // >= 9 handled in §0
+
+    for (int i = 0; i < len; ++i) {
+        float u = static_cast<float>(i) / static_cast<float>(len);
+        u = wavMirrorPhase(u, mirror);          // SCAN
+        u = wavWarpPhase(u, warp01);            // WARP
+        u = u * static_cast<float>(repeats);    // MULT
+        u = u - std::floor(u);
+        m_wavTable[i] = std::clamp(wavBaseShape(shape, u), -1.0f, 1.0f);
+    }
+
+    // FILTER 08-0B ("WAV LP/HP/BP/BS"): the manual says these apply the filter
+    // *into the waveform*, so they are a buffer operation here, not an
+    // output-stage one. The filter is configured at kSampleRate rather than at
+    // the table's playback rate on purpose: the wave table is a buffer, and
+    // filtering a buffer is pitch-independent -- which also keeps note pitch
+    // out of the cache key, so pitch modulation cannot trigger per-sample
+    // regeneration.
+    if (ws.filter_type >= 8 && ws.filter_type <= 11) {
+        const float cutoffHz = std::clamp(
+            20.0f * std::pow(2.0f, (ws.cutoff / 255.0f) * 10.0f), 20.0f, 20000.0f);
+        m_wavShaper.SetFreq(cutoffHz);
+        m_wavShaper.SetRes(std::clamp(ws.res / 255.0f, 0.0f, 1.0f));
+
+        // Pass 1 warms the filter state over the loop so pass 2 comes out
+        // periodic; without it the table starts from silence and the loop point
+        // steps. Pass 1's output is deliberately discarded. No scratch buffer
+        // is needed: Process() is called before each in-place write.
+        for (int i = 0; i < len; ++i) m_wavShaper.Process(m_wavTable[i]);
+        for (int i = 0; i < len; ++i) {
+            m_wavShaper.Process(m_wavTable[i]);
+            switch (ws.filter_type) {
+            case 8:  m_wavTable[i] = m_wavShaper.Low();  break;
+            case 9:  m_wavTable[i] = m_wavShaper.High(); break;
+            case 10: m_wavTable[i] = m_wavShaper.Band(); break;
+            case 11: m_wavTable[i] = m_wavTable[i] - m_wavShaper.Band(); break;
+            }
+        }
+    }
+
+    m_wavTable[len] = m_wavTable[0];   // guard sample -- fixes defect D2
+    m_wavTableLen = len;
+
+    m_wavKeyShape  = ws.shape;  m_wavKeySize   = ws.size;
+    m_wavKeyMult   = ws.mult;   m_wavKeyWarp   = ws.warp;
+    m_wavKeyScan   = ws.scan;   m_wavKeyFilter = ws.filter_type;
+    m_wavKeyCutoff = ws.cutoff; m_wavKeyRes    = ws.res;
+}
+
+float SynthVoice::readWavTable(uint32_t phase) const {
+    const float idx = (static_cast<float>(phase) * (1.0f / 4294967296.0f))
+                    * static_cast<float>(m_wavTableLen);
+    int i = static_cast<int>(idx);
+    if (i >= m_wavTableLen) i = m_wavTableLen - 1;   // float-edge guard only
+    const float frac = idx - static_cast<float>(i);
+    return m_wavTable[i] + (m_wavTable[i + 1] - m_wavTable[i]) * frac;
+}
+
+// 32-bit Galois LFSR. Returns -1..+1. State must never be zero.
+float SynthVoice::wavLfsrNext(uint32_t& state) {
+    const uint32_t lsb = state & 1u;
+    state >>= 1;
+    if (lsb) state ^= 0xD0000001u;
+    return static_cast<float>(state >> 8) * (1.0f / 8388608.0f) - 1.0f;
 }
 
 SynthVoice::SynthVoice() {
@@ -173,6 +229,7 @@ SynthVoice::SynthVoice() {
     m_braidsOsc.Init();
     m_filter.Init(kSampleRate);
     m_filterR.Init(kSampleRate);   // right channel, stereo sampler path
+    m_wavShaper.Init(kSampleRate);
     m_gateStep = 1.0f / (kGateTime * kSampleRate);
     m_braidsReadIdx = 24;
     for (int i = 0; i < 24; ++i) m_braidsBuffer[i] = 0;
@@ -207,7 +264,8 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
 
     if (m_instrument && m_instrument->type == InstType::INST_WAVSYNTH) {
         m_wavPhase = 0;
-        generateWavShape(m_instrument->wav, m_frequency);
+        m_wavNoiseLfsr = 1u;                       // determinism, see below
+        regenerateWavTable(m_instrument->wav);
     }
 
     for (int i = 0; i < 4; ++i) {
@@ -586,32 +644,20 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         isWav = true;
         const WavSynthState& ws = m_instrument->wav;
 
-        float noteFreq = m_frequency * std::pow(2.0f, (mt.pitch + m_tableTranspose) / 12.0f);
+        if (ws.shape == 8) {
+            // NOISE: classic LFSR noise, clocked once per output sample and so
+            // independent of note pitch. Shape 07 (NOISE PITCHED) is the tonal
+            // one and goes through the table like every other shape.
+            sample = wavLfsrNext(m_wavNoiseLfsr);
+        } else {
+            if (wavTableStale(ws)) regenerateWavTable(ws);
 
-        generateWavShape(ws, noteFreq);
-
-        if (ws.filter_type >= 8 && ws.filter_type <= 11) {
-            float baseCutoff = 20.0f * std::pow(2.0f, (ws.cutoff / 255.0f) * 10.0f);
-            float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
-            float finalRes = std::clamp(ws.res / 255.0f + mt.res, 0.0f, 1.0f);
-            m_filter.SetFreq(finalCutoff);
-            m_filter.SetRes(finalRes);
-            for (int i = 0; i < m_wavBufLen; ++i) {
-                m_filter.Process(m_wavBuf[i]);
-                switch (ws.filter_type) {
-                case 8:  m_wavBuf[i] = m_filter.Low(); break;
-                case 9:  m_wavBuf[i] = m_filter.High(); break;
-                case 10: m_wavBuf[i] = m_filter.Band(); break;
-                case 11: m_wavBuf[i] = m_wavBuf[i] - m_filter.Band(); break;
-                }
-            }
+            const float noteFreq = m_frequency
+                * std::pow(2.0f, (mt.pitch + m_tableTranspose) / 12.0f);
+            m_wavPhase += static_cast<uint32_t>(
+                (noteFreq / kSampleRate) * 4294967296.0f);
+            sample = readWavTable(m_wavPhase);
         }
-
-        float incF = noteFreq / kSampleRate;
-        m_wavPhase += static_cast<uint32_t>(incF * 4294967296.0f);
-        float phase01 = static_cast<float>(m_wavPhase) / 4294967296.0f;
-
-        sample = readWavBuf(m_wavBuf, m_wavBufLen, phase01);
     }
 
     if (!isBraids && !isHyper && !isFM && !isWav) {

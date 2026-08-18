@@ -290,11 +290,7 @@ The M8's four synth instrument types each render their own sound; none is the ol
   a per-op mod-slot decode. Loads/saves via `SongIO`. Tests: `[fmsynth]` (all 12 algos finite/
   non-silent; algo, shape, and feedback each change output; zero alloc). *Reference-approximation,
   not hardware-verified* — see Placeholders for the caveats it carries.
-- **WavSynth** (`INST_WAVSYNTH`, `WAVSYNTH_IMPLEMENTATION.md`) — 9 base shapes generated per
-  note-on into a 2048-sample buffer with SIZE / MULT / WARP / SCAN(mirror) shaping, plus WAV
-  filter modes 8–11 applied into the buffer. Loads/saves. Tests: `[wavsynth]` (all 9 shapes
-  finite/non-silent; shape/size/mult change output; zero alloc). *Reference-approximation;
-  wavetable shapes 9+ alias to sine (no dumped wavetable data).*
+- **WavSynth** (`INST_WAVSYNTH`, `WAVSYNTH_PHASE2_SPEC.md`) — DSP rebuilt: cached table (up to 256 samples with guard sample for continuous loop), unipolar WARP (00 neutral), MULT (1..16), SCAN mirror (PWM), deterministic LFSR (shape 8 noise) and hash noise (shape 7 pitched), and in-table WAV filter modes 8–11. Instrument screen implemented with 70 shape names, 12 filter modes, sliders, and navigation. Loads/saves. Tests: `[wavsynth]` (12 cases). *Reference-approximation; wavetable shapes 9+ alias to sine (no dumped wavetable data yet — Phase 3).*
 
 All four load and save through `SongIO` (`convertSongToEngine`/`convertEngineToSong`/
 `buildSongFromEngine`) and route pan/dry/sends + TRANSP gating in `Engine.cpp` exactly like the
@@ -1042,6 +1038,9 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
   **new (2026-07-17), implemented.** Implementation plans for the FMSynth, WavSynth, and Table
   work; the code matches them and the `[fmsynth]`/`[wavsynth]`/`[tables]` tests pass. Each
   carries a §10 "Known limitations" list (the approximation caveats summarised under Placeholders).
+  `WAVSYNTH_PHASE2_SPEC.md` supersedes §3 of `WAVSYNTH_IMPLEMENTATION.md`.
+- `WAVSYNTH_PHASE2_SPEC.md` — **implemented (2026-08-18).** UI screen, DSP rebuild with cached tables,
+  guard sample continuous loop, unipolar WARP, PWM via SCAN mirror, 70 shape names, 12 filter modes.
   MacroSynth/Braids has no standalone spec — the port lives in `src/engine/braids/` + `stmlib/`.
 - `M8_APP_AUTOMATION_SPEC.md` — **new (2026-07-17), design + phased plan.** Matures the clone's
   headless script harness from underused (only 1 of 13 `.m8script`s is CI-gated) to a first-class
