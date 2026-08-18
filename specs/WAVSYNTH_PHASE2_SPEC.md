@@ -43,18 +43,18 @@ Read these before writing any code:
 | `WavSynthState` | `src/engine/Engine.h:94` | Complete. Two defaults are wrong (§2). |
 | `generateWavShape()` | `src/engine/SynthVoice.cpp:99` | **Replaced entirely** by §3. |
 | `readWavBuf()` | `src/engine/SynthVoice.cpp:161` | **Replaced** by §3.6. Has a wrap bug. |
-| WavSynth render block | `src/engine/SynthVoice.cpp:568` | **Replaced** by §3.7. |
-| Output amp/lim/filter tail | `src/engine/SynthVoice.cpp:672` | Keep as is, unchanged. |
+| WavSynth render block | `src/engine/SynthVoice.cpp:583` | **Replaced** by §3.7. |
+| Output amp/lim/filter tail | `src/engine/SynthVoice.cpp:648` | Keep as is, unchanged. |
 | `ParamID::WAV_*` | `src/engine/CommandRing.h:62` | Complete, no change. |
 | Param routing | `src/engine/EngineStateUpdater.h:184` | Complete, no change. |
 | `.m8s` load/save | `src/io/SongIO.cpp:922,1164,1266` | Complete. Only new-song defaults change (§4). |
-| Instrument screen | `src/ui/screens/instrument/` | **No WavSynth layout at all.** §5. |
+| Instrument screen | `src/ui/screens/instrument/` | Dispatches four ways (Sampler / Macrosyn / FMSynth / HyperSynth). **WavSynth is the one type with no layout.** §5. |
 | Tests | `tests/test_wavsynth.cpp` | 5 cases, all must still pass. Extended in §6. |
 
 ### 1.1 The three defects being fixed
 
 **D1 — `generateWavShape()` runs once per output sample.**
-[`SynthVoice.cpp:574`](../src/engine/SynthVoice.cpp:574) calls it from inside
+[`SynthVoice.cpp:591`](../src/engine/SynthVoice.cpp:591) calls it from inside
 `renderSample()`, which is per-sample. At the current default SIZE it rewrites
 1024 floats (with a `sinf` each, for shape 6) for **every single output sample** —
 roughly 50 M operations/second per sounding voice. With FILTER `08`–`0B` it also
@@ -124,7 +124,7 @@ stay that way: **no allocation, no `std::string`, no locks** anywhere in this co
 
 ### 3.2 New members — `src/engine/SynthVoice.h`
 
-Replace the existing `// WavSynth state` block (lines 176–183) with:
+Replace the existing `// WavSynth state` block (lines 177–183) with:
 
 ```cpp
     // WavSynth state.
@@ -361,7 +361,7 @@ float SynthVoice::wavLfsrNext(uint32_t& state) {
 ### 3.7 The render path
 
 Replace the whole WavSynth block at
-[`SynthVoice.cpp:568`](../src/engine/SynthVoice.cpp:568) with:
+[`SynthVoice.cpp:583`](../src/engine/SynthVoice.cpp:583) with:
 
 ```cpp
     bool isWav = false;
@@ -387,7 +387,7 @@ Replace the whole WavSynth block at
     }
 ```
 
-The output-stage tail at [`SynthVoice.cpp:672`](../src/engine/SynthVoice.cpp:672)
+The output-stage tail at [`SynthVoice.cpp:648`](../src/engine/SynthVoice.cpp:648)
 stays exactly as it is, including the `stdFilter` line and its comment — filter
 modes `08`–`0B` are still baked into the table, so they still map to "no
 output-stage filter". Do not touch it.
@@ -431,13 +431,42 @@ and are already correct.
 
 ## 5. UI — the WavSynth instrument screen
 
+> **This section was rewritten on 2026-08-17** after four commits landed from
+> another machine adding the HyperSynth and FMSynth instrument screens. The
+> earlier version described a two-way `isMac` screen that no longer exists, and
+> told you to build machinery that is now unnecessary. What follows matches the
+> tree as it actually is.
+
+### 5.0 What the instrument screen looks like now
+
+`InstrumentScreen.cpp` is 619 lines and already dispatches **four** ways —
+Sampler, Macrosyn, FMSynth, HyperSynth — through nested ternaries of the form:
+
+```cpp
+    bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isHyp = (inst.type == engine::InstType::INST_HYPERSYN);
+    bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
+    ... isHyp ? inst.hyper.X : (isMac ? inst.macrosyn.X : (isFm ? inst.fm.X : inst.sampler.X))
+```
+
+There are 87 of these tests across five functions. **Follow that pattern — add
+`isWav` to the chain.** Do not refactor it into a dispatch table or an enum:
+that is a change to four working screens this phase does not own, and it is not
+why you are here. WavSynth is the fifth and last type that needs a screen.
+
+Three things are already done for you:
+
+- `ResolveInstrumentValue` already returns `"WAVSYNTH"` for `C::TYPE`
+  ([`InstrumentScreen.cpp:135`](../src/ui/screens/instrument/InstrumentScreen.cpp:135)).
+- File-scope enum name tables already exist: `kFilterModes[8]`, `kLimModes[9]`
+  (all nine, including `POST:W1`–`W3`), `kPlayModes[15]`, `kMacroShapes[44]`.
+- The shared `C::LIM` clamp is already `0, 8`, which is what WavSynth needs.
+
 ### 5.1 The layout, measured off the device
 
-The hardware capture (Appendix A.1) gives absolute cell coordinates. This
-codebase's layouts are offset from those by **−3 rows and −1 column** (the M8's
-top margin); that offset already holds for the Macrosyn layout, so it is the
-convention here too. The table below is already converted — use these numbers
-directly.
+Hardware capture (Appendix A.1) gives absolute cell coordinates; this codebase's
+layouts sit at **−3 rows and −1 column** from those. The table below is already
+converted.
 
 | Field | Label | Value | Accent / slider |
 |---|---|---|---|
@@ -449,197 +478,197 @@ directly.
 | TBL_TIC  | `TBL.TIC` 13,4  | 21,4 | — |
 | EQ       | `EQ` 26,4       | 29,4 | — |
 | SHAPE    | `SHAPE` 0,6     | 8,6  | accent 10,6 |
-| SIZE     | `SIZE` 0,8      | 8,8  | slider 10,8 |
-| MULT     | `MULT` 0,9      | 8,9  | slider 10,9 |
-| WARP     | `WARP` 0,10     | 8,10 | slider 10,10 |
-| SCAN     | `SCAN` 0,11     | 8,11 | slider 10,11 |
+| WAV_SIZE | `SIZE` 0,8      | 8,8  | slider 10,8 |
+| WAV_MULT | `MULT` 0,9      | 8,9  | slider 10,9 |
+| WAV_WARP | `WARP` 0,10     | 8,10 | slider 10,10 |
+| WAV_SCAN | `SCAN` 0,11     | 8,11 | slider 10,11 |
 | FILTER   | `FILTER` 0,12   | 8,12 | accent 10,12 |
 | CUTOFF   | `CUTOFF` 0,13   | 8,13 | slider 10,13 |
 | RES      | `RES` 0,14      | 8,14 | slider 10,14 |
-| AMP      | `AMP` 18,8      | 22,8  | slider 24,8 |
-| LIM      | `LIM` 18,9      | 22,9  | accent 24,9 |
-| PAN      | `PAN` 18,10     | 22,10 | slider 24,10 |
-| DRY      | `DRY` 18,11     | 22,11 | slider 24,11 |
-| MFX      | `MFX` 18,12     | 22,12 | slider 24,12 |
-| DEL      | `DEL` 18,13     | 22,13 | slider 24,13 |
-| REV      | `REV` 18,14     | 22,14 | slider 24,14 |
+| AMP      | `AMP` 17,8      | 21,8  | slider 23,8 |
+| LIM      | `LIM` 17,9      | 21,9  | accent 23,9 |
+| PAN      | `PAN` 17,10     | 21,10 | center_tick at 26,10 |
+| DRY      | `DRY` 17,11     | 21,11 | slider 23,11 |
+| MFX      | `MFX` 17,12     | 21,12 | slider 23,12 |
+| DEL      | `DEL` 17,13     | 21,13 | slider 23,13 |
+| REV      | `REV` 17,14     | 21,14 | slider 23,14 |
 
-Sliders use `width = 6`, matching every other slider in this codebase. All
-colour and role strings are copied from `InstrumentMacrosynLayout.h` unchanged.
+The right-hand column is at **17/21/23**, matching Sampler, Macrosyn, FMSynth and
+HyperSynth. The hardware capture puts it one column further right, but making
+WavSynth the only screen that disagrees with the other four would be worse than
+the offset itself. Recorded as open question O4 — which now applies to all five
+screens equally rather than to this one.
 
-Two things to notice and **not** "fix":
-
-- The right-hand column sits at 18/22/24. The Macrosyn layout uses 17/21/23 —
-  one column left of where the hardware draws it. This spec places the new screen
-  where the device puts it and leaves Macrosyn alone (AGENTS.md §5). Recorded as
-  open question O4.
-- The send is labelled **`MFX`**, not `CHO`. That is what fw 6.5.2 draws, on the
-  Macrosyn screen too. The engine field stays `wav.cho` and the cursor id stays
-  `CursorId::CHO`; only the drawn label differs.
+PAN gets a `center_tick` rather than a slider, following HyperSynth: it is a
+bipolar parameter and the newer layouts mark those with a `|` instead of a fill.
 
 ### 5.2 `InstrumentCursorId.h`
 
-Add four ids. Do not renumber or reorder the existing ones.
+Add four ids at the end, after the HyperSynth block. Do not renumber or reorder
+anything that exists.
 
 ```cpp
-    // Macrosyn-only
-    SHAPE, TIMBRE, COLOR, REDUX,
     // Wavsynth-only (SHAPE, FILTER, CUTOFF, RES and the whole right-hand
     // column are shared with the other layouts)
-    SIZE, MULT, WARP, SCAN,
+    WAV_SIZE, WAV_MULT, WAV_WARP, WAV_SCAN,
 ```
 
-Update the comment above the enum — it says "Shared between the Sampler and
-Macrosyn layouts"; make it name all three.
+Note the `WAV_` prefix: bare `SIZE`/`SCAN` would read ambiguously beside the
+Sampler's `START`/`LENGTH` and the FM operator ids. `SHAPE` is deliberately
+**reused** from the Macrosyn block — same screen position, same role, and the
+resolvers already branch on instrument type.
+
+Update the comment above the enum; it still says "Shared between the Sampler and
+Macrosyn layouts" and is now three types out of date.
 
 ### 5.3 `InstrumentWavsynthLayout.h` (new file)
 
-Copy `InstrumentMacrosynLayout.h` and adapt. Four functions, same names with
-`Wavsynth` substituted: `GetWavsynthStaticText`, `GetWavsynthDynamicTextDefaults`,
-`GetWavsynthInteractiveFields`, `GetWavsynthNavMap`. Static and dynamic text are
-identical to Macrosyn's (`INST.` title, the instrument-number cell).
+**Copy `InstrumentHypersynLayout.h`, not the Macrosyn one.** It is the most
+recent sibling, its shape is closest (a left parameter column and a right mixer
+column), and it carries the current conventions that Macrosyn predates:
 
-Interactive fields follow the table in §5.1. The header rows (TYPE, CMD_LOAD,
-CMD_SAVE, NAME, TRANSP, TBL_TIC, EQ) can be copied verbatim from the Macrosyn
-layout — their coordinates already match the hardware.
+- Every **label** lives in `GetWavsynthStaticText()`.
+  `GetWavsynthInteractiveFields()` holds only values, accents and sliders.
+  Macrosyn mixes labels into the interactive entries; do not copy that.
+- Colour roles: labels `"LABEL_DIM"/"LABEL_LITE"`, values `"VALUE"/"LABEL_LITE"`,
+  accents `"ACCENT"/"LABEL_LITE"`, sliders `"SLIDER"/"SLIDER"` with `width = 6`.
+- The mixer send is labelled **`MFX`**, which HyperSynth already does. The engine
+  field stays `wav.cho` and the cursor id stays `C::CHO`; only the label differs.
+- The header block (TYPE / CMD_LOAD / CMD_SAVE / NAME / TRANSP / TBL_TIC / EQ)
+  can be copied verbatim — those coordinates are identical across all layouts.
 
-Navigation map — the vertical chain was read off the device with
-`m8drv probe DOWN`, so follow it exactly:
+Four functions, same names with `Wavsynth` substituted: `GetWavsynthStaticText`,
+`GetWavsynthDynamicTextDefaults`, `GetWavsynthInteractiveFields`,
+`GetWavsynthNavMap`.
 
-- Left column: `TYPE → NAME → TRANSP → SHAPE → SIZE → MULT → WARP → SCAN →
-  FILTER → CUTOFF → RES`
+Navigation — the vertical chain was read off the device with `m8drv probe DOWN`,
+so follow it exactly:
+
+- Left column: `TYPE → NAME → TRANSP → SHAPE → WAV_SIZE → WAV_MULT → WAV_WARP →
+  WAV_SCAN → FILTER → CUTOFF → RES`
 - Right column: `AMP → LIM → PAN → DRY → CHO → DEL → REV`
 - Header rows: `TYPE ↔ CMD_LOAD ↔ CMD_SAVE`, and `TRANSP ↔ TBL_TIC ↔ EQ`
-- Left/right pairing is by screen row: `SIZE↔AMP`, `MULT↔LIM`, `WARP↔PAN`,
-  `SCAN↔DRY`, `FILTER↔CHO`, `CUTOFF↔DEL`, `RES↔REV`. `SHAPE`'s right neighbour
-  is `AMP` (it sits one row above SIZE, same as Macrosyn's SHAPE).
+- Left/right pairing by screen row: `WAV_SIZE↔AMP`, `WAV_MULT↔LIM`,
+  `WAV_WARP↔PAN`, `WAV_SCAN↔DRY`, `FILTER↔CHO`, `CUTOFF↔DEL`, `RES↔REV`.
+  `SHAPE`'s right neighbour is `AMP`.
 
-Also add the shape-name table here, as a free function in the same header:
+Also add the shape-name table to this header:
 
 ```cpp
 // All 70 SHAPE names as fw 6.5.2 draws them (Appendix B). Shapes >= 0x09 do not
-// sound yet -- they alias to sine in the engine -- but a loaded .m8s can carry
-// one, and showing "SINE" for WT-EFX:CYBERNET would be wrong on screen.
-// Padded to a constant width so a shorter name cannot leave characters of a
-// longer one behind.
+// sound until Phase 3 -- they alias to sine in the engine -- but a loaded .m8s
+// can carry one, and showing "SINE" for WT-EFX:CYBERNET would be wrong on
+// screen. Padded to a constant width so a shorter name cannot leave characters
+// of a longer one behind.
 inline const char* WavShapeName(int shape);
 ```
 
-### 5.4 `InstrumentScreen.cpp` — three-way dispatch
+### 5.4 `InstrumentScreen.cpp`
 
-Six places test `bool isMac` (lines 31, 77, 110, 140, 201, 208). Two instrument
-types became three, so replace the bool with a small enum. Do not build anything
-more elaborate than this:
-
-```cpp
-enum class LayoutKind { SAMPLER, MACROSYN, WAVSYNTH };
-
-static LayoutKind layoutKindOf(engine::InstType t) {
-    if (t == engine::InstType::INST_MACROSYN) return LayoutKind::MACROSYN;
-    if (t == engine::InstType::INST_WAVSYNTH) return LayoutKind::WAVSYNTH;
-    return LayoutKind::SAMPLER;   // also the fallback for HYPERSYN/FMSYNTH/MIDI,
-                                  // which have no layout yet
-}
-```
-
-Then switch on `layoutKindOf(inst.type)` at each of the six sites.
-
-**`ResolveInstrumentValue`** — `TYPE` returns `"WAVSYNTH"` for the WavSynth kind.
-Every shared field (`TRANSP`, `TBL_TIC`, `EQ`, `FILTER`, `CUTOFF`, `RES`, `AMP`,
-`LIM`, `PAN`, `DRY`, `CHO`, `DEL`, `REV`) gains a `wav` branch. The four new
-fields:
+Add `#include "InstrumentWavsynthLayout.h"` and one more file-scope table beside
+`kFilterModes`:
 
 ```cpp
-    if (fieldId == C::SIZE) return ToHex(inst.wav.size);
-    if (fieldId == C::MULT) return ToHex(inst.wav.mult);
-    if (fieldId == C::WARP) return ToHex(inst.wav.warp);
-    if (fieldId == C::SCAN) return ToHex(inst.wav.scan);
-```
-
-`SHAPE` currently returns `ToHex(inst.macrosyn.shape)` — make it return
-`ToHex(inst.wav.shape)` for the WavSynth kind.
-
-**`ResolveInstrumentAccent`** — WavSynth has its own, longer enum tables. These
-are the exact strings fw 6.5.2 draws (Appendix A.3), including the truncations
-(`HIGHPAS`, not `HIGHPASS`):
-
-```cpp
-    if (kind == LayoutKind::WAVSYNTH && fieldId == C::FILTER) {
-        static const char* kWavFilter[12] = {
-            "OFF    ", "LOWPASS", "HIGHPAS", "BANDPAS", "BANDSTP", "LP>HP  ",
-            "ZDF LP ", "ZDF HP ", "WAV LP ", "WAV HP ", "WAV BP ", "WAV BS "
-        };
-        int f = inst.wav.filter_type;
-        if (f >= 0 && f < 12) return kWavFilter[f];
-    }
-    if (kind == LayoutKind::WAVSYNTH && fieldId == C::LIM) {
-        static const char* kWavLim[9] = {
-            "CLIP    ", "SIN     ", "FOLD    ", "WRAP    ", "POST    ",
-            "POST:AD ", "POST:W1 ", "POST:W2 ", "POST:W3 "
-        };
-        int l = inst.wav.lim;
-        if (l >= 0 && l < 9) return kWavLim[l];
-    }
-    if (kind == LayoutKind::WAVSYNTH && fieldId == C::SHAPE)
-        return WavShapeName(inst.wav.shape);
-```
-
-**`GetSliderValue`** — add the WavSynth branches for `SIZE`, `MULT`, `WARP`,
-`SCAN`, plus the shared `CUTOFF`/`RES`/`AMP`/`PAN`/`DRY`/`CHO`/`DEL`/`REV`.
-`SHAPE`, `FILTER` and `LIM` have accents, not sliders — return 0 for them.
-
-**`RenderInstrumentScreen`** — pick the three layout getters by kind.
-
-### 5.5 Input handling
-
-`HandleInstrumentInput`, at
-[`InstrumentScreen.cpp:210`](../src/ui/screens/instrument/InstrumentScreen.cpp:210):
-
-```cpp
-if (cursor_id == C::TYPE) PushParam(..., std::clamp<int>(static_cast<int>(inst.type) + step, 0, 1), ...);
-```
-
-`0, 1` reaches only SAMPLER and MACROSYN. Do **not** simply widen it to `0, 4`:
-`InstType` is ordered `{SAMPLER, MACROSYN, HYPERSYN, FMSYNTH, WAVSYNTH, …}`, so
-that would let the cursor land on HYPERSYN and FMSYNTH, which have no layout and
-would render as a Sampler screen showing Sampler values for another type's state.
-Step through a list of the types that actually have a screen instead:
-
-```cpp
-// Types with an instrument screen. HYPERSYN/FMSYNTH/MIDI exist in the engine
-// and load from .m8s, but have no layout yet, so they are not reachable by
-// cycling TYPE -- landing on one would draw the Sampler screen over another
-// type's state. Hardware order is NONE/WAVSYNTH/MACROSYN/SAMPLER/FMSYNTH/
-// HYPERSYN/MIDI OUT/EXTERNAL; ours is a subset, in InstType order.
-static constexpr engine::InstType kEditableTypes[] = {
-    engine::InstType::INST_SAMPLER,
-    engine::InstType::INST_MACROSYN,
-    engine::InstType::INST_WAVSYNTH,
+// WavSynth's FILTER has 12 entries, not 8: it adds the four "WAV" modes that
+// filter the wave table itself. These are the strings fw 6.5.2 draws on the
+// WavSynth screen, including the truncations (HIGHPAS, not HIGHPASS). They are
+// deliberately a separate table rather than an extension of kFilterModes: the
+// first eight entries there are this codebase's own abbreviations ("LP ", "HP ")
+// and have not been verified against what the device draws on the other four
+// screens, so widening that table would change screens this phase does not own.
+static const char* const kWavFilterModes[12] = {
+    "OFF    ", "LOWPASS", "HIGHPAS", "BANDPAS", "BANDSTP", "LP>HP  ",
+    "ZDF LP ", "ZDF HP ", "WAV LP ", "WAV HP ", "WAV BP ", "WAV BS "
 };
 ```
 
-Find the current type's index, add `step`, clamp to `[0, 2]`, and push
-`static_cast<int>(kEditableTypes[idx])`. If the instrument's current type is not
-in the list (a loaded HyperSynth, say), treat the index as 0 so the first edit
-moves it to SAMPLER rather than doing nothing.
+Then add `bool isWav = (inst.type == engine::InstType::INST_WAVSYNTH);` to each of
+these five functions and extend their chains.
 
-Then add the WavSynth edit branches. Ranges:
+**`ResolveInstrumentValue`** — add `isWav` to every shared-field ternary
+(`TRANSP`, `TBL_TIC`, `EQ`, `FILTER`, `LIM`, `CUTOFF`, `RES`, `AMP`, `PAN`,
+`DRY`, `CHO`, `DEL`, `REV`). `C::TYPE` already handles it. Then:
+
+```cpp
+    if (isWav && fieldId == C::SHAPE) return ToHex(inst.wav.shape);
+    if (fieldId == C::WAV_SIZE) return ToHex(inst.wav.size);
+    if (fieldId == C::WAV_MULT) return ToHex(inst.wav.mult);
+    if (fieldId == C::WAV_WARP) return ToHex(inst.wav.warp);
+    if (fieldId == C::WAV_SCAN) return ToHex(inst.wav.scan);
+```
+
+The existing `if (fieldId == C::SHAPE) return ToHex(inst.macrosyn.shape);` must
+come **after** the `isWav` line, or WavSynth will display the Macrosyn shape byte.
+
+**`ResolveInstrumentAccent`** — the `C::FILTER`, `C::LIM` and `C::SHAPE` branches
+each need a WavSynth case ahead of the existing one:
+
+```cpp
+    if (isWav && fieldId == C::FILTER) {
+        int f = inst.wav.filter_type;
+        if (f >= 0 && f < 12) return kWavFilterModes[f];
+    }
+    if (isWav && fieldId == C::LIM) {
+        int l = inst.wav.lim;
+        if (l >= 0 && l < 9) return kLimModes[l];      // already complete
+    }
+    if (isWav && fieldId == C::SHAPE) return WavShapeName(inst.wav.shape);
+```
+
+**`GetSliderValue`** — add `isWav` to the shared ternaries, plus:
+
+```cpp
+    if (fieldId == C::WAV_SIZE) return inst.wav.size;
+    if (fieldId == C::WAV_MULT) return inst.wav.mult;
+    if (fieldId == C::WAV_WARP) return inst.wav.warp;
+    if (fieldId == C::WAV_SCAN) return inst.wav.scan;
+```
+
+`SHAPE`, `FILTER` and `LIM` have accents, not sliders — leave them returning 0.
+
+**`RenderInstrumentScreen`** — extend the three layout-getter ternaries with the
+`Wavsynth` variants, keeping the existing nesting order.
+
+**`HandleInstrumentInput`** — extend the `navMap` ternary the same way.
+
+### 5.5 Input handling
+
+The TYPE cycle is at
+[`InstrumentScreen.cpp:471`](../src/ui/screens/instrument/InstrumentScreen.cpp:471):
+
+```cpp
+    int newType = std::clamp<int>(static_cast<int>(inst.type) + step, 0, 3);
+```
+
+`InstType` is ordered `{SAMPLER, MACROSYN, HYPERSYN, FMSYNTH, WAVSYNTH, MIDI,
+NONE}`, so `0, 3` reaches the four types that have screens today. **Widen it to
+`0, 4`** — that is the whole change, because WAVSYNTH is index 4 and every type
+below it now has a layout.
+
+> An earlier draft of this spec had you build a list of "editable types" to skip
+> HyperSynth and FMSynth, which had no screens when it was written. That
+> machinery is obsolete. Do not build it.
+
+Then add the WavSynth edit branches. Shared branches need per-type clamps only
+where WavSynth's range is wider:
 
 | Field | ParamID | Range | Note |
 |---|---|---|---|
-| SHAPE | `WAV_SHAPE` | 0–8 | **Phase 2 clamp.** Phase 3 widens to 0x45. Leave a `// TODO(phase3)` on this line. |
-| SIZE  | `WAV_SIZE`  | 0–255 | |
-| MULT  | `WAV_MULT`  | 0–255 | |
-| WARP  | `WAV_WARP`  | 0–255 | |
-| SCAN  | `WAV_SCAN`  | 0–255 | |
-| FILTER | `INST_FILTER` | 0–11 | WavSynth only; the shared branch clamps 0–3 |
-| LIM    | `INST_LIM`    | 0–8  | WavSynth only; the shared branch clamps 0–1 |
+| SHAPE | `WAV_SHAPE` | 0–8 | **Phase 2 clamp.** Phase 3 widens it to `0x45`. Leave a `// TODO(phase3)` on this line. |
+| WAV_SIZE | `WAV_SIZE` | 0–255 | |
+| WAV_MULT | `WAV_MULT` | 0–255 | |
+| WAV_WARP | `WAV_WARP` | 0–255 | |
+| WAV_SCAN | `WAV_SCAN` | 0–255 | |
+| FILTER | `INST_FILTER` | **0–11** for WavSynth | The shared branch clamps `0, 7`; the four `WAV` modes sit above that. |
+| LIM | `INST_LIM` | 0–8 | Already correct — the shared clamp is `0, 8`. No change. |
 
-The FILTER and LIM clamps are per-kind: keep `0, 3` and `0, 1` for
-Sampler/Macrosyn — widening those is a change to screens this phase does not own —
-and use `0, 11` / `0, 8` when the kind is WavSynth.
+Write the FILTER clamp as `isWav ? 11 : 7` rather than widening it for everybody:
+the other four screens have only eight filter modes and would gain four
+unreachable ones.
 
----
+Nothing else in the input handler needs touching. The FM operator clipboard, the
+HyperSynth chord clipboard and the NAME character cursor all key off cursor ids
+WavSynth does not use, and fall through untouched.
 
 ## 6. Tests
 
@@ -692,8 +721,10 @@ cycling TYPE from the default song instead.
 goto INSTRUMENT
 assert_screen contains "INST."
 
-# TYPE cycles SAMPLER -> MACROSYN -> WAVSYNTH
+# TYPE cycles SAMPLER -> MACROSYN -> HYPERSYN -> FMSYNTH -> WAVSYNTH
 key X
+key RIGHT
+key RIGHT
 key RIGHT
 key RIGHT
 assert_screen row 2 contains "WAVSYNTH"
@@ -772,10 +803,11 @@ later.
   may go considerably higher.
 - **O3 — WARP curve.** The piecewise-linear skew is a guess at the shape of the
   curve. Its *neutral point* (`00`) is measured and is not in question.
-- **O4 — right-column x-position.** Macrosyn draws its right column one cell left
-  of where fw 6.5.2 draws it (§5.1). This spec puts the new screen at the hardware
-  position, which leaves the two screens inconsistent with each other until
-  someone decides which way to unify them.
+- **O4 — right-column x-position.** All five instrument layouts draw their right
+  column one cell left of where the hardware capture puts it (§5.1). This spec
+  keeps WavSynth consistent with its four siblings rather than correcting one
+  screen in isolation; unifying them against hardware is a separate, five-screen
+  change nobody has asked for yet.
 - **O5 — enum name visibility.** On a settled screen the device draws `FILTER 00`
   and `LIM 00` with **no** enum name, but reports `00OFF` / `00CLIP` when the
   cursor is on the field. `SHAPE` always shows its name. Our screens always draw
@@ -924,10 +956,10 @@ device spelling in the UI table and leave the library enum alone.
 - [ ] §3 DSP rebuilt; `m_wavBuf` / `generateWavShape` / `readWavBuf` gone
 - [ ] §3.8 note-on resets both `m_wavPhase` and `m_wavNoiseLfsr`
 - [ ] §4 `SongIO.cpp` new-song defaults corrected
-- [ ] §5.2 four cursor ids added
-- [ ] §5.3 `InstrumentWavsynthLayout.h` created, including `WavShapeName`
-- [ ] §5.4 all six `isMac` sites converted to three-way dispatch
-- [ ] §5.5 TYPE cycles through the editable-types list; WavSynth fields editable
+- [ ] §5.2 four `WAV_*` cursor ids added
+- [ ] §5.3 `InstrumentWavsynthLayout.h` created from the HyperSynth template, including `WavShapeName`
+- [ ] §5.4 `isWav` added to the existing four-way ternary chains, `kWavFilterModes` added
+- [ ] §5.5 TYPE clamp widened to `0, 4`; WavSynth fields editable; FILTER clamp `isWav ? 11 : 7`
 - [ ] §6.2 seven new engine cases, existing five untouched and passing
 - [ ] §6.3 UI script added (no manifest line)
 - [ ] Full suite run once, counts reported
