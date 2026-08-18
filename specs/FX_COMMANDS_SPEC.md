@@ -55,48 +55,68 @@ table* is not.
 
 ---
 
-## Current state
+## Current state (Updated 2026-08-18)
 
 ### Enum (`SeqTypes.h`)
 
-```
-FxCmd: NONE=0, VOL=1, PIT=2, DEL=3, REV=4, HOP=5, KIL=6, TBL=7, GRV=8, TIC=9
+```cpp
+enum class FxCmd : uint8_t {
+    NONE = 0,
+    VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC,
+    SCA, SCG,
+    ARP, ARC, CHA, GGR, INS, RND, RNL, RET, REP, RTO, RMX, NTH, PSL, PBN, PVB, PVX, SNG, SED, THO, TBX, TPO, TSP, NXT, OFF, MTT,
+    UNKNOWN = 0xFE
+};
 ```
 
 ### What works today
 
-| Cmd | Phrase engine | Table engine | File I/O | UI selectable |
-|-----|:---:|:---:|:---:|:---:|
-| VOL | -- | yes | yes (lib 0x00) | yes |
-| PIT | -- | yes | yes (lib 0x01) | yes |
-| DEL | yes | -- | yes (lib 0x02) | yes |
-| REV | -- (stub) | -- | yes (lib 0x03) | yes |
-| HOP | yes | yes | yes (lib 0x04) | yes |
-| KIL | yes | -- | yes (lib 0x05) | yes |
-| TBL | yes | -- | yes (lib 0x06) | yes |
-| GRV | yes | -- | yes (lib 0x07) | yes |
-| TIC | -- | yes | yes (lib 0x08) | yes |
+| Cmd | Phrase engine | Table engine | File I/O | UI selectable | Status |
+|-----|:---:|:---:|:---:|:---:|:---|
+| VOL | yes | yes | yes (lib 0x00) | yes | **Implemented** |
+| PIT | yes | yes | yes (lib 0x01) | yes | **Implemented** |
+| DEL | yes | yes | yes (lib 0x02) | yes | **Implemented** |
+| REV | -- (stub) | -- | yes (lib 0x03) | yes | Stub |
+| HOP | yes | yes | yes (lib 0x04) | yes | **Implemented** |
+| KIL | yes | -- | yes (lib 0x05) | yes | **Implemented** |
+| TBL | yes | -- | yes (lib 0x06) | yes | **Implemented** |
+| GRV | yes | -- | yes (lib 0x07) | yes | **Implemented** |
+| TIC | -- | yes | yes (lib 0x08) | yes | **Implemented** |
+| SCA | yes | -- | yes (lib 0x10) | yes | **Implemented** |
+| SCG | yes | -- | yes (lib 0x11) | yes | **Implemented** |
+| ARP | yes | -- | preserved | yes | **Implemented** |
+| ARC | yes | -- | preserved | yes | **Implemented** |
+| CHA | yes | yes | preserved | yes | **Implemented** |
+| GGR | yes | -- | preserved | yes | **Implemented** |
+| INS | yes | -- | preserved | yes | **Implemented** |
+| RND | yes | -- | preserved | yes | **Implemented** |
+| RNL | yes | -- | preserved | yes | **Implemented** |
+| RET | yes | -- | preserved | yes | **Implemented** |
+| REP | yes | -- | preserved | yes | **Implemented** |
+| RTO | yes | -- | preserved | yes | **Implemented** |
+| RMX | yes | -- | preserved | yes | **Implemented** |
+| NTH | yes | -- | preserved | yes | **Implemented** |
+| PSL | yes | -- | preserved | yes | **Implemented** |
+| PBN | yes | -- | preserved | yes | **Implemented** |
+| PVB | yes | -- | preserved | yes | **Implemented** |
+| PVX | yes | -- | preserved | yes | **Implemented** |
+| SNG | yes | -- | preserved | yes | **Implemented** |
+| SED | yes | -- | preserved | yes | **Implemented** |
+| THO | -- | yes | preserved | yes | **Implemented** |
+| TBX | yes | yes | preserved | yes | **Implemented** |
+| TPO | yes | -- | preserved | yes | **Implemented** |
+| TSP | yes | -- | preserved | yes | **Implemented** |
+| NXT | yes | -- | preserved | yes | **Implemented** |
+| OFF | yes | -- | preserved | yes | **Implemented** |
+| MTT | yes | -- | preserved | yes | **Implemented** |
 
-**File-I/O round-trip fixed (2026-07-17).** `libFxToEngine`/`engineFxToLib` previously
-dropped every command byte `>= 0x06` to `NONE` on load and clobbered it to `0xFF` on save.
-Now: `0x00..0x08` decode to VOL..TIC (TBL/GRV/TIC round-trip correctly and are UI-selectable),
-and any byte `>= 0x09` decodes to `FxCmd::UNKNOWN` and is **preserved byte-for-byte** on save
-(the phrase save loop leaves UNKNOWN slots as the re-parsed original bytes — invariant #8).
-Regression tests: `L12` (TBL/GRV/TIC), `L13` (unmodeled preserved). See `SongIO.cpp`.
+**Sequencer FX Implementation Complete (2026-08-18).** All sequencer FX commands are implemented, selectable in UI edit modes, active at tick time in both phrase and table engines, and covered by unit tests (`[fx]`). Unmodeled commands continue to preserve their raw bytes for lossless `.m8s` file round-trips.
 
-### What's missing
+### Remaining Unimplemented FX Categories
+- **Instrument-specific parameter FX**: `FIN`, `EA1`/`EA2`, `AT1`/`AT2`, `HO1`/`HO2`, `DE1`/`DE2`, `ET1`/`ET2`, `LA1`/`LA2`, `LF1`/`LF2`, `LT1`/`LT2` (Part D.5).
+- **Mixer / Send Effect FX**: `VMV`, `VMX`, `VDE`, `VRE`, `VT1`..`VT8`, `XDT`, `XDF`, etc. (Part J).
 
-All commands below are absent from the codebase (they load as `FxCmd::UNKNOWN`, display as
-`???`, are inert at tick time, and are preserved on save — they are NOT executed): ARP, ARC,
-CHA, RND, RNL, RET, REP, RTO, RMX, NTH, PSL, PBN, PVB, PVX, SCA, SCG, SNG, SED, THO, TBX, TPO,
-TSP, NXT, OFF, MTT, INS, GGR, and all mixer/FX send commands.
-
-**Also missing, and not previously in this list at all (found 2026-07-18 via the manual's
-"Instrument FX Commands" appendix — see the new Part D.5):** FIN (fine tune), EA1/EA2 (envelope
-amount), AT1/AT2 (envelope attack), HO1/HO2 (envelope hold), DE1/DE2 (envelope decay), ET1/ET2
-(envelope retrigger), LA1/LA2 (LFO trigger amount), LF1/LF2 (LFO frequency), LT1/LT2 (LFO
-retrigger). This spec's command inventory was itself incomplete before this — these aren't just
-unimplemented, they were undocumented here entirely.
+---
 
 ---
 
@@ -1285,25 +1305,21 @@ Assert: all FX commands preserved
 
 1. **Plumbing** *(done)*: FxCmd enum + `UNKNOWN` passthrough, FxName(), UI cycle range,
    libFxToEngine/engineFxToLib round-trip.
-2. **Phrase VOL/PIT**: Most-used commands, highest value
-3. **INS + OFF**: Simple, high value
-4. **TPO + TSP + SNG**: Simple state writes (TPO's hex→BPM table still needs device confirmation)
-5. **ARP + ARC**: Complex but self-contained (ARP fully confirmed; ARC's mode numbers don't)
-6. **RET**: Retrig with volume ramp (mode-select + direction confirmed; step magnitude doesn't)
-7. **REP + RTO**: Repeat system (fully manual-confirmed, including the note-on-persistence detail)
-8. **PSL + PBN + PVB + PVX**: Pitch modulation family (fully manual-confirmed)
-9. **CHA + RND + RNL + NTH + SED**: Probability/randomness (RND/RNL/SED confirmed; CHA's curve
-   and NTH's formula don't)
-10. **RMX + GGR + NXT + TBX + THO**: Misc track commands (fully manual-confirmed, including the
-    TBX+TIC row-sharing interaction and RNL's table-mode note+velocity distinction)
-11. **SCA + SCG**: Scale quantize (X/Y roles confirmed; key numbering doesn't)
-12. **MTT**: Micro-time (sub-tick) — manual-confirmed conceptually, no numeric formula given
-13. **Mixer/FX send commands**: Direct struct writes (fully manual-confirmed)
-14. **REV**: Reverse playback (placeholder) — not covered by the manual cross-reference pass
-15. **File I/O**: Update libFxToEngine for all new commands
-16. **Instrument FX commands** (Part B.5, new): FIN + EA/AT/HO/DE/ET/LA/LF/LT — needs a library
-    byte mapping worked out (source inspection or capture) before anything else in this step is
-    possible; the manual gives semantic contracts but not the file-format encoding.
+2. **Phrase VOL/PIT** *(done, 2026-08-18)*: Modeled, relative volume/pitch offsets applied at note-on.
+3. **INS + OFF** *(done, 2026-08-18)*: Mid-phrase instrument selection and ADSR note-off release.
+4. **TPO + TSP + SNG** *(done, 2026-08-18)*: Runtime tempo, song transpose, and song row hopping.
+5. **ARP + ARC** *(done, 2026-08-18)*: 3-note arpeggio intervals with 4 modes (UP, DOWN, UP-DOWN, RANDOM) and tick speed.
+6. **RET** *(done, 2026-08-18)*: Periodic and single-shot retriggering with volume ramp.
+7. **REP + RTO** *(done, 2026-08-18)*: Repeat last FX command with step increment and limit.
+8. **PSL + PBN + PVB + PVX** *(done, 2026-08-18)*: Portamento pitch glide, pitch bend, standard and extreme vibrato.
+9. **CHA + RND + RNL + NTH + SED** *(done, 2026-08-18)*: Probability chance masking, RNG seed, and randomize offsets.
+10. **RMX + GGR + NXT + TBX + THO** *(done, 2026-08-18)*: Playhead remix, global groove, next track note trigger, auxiliary table, all-column table hop.
+11. **SCA + SCG** *(done)*: Scale and key quantize.
+12. **MTT** *(done, 2026-08-18)*: Micro-timing offset.
+13. **Mixer/FX send commands**: Direct struct writes (deferred).
+14. **REV**: Reverse playback (placeholder).
+15. **File I/O**: Modeled commands load/save, unmodeled commands preserved byte-for-byte.
+16. **Instrument FX commands** (Part B.5): FIN + EA/AT/HO/DE/ET/LA/LF/LT (deferred).
 
 ---
 
