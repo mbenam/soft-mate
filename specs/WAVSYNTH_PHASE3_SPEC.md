@@ -415,6 +415,6 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
 - [x] §6.2 six new cases; all Phase 2 `[wavsynth]` cases still green unchanged
 - [x] Full suite run once, counts reported
 - [x] Phase 2 §8 open question O1 marked answered by §7.3
-- [x] P1–P4 restated in the completion report as still unmeasured
+- [ ] P1–P4 restated in the completion report as still unmeasured
 - [x] `status.md` WavSynth entry updated — it currently says shapes 9+ alias to
       sine, which this phase makes false
