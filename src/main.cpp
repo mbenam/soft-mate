@@ -385,7 +385,7 @@ int main(int argc, char* argv[]) {
     fileBrowser.init("Samples");
     m8::ui::ConfirmationDialog confirmDialog;
     m8::ui::CharPicker charPicker;
-    enum class CharPickerTarget { PROJECT, SCALE, RENDER };
+    enum class CharPickerTarget { PROJECT, SCALE, RENDER, INSTRUMENT };
     CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
     m8::ui::render::RenderScreenState renderScreenState;
     m8::ui::eq::EqScreenState eqScreenState;
@@ -812,6 +812,12 @@ int main(int argc, char* argv[]) {
                             charPicker.init(curChar);
                             charPickerTarget = CharPickerTarget::RENDER;
                             viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT &&
+                                   active_cursor == m8::ui::instrument::CursorId::NAME) {
+                            char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.instruments[currentInstIndex].name)) ? uiEngineState.instruments[currentInstIndex].name[nameCharIndex] : 'A';
+                            charPicker.init(curChar);
+                            charPickerTarget = CharPickerTarget::INSTRUMENT;
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
                         }
                     }
                 } else {
@@ -856,8 +862,8 @@ int main(int argc, char* argv[]) {
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
                     m8::ui::instrument::HandleInstrumentInput(event, editHeld, arrowPressedDuringEdit,
                                                               uiEngineState, currentInstIndex, active_cursor,
-                                                              commandSink, viewManager, browserForSongLoad,
-                                                              fileBrowser, instrumentBrowserMode);
+                                                              nameCharIndex, commandSink, viewManager,
+                                                              browserForSongLoad, fileBrowser, instrumentBrowserMode);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
                     m8::ui::table::HandleTableInput(event, editHeld, table_cursor_x, table_cursor_y);
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {
@@ -978,6 +984,22 @@ int main(int argc, char* argv[]) {
                                     if (picked != '\0') {
                                         m8::ui::PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NAME, picked, currentScaleIndex, nameCharIndex);
                                         nameCharIndex = (nameCharIndex + 1) % 16;
+                                    }
+                                }
+                                viewManager.popModal();
+                            } else if (charPickerTarget == CharPickerTarget::INSTRUMENT) {
+                                if (charPicker.isRandomSelected()) {
+                                    std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                    std::strncpy(uiEngineState.instruments[currentInstIndex].name, rnd.c_str(), 12);
+                                    uiEngineState.instruments[currentInstIndex].name[12] = '\0';
+                                } else {
+                                    char picked = charPicker.getSelectedChar();
+                                    if (picked != '\0') {
+                                        if (nameCharIndex >= 0 && nameCharIndex < 12) {
+                                            uiEngineState.instruments[currentInstIndex].name[nameCharIndex] = picked;
+                                            uiEngineState.instruments[currentInstIndex].name[12] = '\0';
+                                            nameCharIndex = (nameCharIndex + 1) % 12;
+                                        }
                                     }
                                 }
                                 viewManager.popModal();
@@ -1111,7 +1133,7 @@ int main(int argc, char* argv[]) {
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SONG) {
             m8::ui::song::RenderSongScreen(renderer, uiSequencer, uiEngineState, playheads, songCol, songRow, isPlaying);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INSTRUMENT) {
-            m8::ui::instrument::RenderInstrumentScreen(renderer, uiEngineState, currentInstIndex, active_cursor);
+            m8::ui::instrument::RenderInstrumentScreen(renderer, uiEngineState, currentInstIndex, active_cursor, nameCharIndex);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
             m8::ui::table::RenderTableScreen(renderer, uiSequencer, uiEngineState, currentInstIndex, table_cursor_x, table_cursor_y);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::INST_MOD) {

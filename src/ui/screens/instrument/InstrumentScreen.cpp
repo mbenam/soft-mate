@@ -268,7 +268,8 @@ static int GetSliderValue(CursorId fieldId, const engine::Instrument& inst) {
 void RenderInstrumentScreen(Renderer& renderer,
                             const engine::EngineState& engState,
                             int currentInstIndex,
-                            CursorId active_cursor_id) {
+                            CursorId active_cursor_id,
+                            int nameCharIndex) {
 
     const engine::Instrument& currentInst = engState.instruments[currentInstIndex];
     bool isMac = (currentInst.type == engine::InstType::INST_MACROSYN);
@@ -320,15 +321,19 @@ void RenderInstrumentScreen(Renderer& renderer,
                 renderer.drawString(drawText, comp.col, comp.row, color);
 
                 if (isActive && comp.has_cursor_box) {
-                    int bracketLen = static_cast<int>(drawText.length());
-                    for (const auto& other : components) {
-                        if (other.role == "accent") {
-                            std::string acc = ResolveInstrumentAccent(fieldId, currentInst, other.text);
-                            bracketLen += static_cast<int>(acc.length());
-                            break;
+                    if (fieldId == CursorId::NAME) {
+                        renderer.drawBracket(comp.col + std::clamp(nameCharIndex, 0, 11), comp.row, 1, {0, 255, 255, 255});
+                    } else {
+                        int bracketLen = static_cast<int>(drawText.length());
+                        for (const auto& other : components) {
+                            if (other.role == "accent") {
+                                std::string acc = ResolveInstrumentAccent(fieldId, currentInst, other.text);
+                                bracketLen += static_cast<int>(acc.length());
+                                break;
+                            }
                         }
+                        renderer.drawBracket(comp.col, comp.row, bracketLen, {0, 255, 255, 255});
                     }
-                    renderer.drawBracket(comp.col, comp.row, bracketLen, {0, 255, 255, 255});
                 }
             }
         }
@@ -337,7 +342,7 @@ void RenderInstrumentScreen(Renderer& renderer,
 
 void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                             engine::EngineState& uiEngineState, int currentInstIndex,
-                            CursorId& cursor_id, CommandSink& commandSink,
+                            CursorId& cursor_id, int& nameCharIndex, CommandSink& commandSink,
                             ViewManager& viewManager, bool& browserForSongLoad,
                             ::FileBrowser& fileBrowser, InstrumentBrowserMode& instrumentBrowserMode) {
     using C = CursorId;
@@ -450,11 +455,15 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
                 cursor_id = navMap[cursor_id].up;
             }
         } else if (event.key.key == SDLK_RIGHT) {
-            if (navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
+            if (cursor_id == C::NAME) {
+                nameCharIndex = (nameCharIndex + 1) % 12;
+            } else if (navMap.count(cursor_id) && navMap[cursor_id].right != C::NONE) {
                 cursor_id = navMap[cursor_id].right;
             }
         } else if (event.key.key == SDLK_LEFT) {
-            if (navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
+            if (cursor_id == C::NAME) {
+                nameCharIndex = (nameCharIndex + 11) % 12;
+            } else if (navMap.count(cursor_id) && navMap[cursor_id].left != C::NONE) {
                 cursor_id = navMap[cursor_id].left;
             }
         } else if (event.key.key == SDLK_RETURN) {

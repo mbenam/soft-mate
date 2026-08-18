@@ -22,13 +22,14 @@ enum class InstrumentBrowserMode {
 void RenderInstrumentScreen(Renderer& renderer,
                             const engine::EngineState& engState,
                             int currentInstIndex,
-                            CursorId active_cursor_id);
+                            CursorId active_cursor_id,
+                            int nameCharIndex = 0);
 
 // Arrow-key navigation/edit + ENTER (opens the file browser for SAMPLE_LOAD/
 // CMD_LOAD/CMD_SAVE) on SDL_EVENT_KEY_DOWN.
 void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
                             engine::EngineState& uiEngineState, int currentInstIndex,
-                            CursorId& cursor_id, CommandSink& commandSink,
+                            CursorId& cursor_id, int& nameCharIndex, CommandSink& commandSink,
                             ViewManager& viewManager, bool& browserForSongLoad,
                             ::FileBrowser& fileBrowser, InstrumentBrowserMode& instrumentBrowserMode);
 
