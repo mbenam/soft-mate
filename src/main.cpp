@@ -568,10 +568,17 @@ int main(int argc, char* argv[]) {
             m8::io::saveScale(path, uiEngineState.scales[currentScaleIndex], outPath, err);
             scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
         } else if (browserForSongLoad) {
-            bool loaded = loadSongIntoEngine(path, sampleRoot, commandRing, uiSequencer,
+            std::filesystem::path sp(path);
+            std::string effectiveSampleRoot = sampleRoot;
+            if (sp.has_parent_path()) {
+                effectiveSampleRoot = sp.parent_path().string();
+                sampleRoot = effectiveSampleRoot;
+                m8::ui::project::setSampleRoot(sampleRoot);
+            }
+            bool loaded = loadSongIntoEngine(path, effectiveSampleRoot, commandRing, uiSequencer,
                                              uiEngineState, currentSongPath,
                                              currentLoadResult, missingSamplesMsg);
-            if (loaded) loadSongSamples(uiEngineState, sampleRoot, commandRing);
+            if (loaded) loadSongSamples(uiEngineState, effectiveSampleRoot, commandRing);
         } else {
             m8::engine::SampleData buf;
             if (FileBrowser::loadWavFile(path, buf)) {
