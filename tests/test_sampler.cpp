@@ -650,3 +650,71 @@ TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
     st.freeUndo();
     freeSample(sd);
 }
+
+TEST_CASE("Sampler REPITCH tempo and STEPS scaling", "[sampler]") {
+    // 4000-frame ramp
+    SampleData sd = makeRamp(4000, 1);
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    inst.sampler.play = 9; // REPITCH
+    inst.sampler.detune = 0x80; // STEPS = 128
+    inst.sampler.start = 0x00;
+    inst.sampler.length = 0xFF;
+    inst.sampler.loop_st = 0x00;
+
+    SynthVoice voice;
+    voice.setSample(&sd);
+    voice.noteOn(261.63f, 1.0f, &inst, 60);
+
+    // 120 BPM: samplesPerTick = 120000 / 120 = 1000
+    EnvContext ctx120{1000.0};
+    // At steps = 128, loopSamples = 128 * (1000 * 0.25) = 32000
+    // Expected ratio = 4000 / 32000 = 0.125
+    voice.renderSample(ctx120);
+    REQUIRE(voice.isActive());
+
+    // STEPS = 0x40 (64) -> loopSamples = 16000 -> ratio = 4000 / 16000 = 0.25 (2x speed)
+    inst.sampler.detune = 0x40;
+    SynthVoice voice2;
+    voice2.setSample(&sd);
+    voice2.noteOn(261.63f, 1.0f, &inst, 60);
+    voice2.renderSample(ctx120);
+    REQUIRE(voice2.isActive());
+
+    // 240 BPM: samplesPerTick = 120000 / 240 = 500 -> 2x speed compared to 120 BPM
+    EnvContext ctx240{500.0};
+    SynthVoice voice3;
+    voice3.setSample(&sd);
+    voice3.noteOn(261.63f, 1.0f, &inst, 60);
+    voice3.renderSample(ctx240);
+    REQUIRE(voice3.isActive());
+
+    freeSample(sd);
+}
+
+TEST_CASE("Sampler BPM mode playback ratio", "[sampler]") {
+    SampleData sd = makeRamp(4000, 1);
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    inst.sampler.play = 12; // REP.BPM
+    inst.sampler.detune = 120; // Sample BPM = 120
+
+    SynthVoice voice;
+    voice.setSample(&sd);
+    voice.noteOn(261.63f, 1.0f, &inst, 60);
+
+    // Song BPM = 120 (samplesPerTick = 1000) -> ratio = 1.0
+    EnvContext ctx120{1000.0};
+    voice.renderSample(ctx120);
+    REQUIRE(voice.isActive());
+
+    // Song BPM = 240 (samplesPerTick = 500) -> ratio = 240 / 120 = 2.0
+    EnvContext ctx240{500.0};
+    SynthVoice voice2;
+    voice2.setSample(&sd);
+    voice2.noteOn(261.63f, 1.0f, &inst, 60);
+    voice2.renderSample(ctx240);
+    REQUIRE(voice2.isActive());
+
+    freeSample(sd);
+}

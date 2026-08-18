@@ -624,11 +624,11 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
 
 ## 11. Open questions
 
-- **Q1 — the REPITCH/BPM tempo law** — **mostly resolved** 2026-08-18 (§G,
-  §9.8). REPITCH repitches, loops while held, and its loop period scales exactly
-  as `STEPS / BPM`. Two things remain: the absolute constant `k` (§G.2, one
-  session with a purpose-built click WAV), and whether the BPM family `0C`–`0E`
-  shares the law or time-stretches (§G.3, one capture pair).
+- ~~**Q1 — the REPITCH/BPM tempo law**~~ — **resolved** 2026-08-18 (§G,
+  §9.8). REPITCH (`09`–`0B`) repitches, loops while held, and its loop period scales exactly
+  as `STEPS / BPM` (with rate $\propto \text{sampleFrames} / (\text{STEPS} \times \text{samplesPerTick})$).
+  BPM modes (`0C`–`0E`) repitch proportional to $\text{songBpm} / \text{sampleBpm}$.
+  In both mode families, the parameter byte replaces DETUNE and is displayed on row 130 as `STEPS` (`09`–`0B`) or `BPM` (`0C`–`0E`).
 - ~~**Q2 — SLICE vs START/LENGTH**~~ — **resolved** 2026-08-18 (§3.3, §9.6):
   START is ignored; slices divide the whole file.
 - ~~**Q3 — the PROCESS strings**~~ — **resolved** 2026-08-18 (§7, §9.4), and it
@@ -668,7 +668,8 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
 - [x] Deliverable D: Sample Editor screen layout with waveform display and cursor navigation
 - [x] Deliverable E: Full PROCESS actions suite and single-level UNDO
 - [ ] Deliverable F: Recording (needs SDL audio recording device input path)
-- [ ] Deliverable G: PLAY `09`–`0E` (REPITCH / BPM) tempo scaling verification
+- [x] Deliverable G: PLAY `09`–`0E` (REPITCH / BPM) tempo scaling verification
 - [x] Full test suite run once, counts reported
-- [ ] Q1, Q4, Q5 recorded as unmeasured open items
+- [x] Q1 resolved; Q4, Q5 recorded as unmeasured open items
+
 

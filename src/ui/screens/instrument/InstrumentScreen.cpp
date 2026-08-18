@@ -390,6 +390,10 @@ void RenderInstrumentScreen(Renderer& renderer,
                 std::string drawText = comp.text;
                 if (comp.role == "value") drawText = liveText;
                 else if (comp.role == "accent") drawText = ResolveInstrumentAccent(fieldId, currentInst, comp.text);
+                else if (comp.role == "label" && fieldId == CursorId::DETUNE && !isMac && !isHyp && !isFm && !isWav) {
+                    if (currentInst.sampler.play >= 9 && currentInst.sampler.play <= 11) drawText = "STEPS ";
+                    else if (currentInst.sampler.play >= 12 && currentInst.sampler.play <= 14) drawText = "BPM   ";
+                }
 
                 renderer.drawString(drawText, comp.col, comp.row, color);
 

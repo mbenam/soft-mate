@@ -428,23 +428,38 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         const SamplerState& s = m_instrument->sampler;
         const SampleData* sd = m_sampler.data();
         float dataSr = sd ? float(sd->sampleRate) : kSampleRate;
-        float detuneSemis = (s.detune - 128) * kDetuneSemisPerStep;
-        // Note tracking: the M8 sampler is chromatic with root C-4 (MIDI 60).
-        // A note above the root plays the sample proportionally faster/higher;
-        // the root note itself plays at natural pitch. m_frequency is the note's
-        // frequency (0 only if never triggered). REPITCH/BPM play modes (09-0E,
-        // not yet modeled) would derive pitch from tempo instead — see
-        // M8_SAMPLER_COMPLETION_SPEC.md Phase 2.
-        float noteSemis = 0.0f;
-        if (m_frequency > 0.0f) {
-            constexpr float kRootFreq = 440.0f * 0.5946035575f; // 440*2^((60-69)/12) = C-4
-            noteSemis = 12.0f * std::log2(m_frequency / kRootFreq);
-        }
-        float semis = noteSemis + detuneSemis + mt.pitch * 12.0f;
-        // Table transpose: add semitones from the table row
-        semis += m_tableTranspose;
+        float ratio = 1.0f;
         float srRatio = dataSr / kSampleRate;
-        float ratio = std::exp2(semis / 12.0f) * srRatio;
+        if (s.play >= 9 && s.play <= 11) {
+            // REPITCH modes (09 REPITCH, 0A REP.REV, 0B REP.PP):
+            // s.detune stores STEPS (1..255, default 0x80 = 128).
+            // Loop period scales proportionally with STEPS and inversely with tempo.
+            float steps = (s.detune > 0) ? float(s.detune) : 128.0f;
+            float loopSamples = steps * (float(ctx.samplesPerTick) * 0.25f);
+            if (loopSamples < 1.0f) loopSamples = 1.0f;
+            float sampleFrames = sd ? float(sd->frames) : 1.0f;
+            ratio = (sampleFrames / loopSamples) * srRatio;
+            float modSemis = mt.pitch * 12.0f + m_tableTranspose;
+            if (std::abs(modSemis) > 0.001f) ratio *= std::exp2(modSemis / 12.0f);
+        } else if (s.play >= 12 && s.play <= 14) {
+            // BPM modes (0C REP.BPM, 0D BPM.REV, 0E BPM.PP):
+            // s.detune stores sample base BPM (default 0x78 = 120 or 0x80 = 128).
+            float sampleBpm = (s.detune > 0) ? float(s.detune) : 120.0f;
+            float songBpm = float(120000.0 / ctx.samplesPerTick);
+            ratio = (songBpm / sampleBpm) * srRatio;
+            float modSemis = mt.pitch * 12.0f + m_tableTranspose;
+            if (std::abs(modSemis) > 0.001f) ratio *= std::exp2(modSemis / 12.0f);
+        } else {
+            // Chromatic note tracking: root C-4 (MIDI 60)
+            float detuneSemis = (s.detune - 128) * kDetuneSemisPerStep;
+            float noteSemis = 0.0f;
+            if (m_frequency > 0.0f) {
+                constexpr float kRootFreq = 440.0f * 0.5946035575f; // 440*2^((60-69)/12) = C-4
+                noteSemis = 12.0f * std::log2(m_frequency / kRootFreq);
+            }
+            float semis = noteSemis + detuneSemis + mt.pitch * 12.0f + m_tableTranspose;
+            ratio = std::exp2(semis / 12.0f) * srRatio;
+        }
         ratio = std::clamp(ratio, 1e-4f, 32.0f);
 
         if (sd && sd->frames > 0 && !m_sampler.finished() && s.slice == 0) {
