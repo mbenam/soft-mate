@@ -5,8 +5,18 @@
 work in a paragraph each. Phase 1 of that document is **done** (2026-07-17) and
 Phase 4 is **mostly done** (ZDF LP/HP and LIM POST/POST:AD landed). Keep that
 file for its Phase 1 record; this one replaces its forward-looking half.
-**Hardware evidence:** measured on a real M8 (fw 6.5.2, COM3) on 2026-08-17.
-Every screen coordinate, enum and cursor chain in §6 was read off the device.
+**Hardware evidence:** measured on a real M8 (fw 6.5.2, COM3) on 2026-08-17 and
+2026-08-18. Every screen coordinate, enum, cursor chain and ratio in this
+document was read off the device.
+
+**All of it is pinned to firmware 6.5.2.** If Dirtywave changes behaviour in a
+later firmware, these findings describe the old one — which is why every
+measurement here carries its firmware and date. Re-check before assuming a
+finding still holds on a device that has been updated.
+
+**Every open question in §11 is measurable.** None of them depends on
+information only Dirtywave has; each is a number somebody can go and read off
+the device, and §11 says how for each one.
 
 ---
 
@@ -193,12 +203,20 @@ it is only the absolute that is soft. The likely culprit is the measurement, not
 the device: the loop period came from autocorrelating the envelope of a sustained
 sample, where the true loop point is not sharply defined.
 
-**How to close it.** Make a purpose-built WAV — a single short click followed by
-silence, of exactly known length — and put it on the SD card. The loop period is
-then unambiguous: click-to-click, measurable to the sample. Capture at
-`STEPS` = `0x20`, `0x40`, `0x80`, `0xC0` at one tempo, fit `k`, and check the fit
-is linear through the origin. Two of those points already exist in ratio form, so
-this is one short session and it settles the constant to full precision.
+**How to close it — no file transfer needed.** The reason the number above is
+soft is that this session used `ANALOGSTRING.WAV`, a *sustained* sample whose
+loop point smears under envelope autocorrelation. Use a **percussive factory
+sample instead** — `ST-01/BASSDRUM1.WAV` and its neighbours are already on the
+card: sharp transient, silence after, so the loop period is unmistakable
+click-to-click and measurable to the sample.
+
+Then: PLAY `09`, one tempo, capture at `STEPS` = `0x20`, `0x40`, `0x80`, `0xC0`,
+fit `k`, and check the fit is linear through the origin. Four captures, one
+session, and the constant is exact.
+
+Nothing has to be written to the SD card, and nothing has to be copied onto it.
+Reach for a drum before reaching for a file transfer — that is the whole lesson
+of the first attempt.
 
 ### G.3 Untested
 
@@ -597,17 +615,23 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
   turned up a conditional entry (`16-BIT`) the manual does not mention.
 - **Q4 — XFADE LOOP curve, SLICE:AUTO/SILEN thresholds** (§7).
 
-  **How to settle the slice ones cheaply:** they are screen-readable, no audio
-  needed. Run `SLICE:AUTO` on a sample, then step the `SLICE MARKER` field —
-  it displays `NN:XXXXXXXX`, marker index and frame position — and read every
-  marker off the screen. Do the same with `SLICE:SILEN`. Compare against the
-  same WAV analysed locally to back out the threshold. The catch is that the
-  sample must exist on both the SD card and our disk; the M8 factory samples are
-  not in this repo, so record a short test WAV, put it on the card, and use that.
+  **How to settle the slice ones — no file transfer needed.** Run `SLICE:AUTO`
+  on any factory sample, then step the `SLICE MARKER` field: it displays
+  `NN:XXXXXXXX`, marker index and frame position, so every marker can be read
+  straight off the screen. Do the same with `SLICE:SILEN`.
 
-  XFADE LOOP is harder — it needs the processed audio back, which means saving
-  to the card and capturing playback rather than reading a screen. Equal-power
-  is a reasonable default until someone wants it exact.
+  To compare against our own detection you do **not** need the original file on
+  disk — capture the device playing it with `m8_capture` and run the detector on
+  that recording. The capture *is* the waveform. It is noisier than the original
+  and needs aligning to the marker frame numbers, but it is easily good enough to
+  back out a threshold, and it costs nothing but a keyjazz capture.
+
+  **XFADE LOOP is the one genuinely awkward item.** Hearing the result means
+  saving the processed sample, which **writes to the SD card** — the only
+  measurement in this document that does. Nothing in this session wrote to the
+  card, deliberately. Get the owner's say-so first, save under a new name rather
+  than overwriting, and only then capture the playback. Until someone wants it
+  exact, equal-power is a reasonable default.
 - **Q5 — the upper-pitch limit.** The manual describes a pitch ceiling enforced
   per bit depth and channel count, because the device streams from SD. We hold
   samples in RAM and have no such constraint. Almost certainly correct to ignore;
