@@ -33,7 +33,9 @@ void RenderSampleEditorScreen(Renderer& renderer,
 
     // Row 2: RECORD row
     renderer.drawString("RECORD", 0, 2, GetColorFromString("LABEL_DIM"));
-    renderer.drawString("START", 8, 2, GetColorFromString(st.row == CursorRow::RECORD && st.subCol == 0 ? "VALUE" : "LABEL_DIM"));
+    std::string recBtnText = st.isRecording ? "STOP " : (st.isArmed ? "ARMED" : "START");
+    SDL_Color recBtnColor = st.isRecording ? SDL_Color{255, 60, 60, 255} : (st.isArmed ? SDL_Color{255, 200, 50, 255} : GetColorFromString(st.row == CursorRow::RECORD && st.subCol == 0 ? "VALUE" : "LABEL_DIM"));
+    renderer.drawString(recBtnText, 8, 2, recBtnColor);
     renderer.drawString(kRecordSources[std::clamp(st.recSrc, 0, 15)], 14, 2, GetColorFromString(st.row == CursorRow::RECORD && st.subCol == 1 ? "VALUE" : "LABEL_DIM"));
     char vBuf[16];
     std::snprintf(vBuf, sizeof(vBuf), "%02X", st.recVol & 0xFF);
@@ -586,7 +588,13 @@ bool HandleSampleEditorInput(const SDL_Event& event, bool editHeld, bool optHeld
             }
         }
         else if (key == SDLK_RETURN || key == SDLK_SPACE) {
-            if (st.row == CursorRow::PROCESS) {
+            if (st.row == CursorRow::RECORD && st.subCol == 0) {
+                if (st.isRecording || st.isArmed) {
+                    st.stopRecording(sd, commandSink);
+                } else {
+                    st.startOrArm();
+                }
+            } else if (st.row == CursorRow::PROCESS) {
                 if (st.subCol == 1) { // '>'
                     ExecuteProcess(st, sd, st.processIndex);
                 } else if (st.subCol == 2) { // 'UNDO'
@@ -620,7 +628,13 @@ bool HandleSampleEditorInput(const SDL_Event& event, bool editHeld, bool optHeld
 
             if (st.subCol < maxCols - 1) ++st.subCol;
         } else if (key == SDLK_RETURN || key == SDLK_SPACE) {
-            if (st.row == CursorRow::PROCESS) {
+            if (st.row == CursorRow::RECORD && st.subCol == 0) {
+                if (st.isRecording || st.isArmed) {
+                    st.stopRecording(sd, commandSink);
+                } else {
+                    st.startOrArm();
+                }
+            } else if (st.row == CursorRow::PROCESS) {
                 if (st.subCol == 1) {
                     ExecuteProcess(st, sd, st.processIndex);
                 } else if (st.subCol == 2) {

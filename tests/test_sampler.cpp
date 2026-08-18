@@ -792,3 +792,60 @@ TEST_CASE("SampleEditor SLICE:SILEN detects sound onsets after silence", "[sampl
     st.freeUndo();
     freeSample(sd);
 }
+
+TEST_CASE("SampleEditor recording buffer and arming works correctly", "[sampler]") {
+    using namespace m8::ui::sample_editor;
+
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    SampleData sd{};
+
+    SampleEditorState st;
+    st.init(0, inst, &sd);
+
+    CommandRing<m8::engine::EngineCommand, 1024> ring;
+    m8::ui::CommandSink sink{ring};
+
+    // Arm recording
+    st.recArm = 0x20;
+    st.startOrArm();
+    REQUIRE(st.isArmed);
+    REQUIRE_FALSE(st.isRecording);
+
+    // Silent frames should not trigger recording
+    float silence[128 * 2] = {0};
+    st.processIncomingAudio(silence, 128, &sd, sink);
+    REQUIRE(st.isArmed);
+    REQUIRE_FALSE(st.isRecording);
+
+    // Loud frames (peak 0.8) should trigger recording
+    float loud[128 * 2];
+    for (int i = 0; i < 128 * 2; ++i) loud[i] = 0.8f;
+    st.processIncomingAudio(loud, 128, &sd, sink);
+    REQUIRE_FALSE(st.isArmed);
+    REQUIRE(st.isRecording);
+    REQUIRE(st.recordedFrames == 128);
+
+    // Stream more frames while recording
+    st.processIncomingAudio(loud, 128, &sd, sink);
+    REQUIRE(st.recordedFrames == 256);
+
+    // Stop recording and verify SampleData package
+    st.stopRecording(&sd, sink);
+    REQUIRE_FALSE(st.isRecording);
+    REQUIRE(sd.frames == 256);
+    REQUIRE(sd.channels == 2);
+    REQUIRE(sd.sampleRate == 48000);
+    REQUIRE(sd.data != nullptr);
+
+    // Verify LOAD_SAMPLE command was pushed
+    m8::engine::EngineCommand cmd{};
+    REQUIRE(ring.pop(cmd));
+    REQUIRE(cmd.type == m8::engine::CommandType::LOAD_SAMPLE);
+    REQUIRE(cmd.targetId == 0);
+    REQUIRE(cmd.u.sample.frames == 256);
+
+    st.freeUndo();
+    freeSample(sd);
+}
+

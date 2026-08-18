@@ -357,6 +357,13 @@ int main(int argc, char* argv[]) {
         }, &g_audioCtx);
         if (stream) { SDL_ResumeAudioStreamDevice(stream); }
     }
+
+    SDL_AudioStream *recStream = nullptr;
+    if (!headless) {
+        SDL_AudioSpec recSpec = { SDL_AUDIO_F32, 2, static_cast<int>(m8::engine::kSampleRate) };
+        recStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &recSpec, nullptr, nullptr);
+        if (recStream) { SDL_ResumeAudioStreamDevice(recStream); }
+    }
     
     m8::engine::Sequencer uiSequencer;
     m8::engine::EngineState uiEngineState;
@@ -1151,6 +1158,28 @@ int main(int argc, char* argv[]) {
             delete static_cast<m8::engine::LoadedSongData*>(songGcPtr);
         }
 
+        // Process incoming audio recording stream data
+        if (recStream && (sampleEditorState.isRecording || sampleEditorState.isArmed)) {
+            float tempBuf[2048 * 2];
+            int bytesAvail = SDL_GetAudioStreamAvailable(recStream);
+            while (bytesAvail > 0) {
+                int toRead = std::min<int>(bytesAvail, static_cast<int>(sizeof(tempBuf)));
+                int readBytes = SDL_GetAudioStreamData(recStream, tempBuf, toRead);
+                if (readBytes <= 0) break;
+                engine::SampleData* curSd = nullptr;
+                if (sampleEditorState.instIndex >= 0 && sampleEditorState.instIndex < static_cast<int>(uiEngineState.instruments.size())) {
+                    auto& inst = uiEngineState.instruments[sampleEditorState.instIndex];
+                    if (inst.sampler.sample >= 0) {
+                        curSd = const_cast<engine::SampleData*>(engine.getSamplePool().get(inst.sampler.sample));
+                    }
+                }
+                sampleEditorState.processIncomingAudio(tempBuf, readBytes / static_cast<int>(sizeof(float) * 2), curSd, commandSink);
+                bytesAvail -= readBytes;
+            }
+        } else if (recStream) {
+            SDL_ClearAudioStream(recStream);
+        }
+
         renderer.clear(colorBg);
 
         if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
@@ -1189,11 +1218,19 @@ int main(int argc, char* argv[]) {
             m8::ui::eq::RenderEqScreen(renderer, uiEngineState, eqScreenState);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SAMPLE_EDITOR) {
             const engine::SampleData* sd = nullptr;
+            engine::SampleData liveSd{};
             if (sampleEditorState.instIndex >= 0 && sampleEditorState.instIndex < static_cast<int>(uiEngineState.instruments.size())) {
                 auto& inst = uiEngineState.instruments[sampleEditorState.instIndex];
                 if (inst.sampler.sample >= 0) {
                     sd = engine.getSamplePool().get(inst.sampler.sample);
                 }
+            }
+            if (!sd && sampleEditorState.recordBuffer && sampleEditorState.recordedFrames > 0) {
+                liveSd.data = sampleEditorState.recordBuffer;
+                liveSd.frames = sampleEditorState.recordedFrames;
+                liveSd.channels = 2;
+                liveSd.sampleRate = 48000;
+                sd = &liveSd;
             }
             m8::ui::sample_editor::RenderSampleEditorScreen(renderer, uiEngineState, sampleEditorState, sd);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
@@ -1416,6 +1453,9 @@ int main(int argc, char* argv[]) {
 
     if (stream) {
         SDL_DestroyAudioStream(stream);
+    }
+    if (recStream) {
+        SDL_DestroyAudioStream(recStream);
     }
 
     return scriptRunner ? scriptRunner->getExitCode() : 0;

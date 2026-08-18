@@ -78,6 +78,110 @@ struct SampleEditorState {
             loopStart = 0;
             loopEnd = 0;
         }
+        isRecording = false;
+        isArmed = false;
+        recordedFrames = 0;
+    }
+
+    // Live Recording state
+    bool isRecording = false;
+    bool isArmed = false;
+    uint32_t recordedFrames = 0;
+    static constexpr uint32_t kMaxRecordFrames = 48000 * 60; // 60s @ 48kHz
+    float* recordBuffer = nullptr;
+
+    void ensureRecordBuffer() {
+        if (!recordBuffer) {
+            recordBuffer = (float*)calloc(kMaxRecordFrames * 2, sizeof(float));
+        }
+    }
+
+    void freeRecordBuffer() {
+        if (recordBuffer) {
+            free(recordBuffer);
+            recordBuffer = nullptr;
+        }
+    }
+
+    void processIncomingAudio(const float* incomingFrames, int count, engine::SampleData* sd, CommandSink& sink) {
+        if (!incomingFrames || count <= 0) return;
+        ensureRecordBuffer();
+        if (!recordBuffer) return;
+
+        float volScale = (recVol / 208.0f); // 0xD0 (208) is unity 1.0
+
+        if (isArmed) {
+            float sumSq = 0.0f;
+            for (int i = 0; i < count * 2; ++i) {
+                sumSq += incomingFrames[i] * incomingFrames[i];
+            }
+            float rms = std::sqrt(sumSq / (count * 2));
+            float armThreshold = (recArm / 255.0f) * 0.2f;
+            if (rms >= armThreshold) {
+                isArmed = false;
+                isRecording = true;
+                recordedFrames = 0;
+            }
+        }
+
+        if (isRecording) {
+            uint32_t toCopy = std::min<uint32_t>(count, kMaxRecordFrames - recordedFrames);
+            for (uint32_t i = 0; i < toCopy; ++i) {
+                recordBuffer[(recordedFrames + i) * 2 + 0] = incomingFrames[i * 2 + 0] * volScale;
+                recordBuffer[(recordedFrames + i) * 2 + 1] = incomingFrames[i * 2 + 1] * volScale;
+            }
+            recordedFrames += toCopy;
+            if (recordedFrames >= kMaxRecordFrames) {
+                stopRecording(sd, sink);
+            }
+        }
+    }
+
+    void startOrArm() {
+        ensureRecordBuffer();
+        recordedFrames = 0;
+        if (recArm > 0) {
+            isArmed = true;
+            isRecording = false;
+        } else {
+            isArmed = false;
+            isRecording = true;
+        }
+    }
+
+    void stopRecording(engine::SampleData* sd, CommandSink& sink) {
+        if (isRecording || isArmed) {
+            isRecording = false;
+            isArmed = false;
+            if (recordedFrames > 0 && recordBuffer) {
+                size_t sz = static_cast<size_t>(recordedFrames) * 2 * sizeof(float);
+                float* newPcm = (float*)malloc(sz);
+                if (newPcm) {
+                    std::memcpy(newPcm, recordBuffer, sz);
+                    if (sd) {
+                        free(sd->data);
+                        sd->data = newPcm;
+                        sd->frames = recordedFrames;
+                        sd->channels = 2;
+                        sd->sampleRate = 48000;
+                        sd->sliceMarkerCount = 0;
+                        sd->loopStartFrame = 0;
+                        sd->loopEndFrame = recordedFrames;
+
+                        selectStart = 0;
+                        selectEnd = recordedFrames;
+                        loopStart = 0;
+                        loopEnd = recordedFrames;
+
+                        engine::EngineCommand cmd{};
+                        cmd.type = engine::CommandType::LOAD_SAMPLE;
+                        cmd.targetId = instIndex;
+                        cmd.u.sample = *sd;
+                        sink.send(cmd);
+                    }
+                }
+            }
+        }
     }
 
     void freeUndo() {
@@ -86,6 +190,7 @@ struct SampleEditorState {
             undoBuffer = nullptr;
             undoFrames = 0;
         }
+        freeRecordBuffer();
     }
 };
 

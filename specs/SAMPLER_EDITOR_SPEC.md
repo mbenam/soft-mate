@@ -652,7 +652,7 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
 - [x] Deliverable C: WAV metadata: cue chunk slice markers and smpl loop region in/out
 - [x] Deliverable D: Sample Editor screen layout with waveform display and cursor navigation
 - [x] Deliverable E: Full PROCESS actions suite and single-level UNDO
-- [ ] Deliverable F: Recording (needs SDL audio recording device input path)
+- [x] Deliverable F: Recording (SDL audio recording stream on host, UI buffer handoff)
 - [x] Deliverable G: PLAY `09`–`0E` (REPITCH / BPM) tempo scaling verification
 - [x] Full test suite run once, counts reported
 - [x] Q1, Q4 resolved; Q5 recorded as RAM/architecture decision
