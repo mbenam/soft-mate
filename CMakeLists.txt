@@ -90,6 +90,7 @@ add_library(m8_engine STATIC
     src/engine/braids/resources.cc
     src/engine/braids/quantizer.cc
     src/engine/stmlib/utils/random.cc
+    src/engine/data/WavetableBank.cpp
 )
 target_include_directories(m8_engine PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}/src

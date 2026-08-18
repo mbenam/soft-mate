@@ -1,5 +1,6 @@
 #include "SynthVoice.h"
 #include "Engine.h"
+#include "data/WavetableBank.h"
 #include <cmath>
 #include <algorithm>
 #include <cstdlib>
@@ -144,6 +145,18 @@ bool SynthVoice::wavTableStale(const WavSynthState& ws) const {
         || m_wavKeyCutoff != ws.cutoff || m_wavKeyRes    != ws.res;
 }
 
+// One sample of wave table `wt`, frame `f`, at position u in [0,1).
+static float wtFrameSample(int wt, int f, float u) {
+    const float idx = u * kWavetableLength;
+    int i = static_cast<int>(idx);
+    if (i >= kWavetableLength) i = kWavetableLength - 1;
+    const int j = (i + 1) % kWavetableLength;      // wraps: frames are cycles
+    const float frac = idx - static_cast<float>(i);
+    const float a = kWavetableData[wt][f][i] * (1.0f / 127.0f);
+    const float b = kWavetableData[wt][f][j] * (1.0f / 127.0f);
+    return a + (b - a) * frac;
+}
+
 void SynthVoice::regenerateWavTable(const WavSynthState& ws) {
     // SIZE is literally the number of samples in the wave table (manual:
     // "Horizontal size of the waveform (number of samples)"). It changes
@@ -155,16 +168,38 @@ void SynthVoice::regenerateWavTable(const WavSynthState& ws) {
     // this spec's choice, not measured -- see §8 open question O2.
     const int   repeats = 1 + (std::clamp(ws.mult, 0, 255) >> 4);
     const float warp01  = std::clamp(ws.warp, 0, 255) / 255.0f;
-    const float mirror  = std::clamp(ws.scan, 0, 255) / 255.0f * 2.0f;
-    const int   shape   = std::clamp(ws.shape, 0, 8);   // >= 9 handled in §0
+
+    const bool isWt  = (ws.shape >= 9 && ws.shape < 9 + kWavetableCount);
+    const int  wt    = isWt ? (ws.shape - 9) : 0;
+    const int  shape = isWt ? 0 : std::clamp(ws.shape, 0, 8);
+
+    // Wave table shapes use SCAN as the frame morph, so there is no mirror.
+    const float mirror = isWt ? 0.0f
+                              : std::clamp(ws.scan, 0, 255) / 255.0f * 2.0f;
+
+    float pos = 0.0f; int f0 = 0, f1 = 0; float mix = 0.0f;
+    if (isWt) {
+        pos = std::clamp(ws.scan, 0, 255) * (kWavetableFrames - 1) / 255.0f;
+        f0  = static_cast<int>(pos);
+        f1  = std::min(f0 + 1, kWavetableFrames - 1);
+        mix = pos - static_cast<float>(f0);
+    }
 
     for (int i = 0; i < len; ++i) {
         float u = static_cast<float>(i) / static_cast<float>(len);
-        u = wavMirrorPhase(u, mirror);          // SCAN
+        u = wavMirrorPhase(u, mirror);          // SCAN, base shapes only
         u = wavWarpPhase(u, warp01);            // WARP
         u = u * static_cast<float>(repeats);    // MULT
         u = u - std::floor(u);
-        m_wavTable[i] = std::clamp(wavBaseShape(shape, u), -1.0f, 1.0f);
+
+        float v;
+        if (isWt) {
+            v = wtFrameSample(wt, f0, u) * (1.0f - mix)
+              + wtFrameSample(wt, f1, u) * mix;
+        } else {
+            v = wavBaseShape(shape, u);
+        }
+        m_wavTable[i] = std::clamp(v, -1.0f, 1.0f);
     }
 
     // FILTER 08-0B ("WAV LP/HP/BP/BS"): the manual says these apply the filter

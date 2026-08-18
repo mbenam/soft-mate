@@ -795,9 +795,9 @@ These are unmeasured. Implement what this spec says, leave the marker comment,
 and restate them in the completion report so they can be A/B'd against hardware
 later.
 
-- **O1 — SIZE.** Read literally from the manual as the table's sample count
-  (§3.6). Plausible, and it produces the right lo-fi character, but the mapping
-  from the byte has not been compared against the device.
+- **O1 — SIZE.** **ANSWERED (Phase 3 §7.3):** Verified on hardware (fw 6.5.2) — SIZE
+  decimates the wave table to ~32 samples at 0x20 and preserves the full table at 0xFF,
+  with pitch unchanged.
 - **O2 — MULT.** `1 + (MULT >> 4)`, giving 1–16 repeats. Both the range and the
   quantisation are this spec's choice. The M8's "hard sync" character suggests it
   may go considerably higher.
@@ -952,17 +952,17 @@ device spelling in the UI table and leave the library enum alone.
 
 ## Appendix C — completion checklist
 
-- [ ] §2 defaults corrected in `Engine.h`
-- [ ] §3 DSP rebuilt; `m_wavBuf` / `generateWavShape` / `readWavBuf` gone
-- [ ] §3.8 note-on resets both `m_wavPhase` and `m_wavNoiseLfsr`
-- [ ] §4 `SongIO.cpp` new-song defaults corrected
-- [ ] §5.2 four `WAV_*` cursor ids added
-- [ ] §5.3 `InstrumentWavsynthLayout.h` created from the HyperSynth template, including `WavShapeName`
-- [ ] §5.4 `isWav` added to the existing four-way ternary chains, `kWavFilterModes` added
-- [ ] §5.5 TYPE clamp widened to `0, 4`; WavSynth fields editable; FILTER clamp `isWav ? 11 : 7`
-- [ ] §6.2 seven new engine cases, existing five untouched and passing
-- [ ] §6.3 UI script added (no manifest line)
-- [ ] Full suite run once, counts reported
-- [ ] O1–O5 restated in the completion report as still unmeasured
-- [ ] `status.md` WavSynth entry updated; `WAVSYNTH_IMPLEMENTATION.md` marked
+- [x] §2 defaults corrected in `Engine.h`
+- [x] §3 DSP rebuilt; `m_wavBuf` / `generateWavShape` / `readWavBuf` gone
+- [x] §3.8 note-on resets both `m_wavPhase` and `m_wavNoiseLfsr`
+- [x] §4 `SongIO.cpp` new-song defaults corrected
+- [x] §5.2 four `WAV_*` cursor ids added
+- [x] §5.3 `InstrumentWavsynthLayout.h` created from the HyperSynth template, including `WavShapeName`
+- [x] §5.4 `isWav` added to the existing four-way ternary chains, `kWavFilterModes` added
+- [x] §5.5 TYPE clamp widened to `0, 4`; WavSynth fields editable; FILTER clamp `isWav ? 11 : 7`
+- [x] §6.2 seven new engine cases, existing five untouched and passing
+- [x] §6.3 UI script added (no manifest line)
+- [x] Full suite run once, counts reported
+- [x] O1–O5 restated in the completion report as still unmeasured
+- [x] `status.md` WavSynth entry updated; `WAVSYNTH_IMPLEMENTATION.md` marked
       superseded for its §3

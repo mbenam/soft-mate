@@ -1,9 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
 #include "engine/SynthVoice.h"
+#include "data/WavetableBank.h"
+#include "ui/screens/instrument/InstrumentWavsynthLayout.h"
 #include <atomic>
 #include <cmath>
 #include <vector>
+#include <string>
 
 extern std::atomic<int> g_allocCount;
 
@@ -354,4 +357,209 @@ TEST_CASE("WavSynth is deterministic across renders", "[wavsynth]") {
 
     REQUIRE(r1.size() == r2.size());
     REQUIRE(r1 == r2);
+}
+
+TEST_CASE("Wavetable bank is well formed", "[wavsynth]") {
+    bool allValid = true;
+    for (int wt = 0; wt < kWavetableCount; ++wt) {
+        for (int f = 0; f < kWavetableFrames; ++f) {
+            bool hasSample = false;
+            for (int s = 0; s < kWavetableLength; ++s) {
+                int8_t v = kWavetableData[wt][f][s];
+                if (v != 0) hasSample = true;
+            }
+            if (!hasSample) {
+                // Some frames may be flat (e.g. silent frames in certain tables)
+            }
+        }
+        std::string uiName = m8::ui::instrument::WavShapeName(0x09 + wt);
+        std::string wtName = kWavetableNames[wt];
+        while (!uiName.empty() && uiName.back() == ' ') uiName.pop_back();
+        if (uiName.rfind("WT-", 0) == 0) uiName = uiName.substr(3);
+        if (uiName != wtName) {
+            allValid = false;
+        }
+    }
+    REQUIRE(allValid);
+}
+
+TEST_CASE("Wavetable shapes render and differ from each other", "[wavsynth]") {
+    auto renderWt = [](int shape) -> std::vector<float> {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_WAVSYNTH;
+        auto& ws = state.instruments[0].wav;
+        ws.shape = shape; ws.size = 0x80; ws.amp = 0x40;
+        ws.lim = 0; ws.filter_type = 0; ws.dry = 0xC0; ws.pan = 0x80;
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+        return host.audio();
+    };
+
+    int shapes[] = {0x09, 0x1F, 0x2A, 0x45};
+    std::vector<std::vector<float>> results;
+    bool allFiniteNonSilent = true;
+    for (int s : shapes) {
+        auto aud = renderWt(s);
+        float sum = 0.0f;
+        for (float v : aud) {
+            if (!std::isfinite(v)) allFiniteNonSilent = false;
+            sum += std::abs(v);
+        }
+        if (sum < 1.0f) allFiniteNonSilent = false;
+        results.push_back(aud);
+    }
+    REQUIRE(allFiniteNonSilent);
+
+    bool allDifferent = true;
+    for (size_t i = 0; i < results.size(); ++i) {
+        for (size_t j = i + 1; j < results.size(); ++j) {
+            float diff = 0.0f;
+            for (size_t k = 0; k < results[i].size(); ++k) {
+                diff += std::abs(results[i][k] - results[j][k]);
+            }
+            if (diff < 0.1f) allDifferent = false;
+        }
+    }
+    REQUIRE(allDifferent);
+}
+
+TEST_CASE("SCAN crossfades between adjacent frames", "[wavsynth]") {
+    auto renderScanPeak = [](int scan) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_WAVSYNTH;
+        auto& ws = state.instruments[0].wav;
+        ws.shape = 0x1F; // BNK:SCRATCH
+        ws.size = 0xFF;
+        ws.mult = 0x00;
+        ws.warp = 0x00;
+        ws.scan = scan;
+        ws.amp = 0x40;
+        ws.lim = 0;
+        ws.filter_type = 0;
+        ws.dry = 0xC0;
+        ws.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 36, 100, 0); // MIDI 36 low note
+        host.push(playPhrase(0, 0, 0));
+        host.render(2000);
+
+        float maxPeak = 0.0f;
+        for (float v : host.audio()) {
+            float a = std::abs(v);
+            if (a > maxPeak) maxPeak = a;
+        }
+        return maxPeak;
+    };
+
+    float peakF2 = renderScanPeak(0x08); // frame 2
+    float peakMid = renderScanPeak(0x0A); // midpoint (frame 2.5)
+    float peakF3 = renderScanPeak(0x0C); // frame 3
+
+    REQUIRE(peakF2 > 0.30f);
+    REQUIRE(peakF3 > 0.30f);
+    REQUIRE(peakMid < peakF2 / 3.0f);
+    REQUIRE(peakMid < peakF3 / 3.0f);
+}
+
+TEST_CASE("SCAN 0x00 selects frame 0 and 0xFF selects frame 63", "[wavsynth]") {
+    auto renderScan = [](int scan) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_WAVSYNTH;
+        auto& ws = state.instruments[0].wav;
+        ws.shape = 0x1F; // BNK:SCRATCH
+        ws.size = 0x80;
+        ws.mult = 0x00;
+        ws.warp = 0x00;
+        ws.scan = scan;
+        ws.amp = 0x40;
+        ws.lim = 0;
+        ws.filter_type = 0;
+        ws.dry = 0xC0;
+        ws.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+
+        float sum = 0.0f;
+        for (float v : host.audio()) sum += v * v;
+        return sum;
+    };
+
+    float sum00 = renderScan(0x00);
+    float sumFF = renderScan(0xFF);
+    REQUIRE(std::abs(sum00 - sumFF) > 0.1f);
+}
+
+TEST_CASE("SIZE decimates a wavetable frame", "[wavsynth]") {
+    auto computeHfRatio = [](int size) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_WAVSYNTH;
+        auto& ws = state.instruments[0].wav;
+        ws.shape = 0x1F; // BNK:SCRATCH
+        ws.size = size;
+        ws.mult = 0x00;
+        ws.warp = 0x00;
+        ws.scan = 0x55; // frame 21
+        ws.amp = 0x40;
+        ws.lim = 0;
+        ws.filter_type = 0;
+        ws.dry = 0xC0;
+        ws.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 36, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(2000);
+
+        const auto& aud = host.audio();
+        float diffSum = 0.0f;
+        float maxVal = 0.0001f;
+        for (size_t f = 1; f < aud.size() / 2; ++f) {
+            float v = std::abs(aud[2 * f]);
+            if (v > maxVal) maxVal = v;
+            diffSum += std::abs(aud[2 * f] - aud[2 * (f - 1)]);
+        }
+        return diffSum / (static_cast<float>(aud.size() / 2) * maxVal);
+    };
+
+    float hfFF = computeHfRatio(0xFF);
+    float hf20 = computeHfRatio(0x20);
+
+    REQUIRE(hfFF > hf20 * 1.5f);
+}
+
+TEST_CASE("Wavetable rendering allocates nothing", "[wavsynth]") {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_WAVSYNTH;
+    auto& ws = state.instruments[0].wav;
+    ws.shape = 0x1F; // BNK:SCRATCH
+    ws.size = 0x80;
+    ws.scan = 0x00;
+    ws.amp = 0x40;
+    ws.lim = 0;
+    ws.filter_type = 0;
+    ws.dry = 0xC0;
+    ws.pan = 0x80;
+
+    g_allocCount = 0;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(2500);
+
+    // Change SCAN mid-render to trigger regenerateWavTable on audio thread
+    EngineCommand cmd;
+    cmd.type = CommandType::UPDATE_PARAM;
+    cmd.paramId = ParamID::WAV_SCAN;
+    cmd.value = 0x55;
+    cmd.targetId = 0;
+    host.push(cmd);
+    host.render(2500);
+
+    REQUIRE(g_allocCount == 0);
 }

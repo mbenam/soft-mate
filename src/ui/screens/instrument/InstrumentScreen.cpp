@@ -517,7 +517,7 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
         else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isWav ? inst.wav.res : (isHyp ? inst.hyper.res : (isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res)))) + step, 0, 255), currentInstIndex);
 
         // WavSynth-specific
-        else if (isWav && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SHAPE, std::clamp<int>(inst.wav.shape + step, 0, 8), currentInstIndex); // TODO(phase3)
+        else if (isWav && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SHAPE, std::clamp<int>(inst.wav.shape + step, 0, 0x45), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_SIZE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_SIZE, std::clamp<int>(inst.wav.size + step, 0, 255), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_MULT) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_MULT, std::clamp<int>(inst.wav.mult + step, 0, 255), currentInstIndex);
         else if (isWav && cursor_id == C::WAV_WARP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::WAV_WARP, std::clamp<int>(inst.wav.warp + step, 0, 255), currentInstIndex);

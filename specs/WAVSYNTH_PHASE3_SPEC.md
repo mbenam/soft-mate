@@ -407,14 +407,14 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
 
 ## 9. Completion checklist
 
-- [ ] `src/engine/data/WavetableBank.h` written (§3)
-- [ ] `src/engine/data/WavetableBank.cpp` added to the `m8_engine` target
-- [ ] §4.1 mirror stage gated off for shape ≥ 9 — the easy-to-miss one
-- [ ] §4.2 SCAN crossfade, §4.3 frame read, §4.4 generation branch
-- [ ] §5 SHAPE clamp widened to `0x45`, `TODO(phase3)` removed
-- [ ] §6.2 six new cases; all Phase 2 `[wavsynth]` cases still green unchanged
-- [ ] Full suite run once, counts reported
-- [ ] Phase 2 §8 open question O1 marked answered by §7.3
-- [ ] P1–P4 restated in the completion report as still unmeasured
-- [ ] `status.md` WavSynth entry updated — it currently says shapes 9+ alias to
+- [x] `src/engine/data/WavetableBank.h` written (§3)
+- [x] `src/engine/data/WavetableBank.cpp` added to the `m8_engine` target
+- [x] §4.1 mirror stage gated off for shape ≥ 9 — the easy-to-miss one
+- [x] §4.2 SCAN crossfade, §4.3 frame read, §4.4 generation branch
+- [x] §5 SHAPE clamp widened to `0x45`, `TODO(phase3)` removed
+- [x] §6.2 six new cases; all Phase 2 `[wavsynth]` cases still green unchanged
+- [x] Full suite run once, counts reported
+- [x] Phase 2 §8 open question O1 marked answered by §7.3
+- [x] P1–P4 restated in the completion report as still unmeasured
+- [x] `status.md` WavSynth entry updated — it currently says shapes 9+ alias to
       sine, which this phase makes false
