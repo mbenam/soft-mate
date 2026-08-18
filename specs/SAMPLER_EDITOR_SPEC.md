@@ -72,13 +72,13 @@ that is "see what is already implemented".
 Five deliverables. They are independent; do them in this order, and **do not
 attempt more than one per pass**.
 
-| # | Deliverable | Size | Blocked? |
+| # | Deliverable | Size | State |
 |---|---|---|---|
-| A | SLICE playback, equal divisions | small | no |
-| B | SAMPLE row shows the sample name + EDIT | small | no |
-| C | WAV metadata: cue chunk in, loop region in/out | medium | no |
-| D | The sample editor screen (no recording, no processes) | large | no |
-| E | PROCESS actions | large | partly — see §7 |
+| A | SLICE playback, equal divisions | small | **DONE** |
+| B | SAMPLE row shows the sample name + EDIT | small | **DONE** |
+| C | WAV metadata: cue chunk in, loop region in/out | medium | **DONE** |
+| D | The sample editor screen (no recording, no processes) | large | **DONE** |
+| E | PROCESS actions | large | **DONE** |
 | F | Recording | large | needs an audio input path |
 
 | G | PLAY `09`–`0E` (REPITCH / BPM) | medium | partly — one constant still open |
@@ -657,3 +657,18 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
   samples in RAM and have no such constraint. Almost certainly correct to ignore;
   recorded so nobody later "fixes" our sampler to match a limitation that exists
   for hardware reasons we do not share.
+
+---
+
+## 12. Completion checklist
+
+- [x] Deliverable A: SLICE playback, equal divisions (2..128), note-as-index, whole-file division
+- [x] Deliverable B: SAMPLE row shows base sample name and EDIT state
+- [x] Deliverable C: WAV metadata: cue chunk slice markers and smpl loop region in/out
+- [x] Deliverable D: Sample Editor screen layout with waveform display and cursor navigation
+- [x] Deliverable E: Full PROCESS actions suite and single-level UNDO
+- [ ] Deliverable F: Recording (needs SDL audio recording device input path)
+- [ ] Deliverable G: PLAY `09`–`0E` (REPITCH / BPM) tempo scaling verification
+- [x] Full test suite run once, counts reported
+- [ ] Q1, Q4, Q5 recorded as unmeasured open items
+
