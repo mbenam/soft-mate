@@ -118,13 +118,14 @@ struct HyperState {
     int transp = 1;        // 0 = OFF, 1 = ON
     int tbl_tic = 0xFF;
     int eq = 0;            // 0 = --
-    int scale = 0xFF;      // scale index (0xFF = off)
-    int shift = 128;     // note shift (0x80 = no shift)
-    int swarm = 0x80;      // supersaw detune/spread
+    int scale = 0;         // 0 = DEFAULT, 1..16 = song scale 0..15
+    int chord_bank = 0;    // active chord bank index (0..15)
+    int shift = 0x80;      // note shift / crossfade (0x80 = 50/50 balance)
+    int swarm = 0x00;      // supersaw detune
     int width = 0x80;      // stereo width
     int subosc = 0x00;     // sub oscillator level
     int default_chord[7] = {0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C}; // MIDI notes
-    int chords[16][6] = {}; // 16 chord slots, 6 notes each
+    int chords[16][6] = {}; // 16 chord slots, 6 semitone intervals each
     int filter_type = 0;   // 0 = OFF, 1 = LP, 2 = HP, 3 = BP
     int cutoff = 0xFF;
     int res = 0x00;

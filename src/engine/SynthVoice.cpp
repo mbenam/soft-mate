@@ -427,62 +427,77 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
     if (m_instrument && m_instrument->type == InstType::INST_HYPERSYN) {
         isHyper = true;
         const HyperState& h = m_instrument->hyper;
+        int bank = std::clamp(h.chord_bank, 0, 15);
 
-        float detuneSpread = (h.swarm / 255.0f) * 0.15f;
-        float widthFactor = (h.width - 128) / 128.0f;
+        float baseFreq = m_frequency * std::pow(2.0f, (mt.pitch + m_tableTranspose) / 12.0f);
+
+        float gainLower = 1.0f;
+        float gainUpper = 1.0f;
+        if (h.shift < 0x80) {
+            gainUpper = h.shift / 128.0f;
+        } else if (h.shift > 0x80) {
+            gainLower = (255 - h.shift) / 127.0f;
+        }
+
+        float detuneSpread = (h.swarm / 255.0f) * 0.25f;
+        float widthSpread = (h.width / 255.0f) * 0.05f;
 
         float outL = 0.0f, outR = 0.0f;
         int activeNotes = 0;
 
-        for (int n = 0; n < kHyperMaxNotes; ++n) {
-            int midiNote = h.default_chord[n];
-            if (midiNote <= 0 || midiNote >= 128) continue;
-            midiNote += (h.shift - 128);
-            midiNote = std::clamp(midiNote, 0, 127);
-            float noteFreq = 440.0f * std::pow(2.0f, (midiNote - 69.0f) / 12.0f);
-            for (int v = 0; v < kHyperVoices; ++v) {
-                float t = (kHyperVoices > 1) ? float(v) / float(kHyperVoices - 1) - 0.5f : 0.0f;
-                float detuneSemi = t * detuneSpread * 2.0f;
-                float freq = noteFreq * std::pow(2.0f, detuneSemi / 12.0f);
-                float incF = freq / kSampleRate;
-                uint32_t inc = static_cast<uint32_t>(incF * 4294967296.0f);
+        for (int n = 0; n < 6; ++n) {
+            float noteGain = (n < 3) ? gainLower : gainUpper;
+            if (noteGain <= 0.0001f) continue;
 
-                m_hyperL[n][v].inc = inc;
-                m_hyperL[n][v].phase += inc;
+            int interval = h.chords[bank][n];
+            float noteFreq = baseFreq * std::pow(2.0f, interval / 12.0f);
+
+            for (int v = 0; v < 2; ++v) {
+                float detuneSemi = (v == 0) ? -detuneSpread : detuneSpread;
+                float freqL = noteFreq * std::pow(2.0f, (detuneSemi - widthSpread) / 12.0f);
+                float incLF = freqL / kSampleRate;
+                uint32_t incL = static_cast<uint32_t>(incLF * 4294967296.0f);
+
+                m_hyperL[n][v].inc = incL;
+                m_hyperL[n][v].phase += incL;
                 float phaseL = static_cast<float>(m_hyperL[n][v].phase) / 4294967296.0f;
                 float sawL = 2.0f * phaseL - 1.0f;
-                sawL -= polyBLEP(phaseL, incF);
+                sawL -= polyBLEP(phaseL, incLF);
 
-                float freqR = noteFreq * std::pow(2.0f, (detuneSemi + widthFactor * 0.3f) / 12.0f);
+                float freqR = noteFreq * std::pow(2.0f, (detuneSemi + widthSpread) / 12.0f);
                 float incRF = freqR / kSampleRate;
                 uint32_t incR = static_cast<uint32_t>(incRF * 4294967296.0f);
+
                 m_hyperR[n][v].inc = incR;
                 m_hyperR[n][v].phase += incR;
                 float phaseR = static_cast<float>(m_hyperR[n][v].phase) / 4294967296.0f;
                 float sawR = 2.0f * phaseR - 1.0f;
                 sawR -= polyBLEP(phaseR, incRF);
 
-                outL += sawL;
-                outR += sawR;
+                outL += sawL * noteGain;
+                outR += sawR * noteGain;
             }
             activeNotes++;
         }
 
         if (h.subosc > 0) {
-            float subFreq = m_frequency * 0.5f;
+            float subRatio = (h.subosc < 0x80) ? 0.25f : 0.5f;
+            float subFreq = baseFreq * subRatio;
             float subIncF = subFreq / kSampleRate;
             uint32_t subInc = static_cast<uint32_t>(subIncF * 4294967296.0f);
             m_hyperSub.inc = subInc;
             m_hyperSub.phase += subInc;
             float subPhase = static_cast<float>(m_hyperSub.phase) / 4294967296.0f;
-            float subSaw = 2.0f * subPhase - 1.0f;
-            subSaw -= polyBLEP(subPhase, subIncF);
-            float subLevel = (h.subosc / 255.0f) * 0.7f;
-            outL += subSaw * subLevel;
-            outR += subSaw * subLevel;
+            float subSq = (subPhase < 0.5f) ? 1.0f : -1.0f;
+            subSq += polyBLEP(subPhase, subIncF);
+            subSq -= polyBLEP(std::fmod(subPhase + 0.5f, 1.0f), subIncF);
+
+            float subVol = (h.subosc == 0x80) ? 0.5f : ((h.subosc & 0x7F) / 127.0f) * 0.5f;
+            outL += subSq * subVol;
+            outR += subSq * subVol;
         }
 
-        float norm = (activeNotes > 0) ? 1.0f / float(activeNotes * kHyperVoices) : 1.0f;
+        float norm = (activeNotes > 0) ? 1.0f / float(activeNotes * 2) : 1.0f;
         outL *= norm;
         outR *= norm;
         sample = 0.5f * (outL + outR);

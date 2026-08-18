@@ -25,6 +25,10 @@ enum class CursorId : uint8_t {
     FM_OP_A_MOD1,  FM_OP_B_MOD1,  FM_OP_C_MOD1,  FM_OP_D_MOD1,
     FM_OP_A_MOD2,  FM_OP_B_MOD2,  FM_OP_C_MOD2,  FM_OP_D_MOD2,
     FM_MOD1, FM_MOD2, FM_MOD3, FM_MOD4,
+    // HyperSynth-only
+    HYP_SCALE, HYP_CHORD_BANK,
+    HYP_CHORD_N1, HYP_CHORD_N2, HYP_CHORD_N3, HYP_CHORD_N4, HYP_CHORD_N5, HYP_CHORD_N6,
+    HYP_SHIFT, HYP_SWARM, HYP_WIDTH, HYP_SUBOSC,
 };
 
 } // namespace instrument

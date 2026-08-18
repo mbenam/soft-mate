@@ -1,0 +1,43 @@
+# synth_hypersynth.m8script — UI script coverage for HyperSynth screen and engine
+load songs/sunrise.m8s
+wait 1
+assert_no_error
+
+# Navigate to Instrument screen
+goto INSTRUMENT
+assert_field TYPE SAMPLER
+repeat 2 {
+    key X+UP
+}
+wait 1
+assert_field TYPE HYPERSYN
+
+# Move down to SCALE
+key DOWN
+key DOWN
+key DOWN
+wait 1
+assert_field SCALE 00DEFAULT
+
+# Move down to CHORD
+key DOWN
+wait 1
+assert_field CHORD 00> 00 00 00 00 00 00
+
+# Edit Interval 1 from 00 to 07
+key RIGHT
+key X+UP
+key X+UP
+key X+UP
+key X+UP
+key X+UP
+key X+UP
+key X+UP
+wait 1
+assert_field CHORD 00> 07 00 00 00 00 00
+
+# Render 1 second of HyperSynth audio
+render 1 hyper.wav
+assert_wav hyper.wav nonfinite == 0
+assert_wav hyper.wav clipped == 0
+assert_wav hyper.wav peak > 0.0

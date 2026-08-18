@@ -59,6 +59,10 @@ enum class ParamID {
     FM_OP_RETRIG, FM_OP_MOD_A, FM_OP_MOD_B,
     FM_MOD1, FM_MOD2, FM_MOD3, FM_MOD4,
 
+    // HyperSynth Specific
+    HYP_SCALE, HYP_CHORD_BANK, HYP_CHORD_NOTE,
+    HYP_SHIFT, HYP_SWARM, HYP_WIDTH, HYP_SUBOSC,
+
     // WavSynth Specific
     WAV_SHAPE, WAV_SIZE, WAV_MULT, WAV_WARP, WAV_SCAN,
 

@@ -2,6 +2,7 @@
 #include "InstrumentSamplerLayout.h"
 #include "InstrumentMacrosynLayout.h"
 #include "InstrumentFmsynthLayout.h"
+#include "InstrumentHypersynLayout.h"
 #include <iomanip>
 #include <sstream>
 #include <cstdio>
@@ -16,6 +17,12 @@ struct FMOpClipboard {
     m8::engine::FMSynthState::FMOp op;
 };
 static FMOpClipboard s_fmOpClipboard;
+
+struct HypChordClipboard {
+    bool hasData = false;
+    int notes[6] = {};
+};
+static HypChordClipboard s_hypChordClipboard;
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
     if (colorName == "TITLE") return {255, 60, 60, 255};
@@ -118,12 +125,13 @@ static int GetOpIndexFromCursor(CursorId cid) {
 static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instrument& inst) {
     using C = CursorId;
     bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isHyp = (inst.type == engine::InstType::INST_HYPERSYN);
     bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
 
     if (fieldId == C::TYPE) {
         if (isMac) return "MACROSYN";
+        if (isHyp) return "HYPERSYN";
         if (isFm)  return "FMSYNTH ";
-        if (inst.type == engine::InstType::INST_HYPERSYN) return "HYPERSYN";
         if (inst.type == engine::InstType::INST_WAVSYNTH) return "WAVSYNTH";
         return "SAMPLER ";
     }
@@ -133,31 +141,31 @@ static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instru
     if (fieldId == C::SAMPLE_LOAD) return "LOAD";
     if (fieldId == C::SAMPLE_REC) return "REC.";
 
-    if (fieldId == C::TRANSP) return (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp)) ? "ON" : "OFF";
-    int eq = isMac ? inst.macrosyn.eq : (isFm ? inst.fm.eq : inst.sampler.eq);
+    if (fieldId == C::TRANSP) return (isHyp ? inst.hyper.transp : (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp))) ? "ON" : "OFF";
+    int eq = isHyp ? inst.hyper.eq : (isMac ? inst.macrosyn.eq : (isFm ? inst.fm.eq : inst.sampler.eq));
     if (fieldId == C::EQ) return eq == 0 ? "--" : ToHex(eq);
 
     // Enums that have separate string accents
-    if (fieldId == C::FILTER) return ToHex(isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type));
+    if (fieldId == C::FILTER) return ToHex(isHyp ? inst.hyper.filter_type : (isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type)));
     if (fieldId == C::PLAY) return ToHex(inst.sampler.play);
-    if (fieldId == C::LIM) return ToHex(isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim));
+    if (fieldId == C::LIM) return ToHex(isHyp ? inst.hyper.lim : (isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim)));
     if (fieldId == C::SLICE) return ToHex(inst.sampler.slice);
 
     // Standard Hex values
-    if (fieldId == C::TBL_TIC) return ToHex(isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic));
+    if (fieldId == C::TBL_TIC) return ToHex(isHyp ? inst.hyper.tbl_tic : (isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic)));
     if (fieldId == C::START) return ToHex(inst.sampler.start);
     if (fieldId == C::LOOP_ST) return ToHex(inst.sampler.loop_st);
     if (fieldId == C::LENGTH) return ToHex(inst.sampler.length);
     if (fieldId == C::DETUNE) return ToHex(inst.sampler.detune);
     if (fieldId == C::DEGRADE) return ToHex(isMac ? inst.macrosyn.degrade : inst.sampler.degrade);
-    if (fieldId == C::CUTOFF) return ToHex(isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff));
-    if (fieldId == C::RES) return ToHex(isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res));
-    if (fieldId == C::AMP) return ToHex(isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp));
-    if (fieldId == C::PAN) return ToHex(isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan));
-    if (fieldId == C::DRY) return ToHex(isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry));
-    if (fieldId == C::CHO) return ToHex(isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho));
-    if (fieldId == C::DEL) return ToHex(isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del));
-    if (fieldId == C::REV) return ToHex(isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev));
+    if (fieldId == C::CUTOFF) return ToHex(isHyp ? inst.hyper.cutoff : (isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff)));
+    if (fieldId == C::RES) return ToHex(isHyp ? inst.hyper.res : (isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res)));
+    if (fieldId == C::AMP) return ToHex(isHyp ? inst.hyper.amp : (isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp)));
+    if (fieldId == C::PAN) return ToHex(isHyp ? inst.hyper.pan : (isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan)));
+    if (fieldId == C::DRY) return ToHex(isHyp ? inst.hyper.dry : (isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry)));
+    if (fieldId == C::CHO) return ToHex(isHyp ? inst.hyper.cho : (isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho)));
+    if (fieldId == C::DEL) return ToHex(isHyp ? inst.hyper.del : (isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del)));
+    if (fieldId == C::REV) return ToHex(isHyp ? inst.hyper.rev : (isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev)));
 
     if (fieldId == C::SHAPE) return ToHex(inst.macrosyn.shape);
     if (fieldId == C::TIMBRE) return ToHex(inst.macrosyn.timbre);
@@ -201,6 +209,21 @@ static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instru
     if (fieldId == C::FM_MOD3) return ToHex(inst.fm.mod3);
     if (fieldId == C::FM_MOD4) return ToHex(inst.fm.mod4);
 
+    // HyperSynth
+    if (fieldId == C::HYP_SCALE) return ToHex(inst.hyper.scale);
+    if (fieldId == C::HYP_CHORD_BANK) return ToHex(inst.hyper.chord_bank);
+    int hBank = std::clamp(inst.hyper.chord_bank, 0, 15);
+    if (fieldId == C::HYP_CHORD_N1) return ToHex(inst.hyper.chords[hBank][0]);
+    if (fieldId == C::HYP_CHORD_N2) return ToHex(inst.hyper.chords[hBank][1]);
+    if (fieldId == C::HYP_CHORD_N3) return ToHex(inst.hyper.chords[hBank][2]);
+    if (fieldId == C::HYP_CHORD_N4) return ToHex(inst.hyper.chords[hBank][3]);
+    if (fieldId == C::HYP_CHORD_N5) return ToHex(inst.hyper.chords[hBank][4]);
+    if (fieldId == C::HYP_CHORD_N6) return ToHex(inst.hyper.chords[hBank][5]);
+    if (fieldId == C::HYP_SHIFT) return ToHex(inst.hyper.shift);
+    if (fieldId == C::HYP_SWARM) return ToHex(inst.hyper.swarm);
+    if (fieldId == C::HYP_WIDTH) return ToHex(inst.hyper.width);
+    if (fieldId == C::HYP_SUBOSC) return ToHex(inst.hyper.subosc);
+
     return "--";
 }
 
@@ -208,17 +231,18 @@ static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instru
 static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instrument& inst, const std::string& fallback) {
     using C = CursorId;
     bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isHyp = (inst.type == engine::InstType::INST_HYPERSYN);
     bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
 
     if (fieldId == C::FILTER) {
-        int filter_type = isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type);
+        int filter_type = isHyp ? inst.hyper.filter_type : (isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type));
         if (filter_type >= 0 && filter_type < 8) return kFilterModes[filter_type];
     }
     if (fieldId == C::PLAY) {
         if (inst.sampler.play >= 0 && inst.sampler.play < 15) return kPlayModes[inst.sampler.play];
     }
     if (fieldId == C::LIM) {
-        int lim = isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim);
+        int lim = isHyp ? inst.hyper.lim : (isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim));
         if (lim >= 0 && lim < 9) return kLimModes[lim];
     }
     if (fieldId == C::SLICE) {
@@ -234,6 +258,9 @@ static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instr
             return kFMAlgoNames[inst.fm.algo];
         }
     }
+    if (fieldId == C::HYP_SCALE) {
+        return (inst.hyper.scale == 0) ? "DEFAULT" : "       ";
+    }
     return fallback;
 }
 
@@ -241,6 +268,7 @@ static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instr
 static int GetSliderValue(CursorId fieldId, const engine::Instrument& inst) {
     using C = CursorId;
     bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isHyp = (inst.type == engine::InstType::INST_HYPERSYN);
     bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
 
     if (fieldId == C::START) return inst.sampler.start;
@@ -249,18 +277,21 @@ static int GetSliderValue(CursorId fieldId, const engine::Instrument& inst) {
     if (fieldId == C::DETUNE) return inst.sampler.detune;
 
     if (fieldId == C::DEGRADE) return isMac ? inst.macrosyn.degrade : inst.sampler.degrade;
-    if (fieldId == C::CUTOFF) return isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff);
-    if (fieldId == C::RES) return isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res);
-    if (fieldId == C::AMP) return isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp);
-    if (fieldId == C::PAN) return isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan);
-    if (fieldId == C::DRY) return isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry);
-    if (fieldId == C::CHO) return isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho);
-    if (fieldId == C::DEL) return isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del);
-    if (fieldId == C::REV) return isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev);
+    if (fieldId == C::CUTOFF) return isHyp ? inst.hyper.cutoff : (isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff));
+    if (fieldId == C::RES) return isHyp ? inst.hyper.res : (isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res));
+    if (fieldId == C::AMP) return isHyp ? inst.hyper.amp : (isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp));
+    if (fieldId == C::PAN) return isHyp ? inst.hyper.pan : (isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan));
+    if (fieldId == C::DRY) return isHyp ? inst.hyper.dry : (isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry));
+    if (fieldId == C::CHO) return isHyp ? inst.hyper.cho : (isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho));
+    if (fieldId == C::DEL) return isHyp ? inst.hyper.del : (isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del));
+    if (fieldId == C::REV) return isHyp ? inst.hyper.rev : (isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev));
 
     if (fieldId == C::TIMBRE) return inst.macrosyn.timbre;
     if (fieldId == C::COLOR) return inst.macrosyn.color;
     if (fieldId == C::REDUX) return inst.macrosyn.redux;
+
+    if (fieldId == C::HYP_SWARM) return inst.hyper.swarm;
+    if (fieldId == C::HYP_WIDTH) return inst.hyper.width;
 
     return 0;
 }
@@ -273,11 +304,12 @@ void RenderInstrumentScreen(Renderer& renderer,
 
     const engine::Instrument& currentInst = engState.instruments[currentInstIndex];
     bool isMac = (currentInst.type == engine::InstType::INST_MACROSYN);
+    bool isHyp = (currentInst.type == engine::InstType::INST_HYPERSYN);
     bool isFm  = (currentInst.type == engine::InstType::INST_FMSYNTH);
 
-    const std::vector<UI_GridCell>& staticText = isFm ? GetFmsynthStaticText() : (isMac ? GetMacrosynStaticText() : GetSamplerStaticText());
-    const std::vector<UI_GridCell>& dynamicText = isFm ? GetFmsynthDynamicTextDefaults() : (isMac ? GetMacrosynDynamicTextDefaults() : GetSamplerDynamicTextDefaults());
-    const std::unordered_map<CursorId, std::vector<UI_GridCell>>& interactiveFields = isFm ? GetFmsynthInteractiveFields() : (isMac ? GetMacrosynInteractiveFields() : GetSamplerInteractiveFields());
+    const std::vector<UI_GridCell>& staticText = isHyp ? GetHypersynStaticText() : (isFm ? GetFmsynthStaticText() : (isMac ? GetMacrosynStaticText() : GetSamplerStaticText()));
+    const std::vector<UI_GridCell>& dynamicText = isHyp ? GetHypersynDynamicTextDefaults() : (isFm ? GetFmsynthDynamicTextDefaults() : (isMac ? GetMacrosynDynamicTextDefaults() : GetSamplerDynamicTextDefaults()));
+    const std::unordered_map<CursorId, std::vector<UI_GridCell>>& interactiveFields = isHyp ? GetHypersynInteractiveFields() : (isFm ? GetFmsynthInteractiveFields() : (isMac ? GetMacrosynInteractiveFields() : GetSamplerInteractiveFields()));
 
     // Render Static Background Text
     for (const auto& cell : staticText) {
@@ -338,6 +370,38 @@ void RenderInstrumentScreen(Renderer& renderer,
             }
         }
     }
+
+    if (isHyp) {
+        int bank = std::clamp(currentInst.hyper.chord_bank, 0, 15);
+        bool activeNotes[24] = {};
+        for (int n = 0; n < 6; ++n) {
+            int interval = currentInst.hyper.chords[bank][n];
+            if (interval >= 0 && interval < 24) {
+                activeNotes[interval] = true;
+            }
+        }
+
+        // Draw the 2-octave mini keyboard (col 8..31 on row 8)
+        renderer.fillRectPixel(8 * 8, 8 * 8, 24 * 8, 1, {100, 100, 100, 255});
+        renderer.fillRectPixel(8 * 8, 8 * 8 + 7, 24 * 8, 1, {100, 100, 100, 255});
+
+        for (int k = 0; k < 24; ++k) {
+            int px = (8 + k) * 8;
+            int py = 8 * 8;
+            bool isBlack = ((k % 12) == 1 || (k % 12) == 3 || (k % 12) == 6 || (k % 12) == 8 || (k % 12) == 10);
+
+            if (activeNotes[k]) {
+                renderer.fillRectPixel(px, py + 1, 8, 6, {0, 255, 255, 255});
+            } else if (isBlack) {
+                renderer.fillRectPixel(px + 1, py + 1, 6, 4, {100, 100, 100, 255});
+                renderer.fillRectPixel(px, py + 1, 1, 6, {40, 40, 40, 255});
+                renderer.fillRectPixel(px + 7, py + 1, 1, 6, {40, 40, 40, 255});
+            } else {
+                renderer.fillRectPixel(px, py + 1, 1, 6, {100, 100, 100, 255});
+            }
+        }
+        renderer.fillRectPixel((8 + 24) * 8 - 1, 8 * 8, 1, 8, {100, 100, 100, 255});
+    }
 }
 
 void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
@@ -348,8 +412,9 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
     using C = CursorId;
     const m8::engine::Instrument& inst = uiEngineState.instruments[currentInstIndex];
     bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
+    bool isHyp = (inst.type == m8::engine::InstType::INST_HYPERSYN);
     bool isFm  = (inst.type == m8::engine::InstType::INST_FMSYNTH);
-    auto navMap = isFm ? GetFmsynthNavMap() : (isMac ? GetMacrosynNavMap() : GetSamplerNavMap());
+    auto navMap = isHyp ? GetHypersynNavMap() : (isFm ? GetFmsynthNavMap() : (isMac ? GetMacrosynNavMap() : GetSamplerNavMap()));
 
     int opIdx = GetOpIndexFromCursor(cursor_id);
     bool shiftActive = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
@@ -377,6 +442,26 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
         }
     }
 
+    bool isHypChord = (cursor_id == C::HYP_CHORD_BANK || (cursor_id >= C::HYP_CHORD_N1 && cursor_id <= C::HYP_CHORD_N6));
+    if (isHyp && isHypChord && shiftActive) {
+        int b = std::clamp(inst.hyper.chord_bank, 0, 15);
+        // [SHIFT] + [OPT] -> Copy Chord Bank
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_Z || event.key.key == SDLK_LALT)) {
+            s_hypChordClipboard.hasData = true;
+            for (int i = 0; i < 6; ++i) s_hypChordClipboard.notes[i] = inst.hyper.chords[b][i];
+            return;
+        }
+        // [SHIFT] + [EDIT] -> Paste Chord Bank
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_X)) {
+            if (s_hypChordClipboard.hasData) {
+                for (int i = 0; i < 6; ++i) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_CHORD_NOTE, s_hypChordClipboard.notes[i], currentInstIndex, b, i);
+                }
+            }
+            return;
+        }
+    }
+
     if (editHeld && (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP || event.key.key == SDLK_LEFT || event.key.key == SDLK_DOWN)) {
         arrowPressedDuringEdit = true;
         int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
@@ -386,34 +471,47 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, newType, currentInstIndex);
             cursor_id = C::TYPE;
         }
-        else if (cursor_id == C::TRANSP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp)) + step, 0, 1), currentInstIndex);
-        else if (cursor_id == C::TBL_TIC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::TRANSP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isHyp ? inst.hyper.transp : (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp))) + step, 0, 1), currentInstIndex);
+        else if (cursor_id == C::TBL_TIC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isHyp ? inst.hyper.tbl_tic : (isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic))) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::EQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(inst.getEq() + step, 0, uiEngineState.eqBankCount - 1), currentInstIndex);
-        else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim)) + step, 0, 8), currentInstIndex);
-        else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::DRY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>((isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>((isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>((isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>((isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isHyp ? inst.hyper.amp : (isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isHyp ? inst.hyper.lim : (isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim))) + step, 0, 8), currentInstIndex);
+        else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isHyp ? inst.hyper.pan : (isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::DRY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>((isHyp ? inst.hyper.dry : (isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>((isHyp ? inst.hyper.cho : (isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>((isHyp ? inst.hyper.del : (isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>((isHyp ? inst.hyper.rev : (isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev))) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::DEGRADE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, std::clamp<int>((isMac ? inst.macrosyn.degrade : inst.sampler.degrade) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type)) + step, 0, 7), currentInstIndex);
-        else if (cursor_id == C::CUTOFF) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff)) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isHyp ? inst.hyper.filter_type : (isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type))) + step, 0, 7), currentInstIndex);
+        else if (cursor_id == C::CUTOFF) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isHyp ? inst.hyper.cutoff : (isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff))) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isHyp ? inst.hyper.res : (isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res))) + step, 0, 255), currentInstIndex);
 
         // Sampler-specific
-        else if (!isMac && !isFm && cursor_id == C::SLICE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice + step, 0, 255), currentInstIndex);
-        else if (!isMac && !isFm && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 14), currentInstIndex);
-        else if (!isMac && !isFm && cursor_id == C::START) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start + step, 0, 255), currentInstIndex);
-        else if (!isMac && !isFm && cursor_id == C::LOOP_ST) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st + step, 0, 255), currentInstIndex);
-        else if (!isMac && !isFm && cursor_id == C::LENGTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length + step, 0, 255), currentInstIndex);
-        else if (!isMac && !isFm && cursor_id == C::DETUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::SLICE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 14), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::START) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::LOOP_ST) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::LENGTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && !isHyp && cursor_id == C::DETUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune + step, 0, 255), currentInstIndex);
 
         // Macrosyn-specific
         else if (isMac && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape + step, 0, 43), currentInstIndex);
         else if (isMac && cursor_id == C::TIMBRE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, std::clamp<int>(inst.macrosyn.timbre + step, 0, 255), currentInstIndex);
         else if (isMac && cursor_id == C::COLOR) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, std::clamp<int>(inst.macrosyn.color + step, 0, 255), currentInstIndex);
         else if (isMac && cursor_id == C::REDUX) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, std::clamp<int>(inst.macrosyn.redux + step, 0, 255), currentInstIndex);
+
+        // HyperSynth-specific
+        else if (isHyp && cursor_id == C::HYP_SCALE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SCALE, std::clamp<int>(inst.hyper.scale + step, 0, 16), currentInstIndex);
+        else if (isHyp && cursor_id == C::HYP_CHORD_BANK) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_CHORD_BANK, std::clamp<int>(inst.hyper.chord_bank + step, 0, 15), currentInstIndex);
+        else if (isHyp && cursor_id >= C::HYP_CHORD_N1 && cursor_id <= C::HYP_CHORD_N6) {
+            int noteIdx = static_cast<int>(cursor_id) - static_cast<int>(C::HYP_CHORD_N1);
+            int b = std::clamp(inst.hyper.chord_bank, 0, 15);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_CHORD_NOTE, std::clamp<int>(inst.hyper.chords[b][noteIdx] + step, 0, 48), currentInstIndex, b, noteIdx);
+        }
+        else if (isHyp && cursor_id == C::HYP_SHIFT) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SHIFT, std::clamp<int>(inst.hyper.shift + step, 0, 255), currentInstIndex);
+        else if (isHyp && cursor_id == C::HYP_SWARM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SWARM, std::clamp<int>(inst.hyper.swarm + step, 0, 255), currentInstIndex);
+        else if (isHyp && cursor_id == C::HYP_WIDTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_WIDTH, std::clamp<int>(inst.hyper.width + step, 0, 255), currentInstIndex);
+        else if (isHyp && cursor_id == C::HYP_SUBOSC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SUBOSC, std::clamp<int>(inst.hyper.subosc + step, 0, 255), currentInstIndex);
 
         // FMSynth-specific
         else if (isFm && cursor_id == C::FM_ALGO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_ALGO, std::clamp<int>(inst.fm.algo + step, 0, 11), currentInstIndex);

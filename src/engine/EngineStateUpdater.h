@@ -121,6 +121,13 @@ struct EngineStateUpdater {
             case ParamID::FM_MOD2:
             case ParamID::FM_MOD3:
             case ParamID::FM_MOD4:
+            case ParamID::HYP_SCALE:
+            case ParamID::HYP_CHORD_BANK:
+            case ParamID::HYP_CHORD_NOTE:
+            case ParamID::HYP_SHIFT:
+            case ParamID::HYP_SWARM:
+            case ParamID::HYP_WIDTH:
+            case ParamID::HYP_SUBOSC:
             case ParamID::MOD_TYPE:
             case ParamID::MOD_DEST:
             case ParamID::MOD_AMT:
@@ -193,6 +200,19 @@ struct EngineStateUpdater {
                     case ParamID::FM_MOD2: inst.fm.mod2 = cmd.value; break;
                     case ParamID::FM_MOD3: inst.fm.mod3 = cmd.value; break;
                     case ParamID::FM_MOD4: inst.fm.mod4 = cmd.value; break;
+
+                    // HyperSynth
+                    case ParamID::HYP_SCALE: inst.hyper.scale = cmd.value; break;
+                    case ParamID::HYP_CHORD_BANK: inst.hyper.chord_bank = cmd.value; break;
+                    case ParamID::HYP_CHORD_NOTE:
+                        if (cmd.row >= 0 && cmd.row < 16 && cmd.col >= 0 && cmd.col < 6) {
+                            inst.hyper.chords[cmd.row][cmd.col] = cmd.value;
+                        }
+                        break;
+                    case ParamID::HYP_SHIFT: inst.hyper.shift = cmd.value; break;
+                    case ParamID::HYP_SWARM: inst.hyper.swarm = cmd.value; break;
+                    case ParamID::HYP_WIDTH: inst.hyper.width = cmd.value; break;
+                    case ParamID::HYP_SUBOSC: inst.hyper.subosc = cmd.value; break;
 
                     // WavSynth Specific
                     case ParamID::WAV_SHAPE: inst.wav.shape = cmd.value; break;

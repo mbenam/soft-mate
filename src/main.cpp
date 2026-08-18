@@ -448,6 +448,18 @@ int main(int argc, char* argv[]) {
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, inst.macrosyn.timbre, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, inst.macrosyn.color, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, inst.macrosyn.redux, instIdx);
+        } else if (inst.type == m8::engine::InstType::INST_HYPERSYN) {
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SCALE, inst.hyper.scale, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_CHORD_BANK, inst.hyper.chord_bank, instIdx);
+            for (int b = 0; b < 16; ++b) {
+                for (int n = 0; n < 6; ++n) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_CHORD_NOTE, inst.hyper.chords[b][n], instIdx, b, n);
+                }
+            }
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SHIFT, inst.hyper.shift, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SWARM, inst.hyper.swarm, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_WIDTH, inst.hyper.width, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::HYP_SUBOSC, inst.hyper.subosc, instIdx);
         } else if (inst.type == m8::engine::InstType::INST_FMSYNTH) {
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_ALGO, inst.fm.algo, instIdx);
             for (int o = 0; o < 4; ++o) {
