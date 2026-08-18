@@ -645,7 +645,12 @@ is implemented and verified.
   (`WAVSYNTH_IMPLEMENTATION.md` §10). MacroSynth shapes **above `0x2B`** still fall back to the
   polyBLEP saw. The parity rig (`m8_makeprobe` + `m8_capture` + `m8_spectrum`) exists to close
   these gaps at the acceptance-gate stage.
-- **`PLAY` 09–0E** (REPITCH/BPM) fall back to the nearest 00–08 mode. Screen-mapped (device photos,
+- **`PLAY` 09–0E** (REPITCH/BPM) fall back to the nearest 00–08 mode. **The tempo law is now
+  measured** (2026-08-18, `SAMPLER_EDITOR_SPEC.md` §G): REPITCH *repitches* rather than
+  time-stretching (2x-stretched 240 BPM capture matches the 120 BPM one at r=0.918), it loops
+  while the note is held, and its loop period scales exactly as STEPS/BPM (tempo x2 -> period
+  x0.501; STEPS x0.5 -> period x0.500). Still open: the absolute constant, and whether 0C-0E
+  (the BPM family) shares the law. Screen-mapped (device photos,
   2026-07-17): REPITCH modes expose a **STEPS** parameter, BPM modes a **BPM** parameter, in the row
   under PLAY (default `0x80`). Confirmed STEPS is **not** the DETUNE/`fine_pitch` byte — it's a
   separate stored byte (likely `synth_params.pitch`, unconfirmed). Still blocked on the **tempo

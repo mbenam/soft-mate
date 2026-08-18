@@ -71,9 +71,12 @@ attempt more than one per pass**.
 | E | PROCESS actions | large | partly — see §7 |
 | F | Recording | large | needs an audio input path |
 
-**PLAY `09`–`0E` is deliberately not on this list.** It is blocked on a
-measurement nobody has taken (Q1), and guessing the tempo law would violate
-`AGENTS.md` §4. Take the measurement first, then spec it.
+| G | PLAY `09`–`0E` (REPITCH / BPM) | medium | partly — one constant still open |
+
+PLAY `09`–`0E` was blocked on an unmeasured tempo law. It is now **mostly
+measured** (§G): the shape of the law is settled and the mode repitches rather
+than time-stretches. One absolute constant remains open; §G says exactly which,
+and how to close it.
 
 ---
 
@@ -136,6 +139,78 @@ only 0.08–0.23, so the four regions really are four different quarters.
 So `computeRegion` should compute the slice region from `frames` and ignore
 `s.start` entirely when `s.slice >= 2`. `LENGTH` was not tested separately;
 treat it as ignored too and say so in a comment.
+
+---
+
+## G — PLAY `09`–`0E` (REPITCH / BPM)
+
+Measured 2026-08-18 (§9.8). The manual says only "Pitches the sample based on
+the current song tempo", which left three things unknown: whether it repitches
+or time-stretches, what `STEPS` does, and the exact ratio.
+
+### G.1 What was settled
+
+**It repitches; it does not time-stretch.** Captured the same note at 120 and
+240 BPM, then time-stretched the 240 capture by 2× and correlated it against the
+120 capture: **r = 0.918**. The competing hypothesis — pitch preserved, duration
+halved — predicts matching raw spectra, which score only 0.609. At double tempo
+the sample plays twice as fast, an octave up.
+
+**It loops while the note is held.** The test sample is a ~0.2 s one-shot; under
+REPITCH it filled the entire 4 s capture. So `isLoopMode()` in `SamplerEngine.h`
+is **wrong for `09`–`0E`** — it returns `v >= 2 && v <= 8`, which excludes them,
+so today they play once. They must loop.
+
+**The loop period scales exactly as `STEPS / BPM`.** Both exponents are 1, to
+three digits:
+
+| Change | Predicted | Measured |
+|---|---|---|
+| tempo ×2 (120 → 240) | period ×0.5 | **×0.501** |
+| STEPS ×0.5 (`0x80` → `0x40`) | period ×0.5 | **×0.500** |
+
+So:
+
+```
+    loopBeats = k * STEPS          // independent of tempo and of sample length
+    loopSeconds = loopBeats * 60 / BPM
+    playbackRate = sampleFrames / (loopSeconds * sampleRate)
+```
+
+### G.2 The constant that is still open
+
+Measured: at `STEPS = 0x80` and 120 BPM the loop period is **0.2298 s**, which is
+0.460 beats, or **1.84 sixteenth-steps**. That gives `k = 0.460/128 = 0.003594`
+beats per STEPS unit.
+
+1.84 sixteenths is suspiciously close to 2, and `k = 1/256` would make
+`loopBeats = STEPS/256` — exactly 0.5 beats at `0x80`. But the measurement is 8%
+below that and **the gap is unexplained**, so do not code `STEPS/256` on the
+strength of it looking round.
+
+The ratios are trustworthy (two independent halvings landed on 0.501 and 0.500);
+it is only the absolute that is soft. The likely culprit is the measurement, not
+the device: the loop period came from autocorrelating the envelope of a sustained
+sample, where the true loop point is not sharply defined.
+
+**How to close it.** Make a purpose-built WAV — a single short click followed by
+silence, of exactly known length — and put it on the SD card. The loop period is
+then unambiguous: click-to-click, measurable to the sample. Capture at
+`STEPS` = `0x20`, `0x40`, `0x80`, `0xC0` at one tempo, fit `k`, and check the fit
+is linear through the origin. Two of those points already exist in ratio form, so
+this is one short session and it settles the constant to full precision.
+
+### G.3 Untested
+
+Only `09` (REPITCH) was measured. `0C`–`0E` (REP.BPM / BPM.REV / BPM.PP) are the
+*BPM* family and the manual names them separately, so **do not assume they share
+the law** — the obvious hypothesis is that REPITCH repitches while BPM
+time-stretches, and the 2×-stretch test above discriminates them in one capture
+pair. Run it before implementing `0C`–`0E`.
+
+`STEPS` is stored somewhere in `SynthParams`; `status.md` guesses
+`synth_params.pitch` and says so is unconfirmed. Confirm it by round-tripping a
+`.m8s` with a known `STEPS` value before wiring the UI to it.
 
 ---
 
@@ -456,6 +531,29 @@ slice 0, slices 1/2/3 score 0.08 / 0.15 / 0.23.
 Slice 0 captured with `START` at `00` and at `40`: aligned correlation
 **+0.948** at a 192-sample lag, peaks 0.2142 vs 0.2100. Same region.
 
+### 9.8 REPITCH
+
+`ST-01/ANALOGSTRING.WAV` (8800 frames, read off the editor's `SELECT` end as
+`0x2260`), PLAY `09`, keyjazz note 60, 4 s captures.
+
+| Setup | Loop period | In beats | Confidence |
+|---|---|---|---|
+| STEPS `0x80`, 120 BPM | 0.2298 s | 0.460 | 0.85 |
+| STEPS `0x80`, 240 BPM | 0.1152 s | 0.461 | 0.96 |
+| STEPS `0x40`, 240 BPM | 0.0576 s | 0.230 | 0.97 |
+
+Period from autocorrelating the 5 ms RMS envelope past the attack. The beats
+column being constant across the first two rows is the tempo-lock; the third row
+halving against the second is the STEPS proportionality.
+
+Repitch-vs-stretch, from the two `0x80` captures: 2×-time-stretching the 240
+capture and correlating against the 120 capture gives **0.918**; correlating
+their raw spectra gives 0.609. Repitch.
+
+Also confirmed: with PLAY at `09` a **`STEPS` row appears** between PLAY and
+START, default `0x80`, pushing START / LOOP ST / LENGTH down one row — matching
+the screen mapping `status.md` recorded from device photos in July.
+
 ### 9.7 Behaviours worth copying
 
 - `PROCESS` does not respond at all when no sample is loaded.
@@ -488,21 +586,11 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
 
 ## 11. Open questions
 
-- **Q1 — the REPITCH/BPM tempo law.** PLAY `09`–`0E` cannot be written without
-  it: how STEPS maps to a count, whether REPITCH repitches while BPM
-  time-stretches, and what the ratio law is. `status.md` has the screen mapping
-  already (REPITCH exposes STEPS, BPM exposes BPM, in the row under PLAY,
-  default `0x80`) but not the audio behaviour.
-
-  **How to settle it:** load a sample of known length, set PLAY to `09`
-  (REPITCH), and capture the same note at two project tempi — 120 and 240 BPM.
-  Measure both the fundamental and the played duration. If the duration halves
-  and the pitch is unchanged, it time-stretches; if the pitch doubles and the
-  duration halves, it repitches. Repeat with STEPS at `0x80` and `0x40` to get
-  the STEPS ratio, then again with PLAY `0C` (REP.BPM) to see how the BPM family
-  differs. Six captures, one session. The measuring tools already exist —
-  `m8_capture` plus the cycle-extraction in
-  `tools/wavetables/compare_capture.py`.
+- **Q1 — the REPITCH/BPM tempo law** — **mostly resolved** 2026-08-18 (§G,
+  §9.8). REPITCH repitches, loops while held, and its loop period scales exactly
+  as `STEPS / BPM`. Two things remain: the absolute constant `k` (§G.2, one
+  session with a purpose-built click WAV), and whether the BPM family `0C`–`0E`
+  shares the law or time-stretches (§G.3, one capture pair).
 - ~~**Q2 — SLICE vs START/LENGTH**~~ — **resolved** 2026-08-18 (§3.3, §9.6):
   START is ignored; slices divide the whole file.
 - ~~**Q3 — the PROCESS strings**~~ — **resolved** 2026-08-18 (§7, §9.4), and it
