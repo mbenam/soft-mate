@@ -954,18 +954,38 @@ Future captures use the C++ `m8_capture`.
 - **`m8_capture` — PROVEN against the device (firmware 6.5.2, COM3).** Onset trim verified on
   real captured WAVs; PLAY-toggle masks pinned. See the serial-control-protocol block under
   Hardware-verified constants.
-- **OPEN: USB capture level ~100× too low after a device power-cycle.** On 2026-07-17 every
-  capture came back ~100× quieter than the earlier session — even a sampler playing a bundled
-  **full-scale sine** (sample confirmed loaded on-device) captured at peak ≈ 0.006–0.04.
-  Raising the M8 `OUTPUT VOL` (mixer) did **not** change the capture, because that control feeds
-  the headphone/line out, not the USB audio tap. Leading hypothesis: the **Windows recording
-  level** for "Digital Audio Interface (M8)" was reset by USB re-enumeration on power-cycle
-  (Tier 1's loud captures pre-dated the reboot). Not yet confirmed/fixed — and now lower
-  priority, since audio parity is an acceptance gate, not a blocker for feature work. A second,
-  independent issue: the probe's amp is an AHD→VOLUME mod that **decays to zero** and the single
-  sequenced note doesn't retrigger fast enough, so captures are a ~0.5 s blip, not a sustained
-  tone. When parity work resumes, give parity probes a **sustaining** amp (drop the decaying
-  mod) so there's a steady tone to spectrum-analyse.
+- **CLOSED: "USB capture level ~100× too low after a device power-cycle."** The symptom was
+  real — on 2026-07-17 every capture came back ~100× quieter than the earlier session, even a
+  sampler playing a bundled **full-scale sine**, at peak ≈ 0.006–0.04 — but the diagnosis
+  recorded here was wrong, and stayed here for three weeks after the actual cause was found.
+  It was never the USB tap. `m8_makeprobe`'s instrument volume default was `0xE0` (224), which
+  is above the hardware ceiling of `0x7F`, and **the device reads any instrument volume above
+  `0x7F` as `0x00` — silence**. The probes were telling the instrument to play at zero. Root-
+  caused and fixed on 2026-07-25: ceiling measured across all five instrument types (`c85f928`),
+  `ParamRange.h` created as the single source of truth (`00b5f56`), and the default lowered to
+  `0x7F` behind a hard `checkRange` guard that now refuses to emit an out-of-range probe
+  (`d2536f6`). Full write-up: `hw_findings.md` §P3 / §R1, which measured the same effect at
+  ~125× (~42 dB). The retired hypothesis — that the **Windows recording level** for "Digital
+  Audio Interface (M8)" was reset by USB re-enumeration — explained the timing coincidence
+  (Tier 1's loud captures pre-dated a reboot) and nothing else; raising the M8 `OUTPUT VOL`
+  correctly did nothing, but only because that control feeds the headphone/line out rather than
+  the USB tap, which is a true fact that made a false theory look supported.
+  **Fresh measurement, 2026-08-18, COM3, this machine.** A keyjazz capture at velocity `0x40`
+  off whatever instrument the device had loaded returned peak `0.0427` — clean (0 clipped,
+  0 non-finite, DC 0.000000) but about 10× below the `~0.43` that `AGENTS.md` §7 records for
+  velocity `0x40`, with 1.87 s of the 1.94 s file silent. That neither confirms nor refutes the
+  entry above: the probe-volume root cause is measured and specific to *generated probes*
+  (`hw_findings.md` §P3), whereas this capture used the device's own loaded instrument, whose
+  state is unknown. It does mean **the capture rig is not yet fit for A/B parity work**, for one
+  or both of two reasons still to be separated: the loaded instrument's own level, or the
+  Windows recording level for the M8 input. Settle it by checking whether peak scales with
+  keyjazz velocity before trusting any capture-versus-render distance.
+  **Still open, and independent of the above:** the probe's amp is an AHD→VOLUME mod that
+  **decays to zero** and the single sequenced note doesn't retrigger fast enough, so captures
+  are a ~0.5 s blip rather than a sustained tone — which is also why the mis-volumed captures
+  measured a small nonzero peak instead of true silence. When parity work resumes, give parity
+  probes a **sustaining** amp (drop the decaying mod) so there's a steady tone to
+  spectrum-analyse.
 - **`main_stage1.cpp`** dead weight. **SDL3** pinned to a preview tag in some checkouts.
 - **`LoadResult::missing` — FIXED.** `loadSong()` now resolves each sample path against
   `sampleRoot` (with CWD fallback) and populates `missing` for unresolved paths. Script

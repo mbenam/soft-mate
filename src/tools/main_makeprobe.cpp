@@ -101,7 +101,17 @@ static m8::Song buildProbeSong(
     // HyperSynth screen's right column sits two rows lower than the Sampler map
     // it falls back to -- `set PAN` would aim at SHIFT. Probe files also make the
     // measurement reproducible.
-    int probePan = 0x80)
+    int probePan = 0x80,
+    // WavSynth-only. Same reason as hyperSwarm/hyperWidth above, and confirmed
+    // by WAVSYNTH_PHASE3_SPEC.md 7.4: ScreenModel.h knows only the SAMPLER and
+    // MACROSYN instrument variants, so SIZE/MULT/WARP/SCAN cannot be reached on
+    // the device by field name and had to be driven with raw key presses. Baking
+    // them into the probe is the reproducible route. Defaults preserve the values
+    // this generator previously hardcoded.
+    int wavSize = 0x80,
+    int wavMult = 0x80,
+    int wavWarp = 0x00,
+    int wavScan = 0x00)
 {
     m8::Song song;
 
@@ -264,10 +274,10 @@ static m8::Song buildProbeSong(
         ws.transpose = true;
         ws.table_tick = static_cast<uint8_t>(tableTick);
         ws.shape = static_cast<m8::WavShape>(shape);
-        ws.size = 0x80;
-        ws.mult = 0x80;
-        ws.warp = 0;
-        ws.scan = 0;
+        ws.size = static_cast<uint8_t>(wavSize);
+        ws.mult = static_cast<uint8_t>(wavMult);
+        ws.warp = static_cast<uint8_t>(wavWarp);
+        ws.scan = static_cast<uint8_t>(wavScan);
         ws.synth_params = makeSynthParams(volume);
         song.instruments[0] = ws;
     } else if (instType == "fmsynth") {
@@ -407,7 +417,9 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                             int shape, int timbre, int color,
                             const std::string& samplePath = "",
                             int expectedVolume = -1,
-                            int expectedPan = 0x80) {
+                            int expectedPan = 0x80,
+                            int wavSize = -1, int wavMult = -1,
+                            int wavWarp = -1, int wavScan = -1) {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -454,6 +466,26 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
     } else if (instType == "wavsynth") {
         if (!std::holds_alternative<m8::WavSynth>(song.instruments[0])) {
             std::fprintf(stderr, "  FAIL: instrument 0 is not WavSynth\n");
+            return false;
+        }
+        // The probe is the measurement input record, so assert the four
+        // shaping bytes actually reached the file. A sweep whose parameter did
+        // not land reads as "the parameter does nothing" -- the exact failure
+        // this check exists to make impossible.
+        const auto& ws = std::get<m8::WavSynth>(song.instruments[0]);
+        const struct { const char* n; int want; int got; } wf[] = {
+            {"size", wavSize, ws.size}, {"mult", wavMult, ws.mult},
+            {"warp", wavWarp, ws.warp}, {"scan", wavScan, ws.scan},
+        };
+        for (const auto& f : wf) {
+            if (f.want >= 0 && f.got != f.want) {
+                std::fprintf(stderr, "  FAIL: %s %02X != %02X\n", f.n, f.got, f.want);
+                return false;
+            }
+        }
+        if (static_cast<int>(ws.shape) != shape) {
+            std::fprintf(stderr, "  FAIL: shape %02X != %02X\n",
+                         static_cast<int>(ws.shape), shape);
             return false;
         }
     } else if (instType == "fmsynth") {
@@ -592,6 +624,9 @@ int main(int argc, char** argv) {
     int slice = 0;         // sampler-only: 0=off, 1=FILE, 2..0x80 = N equal divisions
     int modAmt = 0xFF;
     int modHold = 0xFF;
+    // wavsynth-only; defaults match what buildProbeSong hardcoded before these
+    // flags existed, so existing probe recipes are unchanged.
+    int wavSize = 0x80, wavMult = 0x80, wavWarp = 0x00, wavScan = 0x00;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -622,6 +657,10 @@ int main(int argc, char** argv) {
         else if (a == "--swarm")       hyperSwarm = num();
         else if (a == "--width")       hyperWidth = num();
         else if (a == "--pan")         probePan = num();
+        else if (a == "--size")        wavSize = num();
+        else if (a == "--mult")        wavMult = num();
+        else if (a == "--warp")        wavWarp = num();
+        else if (a == "--scan")        wavScan = num();
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
@@ -743,11 +782,11 @@ int main(int argc, char** argv) {
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
                                tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth,
-                               probePan);
+                               probePan, wavSize, wavMult, wavWarp, wavScan);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume,
-                         probePan)) {
+                         probePan, wavSize, wavMult, wavWarp, wavScan)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }
