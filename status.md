@@ -278,6 +278,10 @@ gives each side 0.707 rather than feeding 1.0 to both. The old arrangement doubl
 track output, before it splits into dry and sends — so the effects hear the EQ'd signal. The
 engine was corrected to match; it previously EQ'd the dry path only.
 
+### System Settings & Theme Screens (2026-08-18)
+- **System Settings Screen** (`src/ui/screens/system_settings/`): Accessible from `PROJECT` $\to$ `SYSTEM SETTINGS`. Matches the 14-field hardware layout probed directly from COM4. Active desktop controls: `FONT OPTIONS` (uppercase/lowercase), `NOTE PREVIEW` (on/off), `REC.METRONOME` (on/off), `METRONOME VOL` (00–FF), `SPLASH SCREEN` (on/off), `KEY DELAY:REP` (keyboard repeat rates). Battery and hardware-specific parameters (`BACKLIGHT`, `USB AUDIO MODE`, `USB MAIN OUT`, `LINE-IN GATE`, `HP PROTECTION`, `BATT.STATUS`) are displayed as inert/read-only.
+- **Theme Settings Screen** (`src/ui/screens/theme/`, `src/ui/Theme.h`): Accessible from System Settings $\to$ `THEME EDIT THEME`. Provides interactive R/G/B channel editing for all 13 M8 color slots (`BACKGROUND`, `TEXT:EMPTY`, `TEXT:INFO`, `TEXT:DEFAULT`, `TEXT:VALUE`, `TEXT:TITLES`, `PLAY MARKERS`, `CURSOR`, `SELECTION`, `SCOPE/SLIDER`, `METER LOW`, `METER MID`, `METER PEAK`) with live visual preview and `RESET` to factory defaults. Escapes back to System Settings on `[OPTION]` (`Z`/`ESC`). Tests: `[ui]` (`test_system_settings.cpp`).
+
 ### Synth engines — all four are now audible (2026-07-17)
 The M8's four synth instrument types each render their own sound; none is the old shared saw.
 - **MacroSynth = Braids** (`INST_MACROSYN`, `FMSYNTH_IMPLEMENTATION.md`-adjacent work; ported

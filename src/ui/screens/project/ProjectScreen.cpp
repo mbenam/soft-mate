@@ -430,6 +430,8 @@ void HandleProjectEditRelease(CursorId cursor_id, int& nameCharIndex,
     } else if (cursor_id == C::INST_POOL) {
         // Jump to the INST POOL screen (ViewManager coords x=3, y=2).
         actions.viewManager.setCoords(3, 2);
+    } else if (cursor_id == C::SYSTEM_SETTINGS) {
+        actions.viewManager.pushModal(m8::ui::ViewType::SYSTEM_SETTINGS);
     } else if (cursor_id == C::SAMPLE_ROOT) {
         actions.textInputActive = true;
         actions.textInputBuffer = getSampleRoot();

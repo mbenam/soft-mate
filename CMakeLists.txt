@@ -123,6 +123,8 @@ add_executable(m8_clone
     src/ui/screens/effects/EffectsScreen.cpp
     src/ui/screens/eq/EqScreen.cpp
     src/ui/screens/sample_editor/SampleEditorScreen.cpp
+    src/ui/screens/system_settings/SystemSettingsScreen.cpp
+    src/ui/screens/theme/ThemeScreen.cpp
 )
 
 # Link SDL3 and engine
@@ -258,6 +260,7 @@ add_executable(m8_tests
     tests/test_inst_pool_screen.cpp
     tests/test_mixer_bus.cpp
     tests/test_eq.cpp
+    tests/test_system_settings.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp
@@ -271,6 +274,8 @@ add_executable(m8_tests
     src/ui/screens/inst_pool/InstPoolScreen.cpp
     src/ui/screens/eq/EqScreen.cpp
     src/ui/screens/sample_editor/SampleEditorScreen.cpp
+    src/ui/screens/system_settings/SystemSettingsScreen.cpp
+    src/ui/screens/theme/ThemeScreen.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

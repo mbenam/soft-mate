@@ -32,6 +32,9 @@
 #include "ui/screens/render/RenderScreenLayout.h"
 #include "ui/screens/eq/EqScreen.h"
 #include "ui/screens/sample_editor/SampleEditorScreen.h"
+#include "ui/screens/system_settings/SystemSettingsScreen.h"
+#include "ui/screens/theme/ThemeScreen.h"
+#include "ui/Theme.h"
 #include "io/RenderAudio.h"
 #include "io/BundleExport.h"
 #include "engine/SongCleanup.h"
@@ -951,6 +954,18 @@ int main(int argc, char* argv[]) {
                                                                       &sampleEditorState.editorSample, commandSink)) {
                         viewManager.popModal();
                     }
+                } else if (viewManager.getCurrentView() == m8::ui::ViewType::SYSTEM_SETTINGS) {
+                    if (m8::ui::system_settings::HandleSystemSettingsInput(event, editHeld, arrowPressedDuringEdit,
+                                                                          m8::ui::system_settings::g_systemSettingsState,
+                                                                          viewManager)) {
+                        viewManager.popModal();
+                    }
+                } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS) {
+                    if (m8::ui::theme::HandleThemeInput(event, editHeld, arrowPressedDuringEdit,
+                                                       m8::ui::theme::g_themeScreenState,
+                                                       viewManager)) {
+                        viewManager.popModal();
+                    }
                 }
 
                 if (event.key.key == SDLK_ESCAPE) {
@@ -989,6 +1004,8 @@ int main(int argc, char* argv[]) {
                             case m8::ui::ViewType::EQ: return "EQ";
                             case m8::ui::ViewType::FILE_BROWSER: return "BROWSER";
                             case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
+                            case m8::ui::ViewType::SYSTEM_SETTINGS: return "SYSTEMSETTINGS";
+                            case m8::ui::ViewType::THEME_SETTINGS: return "THEMESETTINGS";
                             default: return "NONE";
                         }
                     };
@@ -1243,6 +1260,10 @@ int main(int argc, char* argv[]) {
             confirmDialog.render(renderer, colorRed, colorWhite, colorCyan);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
             charPicker.render(renderer, colorWhite, colorCyan, colorCyan);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SYSTEM_SETTINGS) {
+            m8::ui::system_settings::RenderSystemSettingsScreen(renderer, m8::ui::system_settings::g_systemSettingsState);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS) {
+            m8::ui::theme::RenderThemeScreen(renderer, m8::ui::theme::g_themeScreenState);
         } else {
             renderer.drawString("NOT IMPLEMENTED", 10, 10, colorWhite);
         }
