@@ -359,11 +359,6 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_AudioStream *recStream = nullptr;
-    if (!headless) {
-        SDL_AudioSpec recSpec = { SDL_AUDIO_F32, 2, static_cast<int>(m8::engine::kSampleRate) };
-        recStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &recSpec, nullptr, nullptr);
-        if (recStream) { SDL_ResumeAudioStreamDevice(recStream); }
-    }
     
     auto uiSequencer_ptr = std::make_unique<m8::engine::Sequencer>();
     m8::engine::Sequencer& uiSequencer = *uiSequencer_ptr;
@@ -1161,19 +1156,27 @@ int main(int argc, char* argv[]) {
             delete static_cast<m8::engine::LoadedSongData*>(songGcPtr);
         }
 
-        // Process incoming audio recording stream data
-        if (recStream && (sampleEditorState.isRecording || sampleEditorState.isArmed)) {
-            float tempBuf[2048 * 2];
-            int bytesAvail = SDL_GetAudioStreamAvailable(recStream);
-            while (bytesAvail > 0) {
-                int toRead = std::min<int>(bytesAvail, static_cast<int>(sizeof(tempBuf)));
-                int readBytes = SDL_GetAudioStreamData(recStream, tempBuf, toRead);
-                if (readBytes <= 0) break;
-                sampleEditorState.processIncomingAudio(tempBuf, readBytes / static_cast<int>(sizeof(float) * 2), &sampleEditorState.editorSample, commandSink);
-                bytesAvail -= readBytes;
+        // Process incoming audio recording stream data on demand
+        if (sampleEditorState.isRecording || sampleEditorState.isArmed) {
+            if (!recStream && !headless) {
+                SDL_AudioSpec recSpec = { SDL_AUDIO_F32, 2, static_cast<int>(m8::engine::kSampleRate) };
+                recStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &recSpec, nullptr, nullptr);
+                if (recStream) { SDL_ResumeAudioStreamDevice(recStream); }
+            }
+            if (recStream) {
+                float tempBuf[2048 * 2];
+                int bytesAvail = SDL_GetAudioStreamAvailable(recStream);
+                while (bytesAvail > 0) {
+                    int toRead = std::min<int>(bytesAvail, static_cast<int>(sizeof(tempBuf)));
+                    int readBytes = SDL_GetAudioStreamData(recStream, tempBuf, toRead);
+                    if (readBytes <= 0) break;
+                    sampleEditorState.processIncomingAudio(tempBuf, readBytes / static_cast<int>(sizeof(float) * 2), &sampleEditorState.editorSample, commandSink);
+                    bytesAvail -= readBytes;
+                }
             }
         } else if (recStream) {
-            SDL_ClearAudioStream(recStream);
+            SDL_DestroyAudioStream(recStream);
+            recStream = nullptr;
         }
 
         renderer.clear(colorBg);
