@@ -238,7 +238,8 @@ struct Render {
 static Render renderOnce(double seconds, int mode, int targetId, int track, int startRow,
                           const int* soloTrack = nullptr, const LoadedSong* loadedSong = nullptr,
                           int chunk = 512) {
-    CommandRing<EngineCommand, 1024> ring;
+    auto ringPtr = std::make_unique<CommandRing<EngineCommand, 1024>>();
+    CommandRing<EngineCommand, 1024>& ring = *ringPtr;
     auto enginePtr = std::make_unique<Engine>(ring);
     Engine& engine = *enginePtr;
 
@@ -399,7 +400,8 @@ int main(int argc, char** argv) {
 
         // Print track/instrument info
         {
-            CommandRing<EngineCommand, 1024> ring;
+            auto ringPtr = std::make_unique<CommandRing<EngineCommand, 1024>>();
+            CommandRing<EngineCommand, 1024>& ring = *ringPtr;
             auto enginePtr = std::make_unique<Engine>(ring);
             Engine& engine = *enginePtr;
             setupEngine(engine, ring, &loadedSong);
@@ -459,7 +461,8 @@ int main(int argc, char** argv) {
 
     // Every non-empty phrase, looped for 8 seconds on its own track.
     {
-        CommandRing<EngineCommand, 1024> ring;
+        auto ringPtr = std::make_unique<CommandRing<EngineCommand, 1024>>();
+        CommandRing<EngineCommand, 1024>& ring = *ringPtr;
         auto probePtr = std::make_unique<Engine>(ring);
         Engine& probe = *probePtr;
         setupEngine(probe, ring, lsPtr);
