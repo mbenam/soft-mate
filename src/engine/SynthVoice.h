@@ -30,6 +30,8 @@ public:
     }
     void setSample(const SampleData* s) { m_sampler.setSample(s); }
     void setVolume(float v);
+    float getFrequency() const { return m_frequency; }
+    void setFrequency(float f) { m_frequency = f; }
     void setLoop(int32_t loopStart, int32_t loopEnd) { m_sampler.setLoop(loopStart, loopEnd); }
 
     // Table-applied modulation (set by Engine each tick, read by renderSample)

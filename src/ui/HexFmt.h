@@ -44,6 +44,33 @@ inline std::string FxName(m8::engine::FxCmd cmd) {
         case m8::engine::FxCmd::TBL: return "TBL";
         case m8::engine::FxCmd::GRV: return "GRV";
         case m8::engine::FxCmd::TIC: return "TIC";
+        case m8::engine::FxCmd::SCA: return "SCA";
+        case m8::engine::FxCmd::SCG: return "SCG";
+        case m8::engine::FxCmd::ARP: return "ARP";
+        case m8::engine::FxCmd::ARC: return "ARC";
+        case m8::engine::FxCmd::CHA: return "CHA";
+        case m8::engine::FxCmd::GGR: return "GGR";
+        case m8::engine::FxCmd::INS: return "INS";
+        case m8::engine::FxCmd::RND: return "RND";
+        case m8::engine::FxCmd::RNL: return "RNL";
+        case m8::engine::FxCmd::RET: return "RET";
+        case m8::engine::FxCmd::REP: return "REP";
+        case m8::engine::FxCmd::RTO: return "RTO";
+        case m8::engine::FxCmd::RMX: return "RMX";
+        case m8::engine::FxCmd::NTH: return "NTH";
+        case m8::engine::FxCmd::PSL: return "PSL";
+        case m8::engine::FxCmd::PBN: return "PBN";
+        case m8::engine::FxCmd::PVB: return "PVB";
+        case m8::engine::FxCmd::PVX: return "PVX";
+        case m8::engine::FxCmd::SNG: return "SNG";
+        case m8::engine::FxCmd::SED: return "SED";
+        case m8::engine::FxCmd::THO: return "THO";
+        case m8::engine::FxCmd::TBX: return "TBX";
+        case m8::engine::FxCmd::TPO: return "TPO";
+        case m8::engine::FxCmd::TSP: return "TSP";
+        case m8::engine::FxCmd::NXT: return "NXT";
+        case m8::engine::FxCmd::OFF: return "OFF";
+        case m8::engine::FxCmd::MTT: return "MTT";
         case m8::engine::FxCmd::UNKNOWN: return "???"; // unmodeled command, preserved on save
         default: return "---";
     }

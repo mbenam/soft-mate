@@ -821,9 +821,11 @@ int main(int argc, char* argv[]) {
 
                 if (event.key.key == SDLK_LSHIFT || event.key.key == SDLK_RSHIFT) {
                     shiftHeld = true;
-                } else if (event.key.key == SDLK_Z || event.key.key == SDLK_LALT || event.key.key == SDLK_RALT) {
+                }
+                if (event.key.key == SDLK_Z || event.key.key == SDLK_LALT || event.key.key == SDLK_RALT) {
                     optHeld = true;
-                } else if (event.key.key == SDLK_X) {
+                }
+                if (event.key.key == SDLK_X) {
                     if (!editHeld) {
                         editHeld = true;
                         arrowPressedDuringEdit = false;
@@ -853,9 +855,9 @@ int main(int argc, char* argv[]) {
                             viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
                         }
                     }
-                } else {
+                }
 
-                    auto oldView = viewManager.getCurrentView();
+                auto oldView = viewManager.getCurrentView();
                     if (viewManager.handleNavigation(event, shiftHeld)) {
                         auto newView = viewManager.getCurrentView();
                         if (oldView == m8::ui::ViewType::PROJECT && newView != m8::ui::ViewType::PROJECT) {
@@ -993,7 +995,6 @@ int main(int argc, char* argv[]) {
                     const char* screenName = viewTypeToStr(viewManager.getCurrentView());
                     renderer.dumpScreenText("dump_screen.txt");
                     renderer.dumpJson("dump_json.json", screenName, uiEngineState.bpm);
-                }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
                 if (event.key.key == SDLK_LSHIFT || event.key.key == SDLK_RSHIFT) {

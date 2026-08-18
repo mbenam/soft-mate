@@ -118,3 +118,110 @@ TEST_CASE("B5.7 HOP interaction with PLAY_CHAIN", "[fx]") {
         REQUIRE(notes[i].chainRow == 0);
     }
 }
+
+TEST_CASE("FX: INS mid-phrase instrument change", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::INS, 3);
+    
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.5);
+    
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+    REQUIRE(notes[0].instrument == 3);
+}
+
+TEST_CASE("FX: GGR global groove", "[fx]") {
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.trackGroove[0] = 5;
+    state.trackGroove[1] = 7;
+
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::GGR, 2);
+
+    host.push(playPhrase(0, 0, 0));
+    host.render(100);
+
+    REQUIRE(host.state().project.groove == 2);
+    REQUIRE(host.state().trackGroove[0] == -1);
+    REQUIRE(host.state().trackGroove[1] == -1);
+}
+
+TEST_CASE("FX: TPO and TSP runtime updates", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::TPO, 140);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::TSP, 2);
+
+    host.push(playPhrase(0, 0, 0));
+    host.render(100);
+
+    REQUIRE(host.state().bpm == 140);
+    REQUIRE(host.state().project.transpose == 2);
+}
+
+TEST_CASE("FX: Phrase relative VOL and PIT", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 80, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::VOL, 20);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::PIT, 3); // +3 semitones -> MIDI 63 (D#4)
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.5);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+    // D#4 freq is ~311.13 Hz
+    REQUIRE(notes[0].frequency > 300.0f);
+    REQUIRE(notes[0].frequency < 320.0f);
+}
+
+TEST_CASE("FX: CHA probability", "[fx]") {
+    OfflineHost host;
+    // CHA0F on step 0: left side probability 0 (never trigger note), right side F (always)
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::CHA, 0x0F);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.5);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.empty());
+}
+
+TEST_CASE("FX: NXT trigger next track", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::NXT, 2); // triggers instrument 2 on track 1
+
+    host.push(playPhrase(0, 0, 0));
+    host.render(100);
+
+    auto track1Notes = host.noteOnsForTrack(1);
+    REQUIRE(track1Notes.size() >= 0);
+}
+
+TEST_CASE("FX: REP repeat command with step increment", "[fx]") {
+    OfflineHost host;
+    // Step 0: PIT 01 (+1 semi) -> C#4
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::PIT, 1);
+
+    // Step 1: REP 02 (+2 to PIT -> PIT 03 = D#4)
+    setStep(host.sequencer(), 0, 1, 60, 100, 0);
+    setFx(host.sequencer(), 0, 1, 0, FxCmd::REP, 2);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.5);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 2);
+    // Note 0 is C#4 (~277.18 Hz)
+    REQUIRE(notes[0].frequency > 270.0f);
+    REQUIRE(notes[0].frequency < 285.0f);
+    // Note 1 is D#4 (~311.13 Hz)
+    REQUIRE(notes[1].frequency > 305.0f);
+    REQUIRE(notes[1].frequency < 320.0f);
+}

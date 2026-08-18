@@ -61,7 +61,7 @@ inline void ModifyValue(m8::engine::Step& step, int col, int delta, bool largeSt
         // Cycle through the modeled FX commands NONE(0)..TIC(9). UNKNOWN(0xFE) is a
         // load/save passthrough and is not authorable — editing such a slot snaps it
         // into the modeled range.
-        constexpr int kMaxFx = static_cast<int>(FxCmd::TIC); // 9
+        constexpr int kMaxFx = static_cast<int>(FxCmd::MTT);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;
@@ -111,7 +111,7 @@ inline void ModifyTableValue(m8::engine::TableStep& step, int col, int delta, bo
     } else if (col == 2 || col == 4 || col == 6) {
         // FX Command
         int idx = (col == 2) ? 0 : (col == 4) ? 1 : 2;
-        constexpr int kMaxFx = static_cast<int>(FxCmd::TIC); // 9
+        constexpr int kMaxFx = static_cast<int>(FxCmd::MTT);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;

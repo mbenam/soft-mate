@@ -436,6 +436,10 @@ struct TableState {
     int tickCount = 0;          // counts ticks within current row
     int tableTickRate = 0;      // from tbl_tic: 0=on-trigger, 1-0xFB=ticks/row, 0xFC-0xFE=maps, 0xFF=200Hz
     int perColTickRate[3] = {-1, -1, -1}; // per-column TIC overrides (-1 = use tableTickRate)
+    int auxTable = -1;
+    int auxRow = 0;
+    int auxTickCount = 0;
+    int delayCount = -1;
 };
 
 struct EngineState {
@@ -461,15 +465,38 @@ struct EngineState {
     const Instrument* pendingInst[8] = {nullptr};
     int pendingDel[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int pendingKil[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    int pendingOff[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int nextHop[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int trackGroove[8] = {-1, -1, -1, -1, -1, -1, -1, -1}; // -1 = use project.groove
-    // Per-track scale and key, set by the SCA command. -1 means "follow the
-    // project", which is what every track does until SCA says otherwise --
-    // "Scale 00 is the default scale for all 8 tracks" (M8 manual). SCG writes
-    // the project pair instead and clears these, so a later SCG overrides an
-    // earlier SCA, which is what "global" has to mean.
     int trackScale[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int trackKey[8]   = {-1, -1, -1, -1, -1, -1, -1, -1};
+
+    float pendingVolOffset[8] = {0.0f};
+    int pendingPitchOffset[8] = {0};
+    int retTicks[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    int retVolDir[8] = {0};
+    int retTickCounter[8] = {0};
+    bool retSingle[8] = {false};
+    int arpInterval[3][8] = {{0}};
+    bool arpActive[8] = {false};
+    int arpPhase[8] = {0};
+    int arpMode[8] = {0};
+    int arpSpeed[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+    int slideTicks[8] = {0};
+    int slideCounter[8] = {0};
+    float slideStartFreq[8] = {0.0f};
+    float slideTargetFreq[8] = {0.0f};
+    int pitchBendRate[8] = {0};
+    float pitchBendAccum[8] = {0.0f};
+    int vibSpeed[8] = {0};
+    float vibDepth[8] = {0.0f};
+    float vibPhase[8] = {0.0f};
+    uint32_t rngState[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    int phraseLoopCount[8] = {0};
+    int repAmount[8][3] = {{0}};
+    int repTargetVal[8][3] = {{0}};
+    FxCmd repCmd[8][3] = {{FxCmd::NONE}};
+    int rtoLimit[8][3] = {{-1}};
 
     std::vector<Instrument> instruments;
     ProjectSettings project;

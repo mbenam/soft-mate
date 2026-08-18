@@ -58,6 +58,16 @@ static bool instTranspEnabled(const Instrument* inst) {
     }
 }
 
+static inline uint32_t xorshift(uint32_t& state) {
+    if (state == 0) state = 1;
+    uint32_t x = state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    state = x;
+    return x;
+}
+
 static constexpr int TICKS_PER_ROW = 6;
 
 void Engine::recalcBPM() {
@@ -382,16 +392,128 @@ void Engine::tickTrack(int t) {
             return;
         }
         if (!valid(m_state.playPhraseRow[t], Sequencer::ROWS)) m_state.playPhraseRow[t] = 0;
-        const Step& step = m_sequencer.phrases[phIdx][m_state.playPhraseRow[t]];
-        
+        const Step& origStep = m_sequencer.phrases[phIdx][m_state.playPhraseRow[t]];
+        Step step = origStep;
+
         m_state.pendingDel[t] = -1;
         m_state.pendingKil[t] = -1;
+        m_state.pendingOff[t] = -1;
         m_state.nextHop[t] = -1;
+
+        // Loop counter for NTH
+        if (m_state.playPhraseRow[t] == 0) {
+            m_state.phraseLoopCount[t]++;
+        }
+
+        // Handle REP (Repeat) and RTO (Repeat Limit)
+        for (int f = 0; f < 3; ++f) {
+            if (step.fx[f].cmd == FxCmd::REP) {
+                if (m_state.repCmd[t][f] != FxCmd::NONE) {
+                    step.fx[f].cmd = m_state.repCmd[t][f];
+                    int delta = static_cast<int8_t>(origStep.fx[f].val);
+                    int nextVal = m_state.repTargetVal[t][f] + delta;
+                    if (m_state.rtoLimit[t][f] >= 0) {
+                        if (delta > 0 && nextVal > m_state.rtoLimit[t][f])
+                            nextVal = m_state.rtoLimit[t][f];
+                        else if (delta < 0 && nextVal < m_state.rtoLimit[t][f])
+                            nextVal = m_state.rtoLimit[t][f];
+                    }
+                    nextVal = std::clamp(nextVal, 0, 255);
+                    m_state.repTargetVal[t][f] = nextVal;
+                    step.fx[f].val = static_cast<uint8_t>(nextVal);
+                } else {
+                    step.fx[f].cmd = FxCmd::NONE;
+                }
+            } else if (step.fx[f].cmd == FxCmd::RTO) {
+                m_state.rtoLimit[t][f] = step.fx[f].val;
+            } else if (step.fx[f].cmd != FxCmd::NONE) {
+                m_state.repCmd[t][f] = step.fx[f].cmd;
+                m_state.repTargetVal[t][f] = step.fx[f].val;
+            }
+        }
+
+        // SED random seed setup
+        for (int f = 0; f < 3; ++f) {
+            if (step.fx[f].cmd == FxCmd::SED) {
+                m_state.rngState[t] = static_cast<uint32_t>(step.fx[f].val) * 2654435761u + 1;
+            }
+        }
+
+        // NTH, CHA, RND, RNL processing
+        for (int f = 0; f < 3; ++f) {
+            if (step.fx[f].cmd == FxCmd::NTH) {
+                uint8_t x = (step.fx[f].val >> 4) & 0x0F;
+                uint8_t y = step.fx[f].val & 0x0F;
+                if (x > 0 && (m_state.phraseLoopCount[t] % (x + 1)) != 0) {
+                    if (f == 0) { step.note = NOTE_EMPTY; step.vol = VOL_EMPTY; }
+                    for (int k = 0; k < f; ++k) step.fx[k] = {};
+                }
+                if (y > 0 && (m_state.phraseLoopCount[t] % (y + 1)) != 0) {
+                    for (int k = f + 1; k < 3; ++k) step.fx[k] = {};
+                }
+            } else if (step.fx[f].cmd == FxCmd::CHA) {
+                float probL = static_cast<float>((step.fx[f].val >> 4) & 0x0F) / 15.0f;
+                float probR = static_cast<float>(step.fx[f].val & 0x0F) / 15.0f;
+                float rollL = (xorshift(m_state.rngState[t]) & 0xFFFF) / 65535.0f;
+                float rollR = (xorshift(m_state.rngState[t]) & 0xFFFF) / 65535.0f;
+                if (rollL > probL) {
+                    if (f == 0) { step.note = NOTE_EMPTY; step.vol = VOL_EMPTY; }
+                    for (int k = 0; k < f; ++k) step.fx[k] = {};
+                }
+                if (rollR > probR) {
+                    for (int k = f + 1; k < 3; ++k) step.fx[k] = {};
+                }
+            } else if (step.fx[f].cmd == FxCmd::RND) {
+                int targetSlot = -1;
+                for (int k = f - 1; k >= 0; --k) {
+                    if (step.fx[k].cmd != FxCmd::NONE) { targetSlot = k; break; }
+                }
+                if (targetSlot >= 0) {
+                    int rangeX = (step.fx[f].val >> 4) & 0x0F;
+                    int rangeY = step.fx[f].val & 0x0F;
+                    int offsetX = (rangeX > 0) ? (static_cast<int>(xorshift(m_state.rngState[t]) % (rangeX * 2 + 1)) - rangeX) : 0;
+                    int offsetY = (rangeY > 0) ? (static_cast<int>(xorshift(m_state.rngState[t]) % (rangeY * 2 + 1)) - rangeY) : 0;
+                    int v = step.fx[targetSlot].val;
+                    int newHi = std::clamp(((v >> 4) & 0x0F) + offsetX, 0, 15);
+                    int newLo = std::clamp((v & 0x0F) + offsetY, 0, 15);
+                    step.fx[targetSlot].val = static_cast<uint8_t>((newHi << 4) | newLo);
+                }
+            } else if (step.fx[f].cmd == FxCmd::RNL) {
+                int rangeX = (step.fx[f].val >> 4) & 0x0F;
+                int rangeY = step.fx[f].val & 0x0F;
+                if (f > 0 && step.fx[f - 1].cmd != FxCmd::NONE) {
+                    int offsetX = (rangeX > 0) ? (static_cast<int>(xorshift(m_state.rngState[t]) % (rangeX * 2 + 1)) - rangeX) : 0;
+                    int offsetY = (rangeY > 0) ? (static_cast<int>(xorshift(m_state.rngState[t]) % (rangeY * 2 + 1)) - rangeY) : 0;
+                    int v = step.fx[f - 1].val;
+                    int newHi = std::clamp(((v >> 4) & 0x0F) + offsetX, 0, 15);
+                    int newLo = std::clamp((v & 0x0F) + offsetY, 0, 15);
+                    step.fx[f - 1].val = static_cast<uint8_t>((newHi << 4) | newLo);
+                } else if (f == 0) {
+                    if (step.note != NOTE_EMPTY && rangeX > 0) {
+                        int offset = static_cast<int>(xorshift(m_state.rngState[t]) % (rangeX * 2 + 1)) - rangeX;
+                        step.note = static_cast<uint8_t>(std::clamp(static_cast<int>(step.note) + offset, 0, 127));
+                    }
+                    if (step.instr != INST_EMPTY && rangeY > 0) {
+                        int offset = static_cast<int>(xorshift(m_state.rngState[t]) % (rangeY * 2 + 1)) - rangeY;
+                        step.instr = static_cast<uint8_t>(std::clamp(static_cast<int>(step.instr) + offset, 0, 127));
+                    }
+                }
+            }
+        }
         
+        if (step.instr != INST_EMPTY) {
+            m_trackInstrument[t] = step.instr;
+        }
+        const Instrument* currentInst = nullptr;
+        if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
+            currentInst = &m_state.instruments[m_trackInstrument[t]];
+        }
+
         auto parseFX = [&](const FxSlot& fx) {
             if (fx.cmd == FxCmd::NONE) return;
             if (fx.cmd == FxCmd::DEL) m_state.pendingDel[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::KIL) m_state.pendingKil[t] = std::min((int)fx.val, grooveLength - 1);
+            else if (fx.cmd == FxCmd::OFF) m_state.pendingOff[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::HOP) m_state.nextHop[t] = fx.val;
             else if (fx.cmd == FxCmd::TBL) {
                 if (fx.val < Sequencer::NUM_TABLES) {
@@ -403,18 +525,32 @@ void Engine::tickTrack(int t) {
                     }
                 }
             }
+            else if (fx.cmd == FxCmd::TBX) {
+                m_tableState[t].auxTable = (fx.val < Sequencer::NUM_TABLES && fx.val > 0) ? fx.val : -1;
+                m_tableState[t].auxRow = 0;
+                m_tableState[t].auxTickCount = 0;
+            }
             else if (fx.cmd == FxCmd::GRV) {
                 m_state.trackGroove[t] = (fx.val < Sequencer::NUM_GROOVES) ? fx.val : -1;
                 m_state.playGrooveIndex[t] = 0;
             }
-            // SCA XY / SCG XY -- X is the key, Y the scale number (manual, and
-            // FX_COMMANDS_SPEC.md §SCA). SCA is per track, SCG is the song.
-            //
-            // The KEY NUMBERING IS UNVERIFIED: 0 = C here, which is what the
-            // global key byte reads on a device whose PROJECT view shows C, but
-            // the spec's own Tier-2 list flags this exact mapping as open and
-            // guesses 0 = B instead. Settled by authoring SCA00/SCA10/SCA20 on a
-            // track and reading the key the SCALE view then shows.
+            else if (fx.cmd == FxCmd::GGR) {
+                m_state.project.groove = fx.val & 0x1F;
+                for (int k = 0; k < 8; ++k) m_state.trackGroove[k] = -1;
+            }
+            else if (fx.cmd == FxCmd::INS) {
+                m_trackInstrument[t] = fx.val & 0x7F;
+                if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
+                    currentInst = &m_state.instruments[m_trackInstrument[t]];
+                    m_voices[t].setInstrument(currentInst);
+                }
+            }
+            else if (fx.cmd == FxCmd::VOL) {
+                m_state.pendingVolOffset[t] += static_cast<float>(static_cast<int8_t>(fx.val)) / 127.0f;
+            }
+            else if (fx.cmd == FxCmd::PIT) {
+                m_state.pendingPitchOffset[t] += static_cast<int>(static_cast<int8_t>(fx.val));
+            }
             else if (fx.cmd == FxCmd::SCA) {
                 m_state.trackKey[t]   = (fx.val >> 4) & 0x0F;
                 m_state.trackScale[t] = fx.val & 0x0F;
@@ -422,44 +558,93 @@ void Engine::tickTrack(int t) {
             else if (fx.cmd == FxCmd::SCG) {
                 m_state.project.key   = (fx.val >> 4) & 0x0F;
                 m_state.project.scale = fx.val & 0x0F;
-                // Global means global: a track that had taken an SCA override
-                // goes back to following the project.
                 for (int k = 0; k < 8; ++k) {
                     m_state.trackScale[k] = -1;
                     m_state.trackKey[k]   = -1;
                 }
             }
+            else if (fx.cmd == FxCmd::SNG) {
+                m_songRow = std::clamp(m_songRow + static_cast<int>(static_cast<int8_t>(fx.val)), 0, Sequencer::SONG_ROWS - 1);
+                syncSongRow();
+            }
+            else if (fx.cmd == FxCmd::TPO) {
+                if (fx.val > 0) {
+                    m_state.bpm = fx.val;
+                    m_state.bpm_frac = 0;
+                    recalcBPM();
+                }
+            }
+            else if (fx.cmd == FxCmd::TSP) {
+                m_state.project.transpose = static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::ARP) {
+                m_state.arpActive[t] = true;
+                m_state.arpInterval[0][t] = 0;
+                m_state.arpInterval[1][t] = (fx.val >> 4) & 0x0F;
+                m_state.arpInterval[2][t] = fx.val & 0x0F;
+                m_state.arpPhase[t] = 0;
+            }
+            else if (fx.cmd == FxCmd::ARC) {
+                m_state.arpMode[t] = (fx.val >> 4) & 0x0F;
+                m_state.arpSpeed[t] = std::max(1, static_cast<int>(fx.val & 0x0F));
+            }
+            else if (fx.cmd == FxCmd::RET) {
+                uint8_t y = fx.val & 0x0F;
+                uint8_t x = (fx.val >> 4) & 0x0F;
+                if (y != 0) {
+                    m_state.retTicks[t] = y;
+                    m_state.retSingle[t] = false;
+                    m_state.retVolDir[t] = (x < 8) ? -(8 - static_cast<int>(x)) : (static_cast<int>(x) - 7);
+                } else {
+                    m_state.retTicks[t] = x;
+                    m_state.retSingle[t] = true;
+                    m_state.retVolDir[t] = 0;
+                }
+                m_state.retTickCounter[t] = 0;
+            }
+            else if (fx.cmd == FxCmd::RMX) {
+                uint8_t tracksCount = (fx.val >> 4) & 0x0F;
+                uint8_t targetPhraseRow = fx.val & 0x0F;
+                for (int k = 0; k < t && k < tracksCount; ++k) {
+                    m_state.playPhraseRow[k] = targetPhraseRow;
+                }
+            }
+            else if (fx.cmd == FxCmd::PSL) {
+                m_state.slideTicks[t] = std::max(1, static_cast<int>(fx.val));
+                m_state.slideCounter[t] = 0;
+                m_state.slideStartFreq[t] = m_voices[t].getFrequency();
+            }
+            else if (fx.cmd == FxCmd::PBN) {
+                m_state.pitchBendRate[t] = static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::PVB) {
+                m_state.vibSpeed[t] = (fx.val >> 4) & 0x0F;
+                m_state.vibDepth[t] = static_cast<float>(fx.val & 0x0F) * 0.25f;
+            }
+            else if (fx.cmd == FxCmd::PVX) {
+                m_state.vibSpeed[t] = (fx.val >> 4) & 0x0F;
+                m_state.vibDepth[t] = static_cast<float>(fx.val & 0x0F) * 1.0f;
+            }
+            else if (fx.cmd == FxCmd::NXT) {
+                if (t < 7 && m_state.pendingFreq[t] > 0.0f) {
+                    int nxtInst = fx.val & 0x7F;
+                    if (nxtInst < (int)m_state.instruments.size()) {
+                        m_voices[t + 1].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], &m_state.instruments[nxtInst], m_state.pendingNote[t]);
+                    }
+                }
+            }
         };
         parseFX(step.fx[0]); parseFX(step.fx[1]); parseFX(step.fx[2]);
-        
-        if (step.instr != INST_EMPTY) {
-            m_trackInstrument[t] = step.instr;
-        }
-        const Instrument* currentInst = nullptr;
-        if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < m_state.instruments.size()) {
-            currentInst = &m_state.instruments[m_trackInstrument[t]];
-        }
         
         float freq = 0.0f;
         float v = 0.64f;
         
         if (step.note != NOTE_EMPTY) {
-            // The instrument TRANSP flag gates chain/song transpose: ON (1, the
-            // default) follows transpose; OFF (0) plays the written note unchanged
-            // (used e.g. for drum samples that must not pitch-shift with transpose).
-            // Per the M8 manual it gates the SCALE too -- "Enable or disable
-            // scales per-instrument by editing the TRANSP. option in Instrument
-            // view" -- so one flag decides both.
             const bool transpOn = instTranspEnabled(currentInst);
             int effTranspose = transpOn ? transpose : 0;
-            int midi = step.note + effTranspose;
-            if (midi < 0) midi = 0;
-            if (midi > 127) midi = 127;
+            int midi = step.note + effTranspose + m_state.pendingPitchOffset[t];
+            midi = std::clamp(midi, 0, 127);
 
-            // A track follows the project's scale and key unless SCA gave it its
-            // own. PROJECT > SCALE selects the active scale, measured on fw
-            // 6.5.2; the manual's "Scale 00 is the default scale for all 8
-            // tracks" is just that field's default value.
             const int scaleIdx = m_state.trackScale[t] >= 0
                                ? m_state.trackScale[t]
                                : (m_state.project.scale & 0x0F);
@@ -470,27 +655,30 @@ void Engine::tickTrack(int t) {
             float pitch = transpOn ? quantizeToScale(midi, sc, key)
                                    : static_cast<float>(midi);
             pitch = std::clamp(pitch, 0.0f, 127.0f);
-            // TUNE is the A4 reference, so it applies whether or not the scale
-            // does -- it retunes the machine, it does not quantise. Default
-            // 440.00 reproduces the constant it replaced exactly.
-            // UNVERIFIED: whether TUNE is per-scale or global. The 42-byte scale
-            // record has no room for it, so it is almost certainly global and
-            // stored elsewhere; we read scale 0's copy, which is the same value
-            // either way while only scale 0 is ever active.
             freq = sc.tune * std::pow(2.0f, (pitch - 69.0f) / 12.0f);
 
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
+            v = std::clamp(v + m_state.pendingVolOffset[t], 0.0f, 1.0f);
             
             m_state.pendingFreq[t] = freq;
             m_state.pendingNote[t] = step.note;
             m_state.pendingVol[t] = v;
             m_state.pendingVolValid[t] = false;
             m_state.pendingInst[t] = currentInst;
+
+            if (m_state.slideTicks[t] > 0) {
+                m_state.slideTargetFreq[t] = freq;
+                if (m_state.slideStartFreq[t] <= 0.0f) m_state.slideStartFreq[t] = freq;
+            }
+            m_state.pendingVolOffset[t] = 0.0f;
+            m_state.pendingPitchOffset[t] = 0;
         } else if (step.note == NOTE_EMPTY && step.vol != VOL_EMPTY) {
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
+            v = std::clamp(v + m_state.pendingVolOffset[t], 0.0f, 1.0f);
             m_state.pendingVol[t] = v;
             m_state.pendingVolValid[t] = true;
             m_state.pendingFreq[t] = 0.0f;
+            m_state.pendingVolOffset[t] = 0.0f;
         } else {
             m_state.pendingFreq[t] = 0.0f;
         }
@@ -499,6 +687,9 @@ void Engine::tickTrack(int t) {
     // Execute pending FX logic
     if (m_state.pendingKil[t] == m_state.playTick[t]) {
         emitNoteOff(t);
+    }
+    if (m_state.pendingOff[t] == m_state.playTick[t]) {
+        m_voices[t].noteOff();
     }
     
     if (m_state.pendingDel[t] == m_state.playTick[t] || (m_state.pendingDel[t] == -1 && m_state.playTick[t] == 0)) {
@@ -521,14 +712,11 @@ void Engine::tickTrack(int t) {
             if (m_state.pendingInst[t]) {
                 notifyTrigSource(m_trackInstrument[t]);
             }
-            // Auto-assign instrument's own table (table index = trackInstrument[t])
-            // and initialize tick rate from tbl_tic. Only if no table was already assigned by TBL FX.
             if (m_tableState[t].assignedTable < 0) {
                 m_tableState[t].assignedTable = m_trackInstrument[t];
                 m_tableState[t].row = 0;
                 m_tableState[t].tickCount = 0;
             }
-            // Always sync tick rate from instrument tbl_tic (unless TIC FX overrides it)
             if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
                 m_tableState[t].tableTickRate = m_state.instruments[m_trackInstrument[t]].getTblTic();
             }
@@ -537,6 +725,67 @@ void Engine::tickTrack(int t) {
             m_voices[t].setVolume(m_state.pendingVol[t]);
             m_state.pendingVolValid[t] = false;
         }
+    }
+
+    // Per-tick RET (Retrigger)
+    if (m_state.retTicks[t] > 0) {
+        m_state.retTickCounter[t]++;
+        bool doRetrig = false;
+        if (m_state.retSingle[t]) {
+            if (m_state.retTickCounter[t] == m_state.retTicks[t]) {
+                doRetrig = true;
+                m_state.retTicks[t] = -1;
+            }
+        } else {
+            if (m_state.retTickCounter[t] % m_state.retTicks[t] == 0) {
+                doRetrig = true;
+                float curVol = m_state.pendingVol[t];
+                curVol = std::clamp(curVol + m_state.retVolDir[t] * 0.05f, 0.0f, 1.0f);
+                m_state.pendingVol[t] = curVol;
+            }
+        }
+        if (doRetrig && m_voices[t].isActive()) {
+            const Instrument* inst = (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) ? &m_state.instruments[m_trackInstrument[t]] : nullptr;
+            m_voices[t].noteOn(m_voices[t].getFrequency(), m_state.pendingVol[t], inst, m_state.pendingNote[t]);
+        }
+    }
+
+    // Per-tick ARP (Arpeggio)
+    if (m_state.arpActive[t] && (m_state.playTick[t] % m_state.arpSpeed[t] == 0)) {
+        if (m_state.arpMode[t] == 0) { // UP: 0 -> 1 -> 2
+            m_state.arpPhase[t] = (m_state.arpPhase[t] + 1) % 3;
+        } else if (m_state.arpMode[t] == 1) { // DOWN: 2 -> 1 -> 0
+            m_state.arpPhase[t] = (m_state.arpPhase[t] + 2) % 3;
+        } else if (m_state.arpMode[t] == 2) { // UP/DOWN: 0 -> 1 -> 2 -> 1
+            static const int updown[4] = {0, 1, 2, 1};
+            m_state.arpPhase[t] = updown[(m_state.playTick[t] / m_state.arpSpeed[t]) % 4];
+        } else { // RANDOM
+            m_state.arpPhase[t] = xorshift(m_state.rngState[t]) % 3;
+        }
+        int semi = m_state.arpInterval[m_state.arpPhase[t]][t];
+        float baseFreq = 440.0f * std::pow(2.0f, (m_state.pendingNote[t] - 69.0f) / 12.0f);
+        m_voices[t].setFrequency(baseFreq * std::pow(2.0f, semi / 12.0f));
+    }
+
+    // Per-tick PSL (Pitch Slide)
+    if (m_state.slideCounter[t] < m_state.slideTicks[t]) {
+        m_state.slideCounter[t]++;
+        float alpha = static_cast<float>(m_state.slideCounter[t]) / static_cast<float>(m_state.slideTicks[t]);
+        m_voices[t].setFrequency(m_state.slideStartFreq[t] * (1.0f - alpha) + m_state.slideTargetFreq[t] * alpha);
+    }
+
+    // Per-tick PBN (Pitch Bend)
+    if (m_state.pitchBendRate[t] != 0) {
+        m_state.pitchBendAccum[t] += static_cast<float>(m_state.pitchBendRate[t]) * 0.05f;
+        m_voices[t].setFrequency(m_voices[t].getFrequency() * std::pow(2.0f, (m_state.pitchBendRate[t] * 0.05f) / 12.0f));
+    }
+
+    // Per-tick PVB/PVX (Vibrato)
+    if (m_state.vibDepth[t] > 0.0f) {
+        m_state.vibPhase[t] += (m_state.vibSpeed[t] + 1) * 0.3f;
+        float lfo = std::sin(m_state.vibPhase[t]) * m_state.vibDepth[t];
+        float baseFreq = 440.0f * std::pow(2.0f, (m_state.pendingNote[t] - 69.0f) / 12.0f);
+        m_voices[t].setFrequency(baseFreq * std::pow(2.0f, lfo / 12.0f));
     }
     
     // Tick advancement
@@ -568,22 +817,48 @@ void Engine::tickTable(int t) {
     if (ts.assignedTable < 0) return;
     if (!valid(ts.assignedTable, Sequencer::NUM_TABLES)) return;
 
+    if (ts.delayCount > 0) {
+        ts.delayCount--;
+        return;
+    }
+
     const TableStep* row = &m_sequencer.tables[ts.assignedTable][ts.row];
+    TableStep effRow = *row;
+
+    // Table-level CHA
+    for (int f = 0; f < 3; ++f) {
+        if (effRow.fx[f].cmd == FxCmd::CHA) {
+            float prob = static_cast<float>(effRow.fx[f].val) / 255.0f;
+            float roll = (xorshift(m_state.rngState[t]) & 0xFFFF) / 65535.0f;
+            if (roll > prob) {
+                effRow.transp = 0;
+                effRow.vol = VOL_EMPTY;
+                for (int k = 0; k < f; ++k) effRow.fx[k] = {};
+            }
+        }
+    }
 
     // --- Apply table row modulation to the voice ---
-    float tableTransp = static_cast<float>(row->transp);  // semitones (signed)
-    float tableVol = (row->vol == VOL_EMPTY) ? 1.0f : (row->vol / 127.0f);
+    float tableTransp = static_cast<float>(effRow.transp);  // semitones (signed)
+    float tableVol = (effRow.vol == VOL_EMPTY) ? 1.0f : (effRow.vol / 127.0f);
+
+    // If auxTable is active, blend aux table modulation
+    if (ts.auxTable >= 0 && valid(ts.auxTable, Sequencer::NUM_TABLES)) {
+        const TableStep& auxRow = m_sequencer.tables[ts.auxTable][ts.auxRow];
+        tableTransp += static_cast<float>(auxRow.transp);
+        if (auxRow.vol != VOL_EMPTY) tableVol *= (auxRow.vol / 127.0f);
+        ts.auxRow = (ts.auxRow + 1) % Sequencer::ROWS;
+    }
 
     m_voices[t].setTableModulation(tableTransp, tableVol);
 
-    // --- Parse table-internal FX (VOL, PIT, HOP, TIC) ---
+    // --- Parse table-internal FX (VOL, PIT, HOP, THO, TIC, DEL) ---
     for (int f = 0; f < 3; ++f) {
-        const auto& fx = row->fx[f];
-        if (fx.cmd == FxCmd::HOP) {
+        const auto& fx = effRow.fx[f];
+        if (fx.cmd == FxCmd::HOP || fx.cmd == FxCmd::THO) {
             if (fx.val < Sequencer::ROWS) {
                 ts.row = fx.val;
                 ts.tickCount = 0;
-                // Immediately apply the target row's modulation
                 const TableStep* hopRow = &m_sequencer.tables[ts.assignedTable][ts.row];
                 float hopTransp = static_cast<float>(hopRow->transp);
                 float hopVol = (hopRow->vol == VOL_EMPTY) ? 1.0f : (hopRow->vol / 127.0f);
@@ -593,6 +868,10 @@ void Engine::tickTable(int t) {
         }
         else if (fx.cmd == FxCmd::TIC) {
             ts.perColTickRate[f] = fx.val;
+            ts.tableTickRate = fx.val;
+        }
+        else if (fx.cmd == FxCmd::DEL) {
+            ts.delayCount = fx.val;
         }
         else if (fx.cmd == FxCmd::VOL) {
             float fxVol = (fx.val <= 127) ? (fx.val / 127.0f) : 1.0f;
