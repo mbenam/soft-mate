@@ -99,6 +99,28 @@ TEST_CASE("Theme Settings: Navigation, Color Edits, and Reset", "[ui]") {
     REQUIRE(g_currentTheme.colors[0].r == 0x00);
     REQUIRE(g_currentTheme.colors[0].g == 0x00);
 
+    // Navigate to MODE row (row 0, col 0)
+    state.cursorRow = 0;
+    state.cursorCol = 0;
+    REQUIRE(state.isHsv == false);
+
+    // Press X to toggle to HSV mode
+    SDL_Event enterEv{};
+    enterEv.type = SDL_EVENT_KEY_DOWN;
+    enterEv.key.key = SDLK_X;
+    theme::HandleThemeInput(enterEv, false, arrow, state, vm);
+    REQUIRE(state.isHsv == true);
+
+    // Navigate to col 1 (Nudge <>)
+    theme::HandleThemeInput(rightEv, false, arrow, state, vm);
+    REQUIRE(state.cursorCol == 1);
+
+    // Edit Nudge <> (shifts hues)
+    uint8_t oldR = g_currentTheme.colors[1].r;
+    theme::HandleThemeInput(editEv, true, arrow, state, vm);
+    // Theme colors shifted
+    REQUIRE(g_currentTheme.colors[1].r != oldR || g_currentTheme.colors[1].g != 0x28 || g_currentTheme.colors[1].b != 0x30);
+
     // Option key (Z) exits Theme screen
     SDL_Event optEv{};
     optEv.type = SDL_EVENT_KEY_DOWN;

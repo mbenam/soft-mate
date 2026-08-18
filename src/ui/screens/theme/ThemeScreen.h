@@ -11,7 +11,8 @@ namespace theme {
 
 struct ThemeScreenState {
     int cursorRow = 1; // 0=MODE, 1..13=Colors, 14=NAME, 15=LOAD/SAVE/RESET
-    int cursorCol = 0; // 0=R, 1=G, 2=B (for colors), or 0=LOAD, 1=SAVE, 2=RESET
+    int cursorCol = 0; // 0=H/R, 1=S/G, 2=V/B (for colors), or 0=MODE/LOAD, 1=NUDGE/SAVE, 2=RESET
+    bool isHsv = false; // Toggle between RGB and HSV modes
     int nameCharIndex = 0;
 };
 
