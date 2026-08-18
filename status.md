@@ -653,9 +653,12 @@ is implemented and verified.
   guessing it would violate `AGENTS.md` §4. See memory `sampler-slice-repitch-hw`.
 - **`SLICE` playback** ignored (value stored/saved only). Encoding now **hardware-verified** (device
   screen, 2026-07-17): `00`=OFF, `01`=FILE (WAV-embedded markers, needs cue-chunk parsing),
-  `02`–`0x80` = 2–128 equal divisions (byte value = slice count). Equal-division playback is now
-  implementable — the note→slice base (C-1 = MIDI 24, derived from C-4=60) and the START/LENGTH
-  interaction want a quick audible confirm first. FILE-marker mode is a separate feature. See memory
+  `02`–`0x80` = 2–128 equal divisions (byte value = slice count). **The note→slice base is MIDI
+  note 0, not MIDI 24** — measured 2026-08-18 by keyjazz capture at SLICE `04`: notes 0–3 each play
+  a different quarter, notes 4+ are silent, and the earlier "C-1 = MIDI 24, derived from C-4=60"
+  was a derivation, not a measurement. Also measured: **START is ignored** when slicing (slice 0 at
+  START `00` vs `40` correlates 0.948). Equal-division playback is now fully specified — see
+  `SAMPLER_EDITOR_SPEC.md` §3. FILE-marker mode is a separate feature. See memory
   `sampler-slice-repitch-hw`.
 - **`FILTER` 05** (LP>HP) passes through (not modeled). **`LIM` 06–08** (POST:W1–W3) fall back to
   post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`

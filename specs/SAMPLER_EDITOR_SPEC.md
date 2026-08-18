@@ -72,7 +72,7 @@ attempt more than one per pass**.
 | F | Recording | large | needs an audio input path |
 
 **PLAY `09`–`0E` is deliberately not on this list.** It is blocked on a
-measurement nobody has taken (§8.1), and guessing the tempo law would violate
+measurement nobody has taken (Q1), and guessing the tempo law would violate
 `AGENTS.md` §4. Take the measurement first, then spec it.
 
 ---
@@ -89,8 +89,13 @@ Read off the device screen 2026-07-17 (recorded in `status.md`):
 | `01` | FILE — use the markers embedded in the WAV (needs C) |
 | `02`–`0x80` | 2–128 equal divisions; **the byte value is the slice count** |
 
-Slices map to notes from **C-1 = MIDI 24** upward: slice index `= note - 24`.
-(C-4 = 60 is the sampler root, and C-1 is three octaves below.)
+**Slice index = the MIDI note number, starting at 0** — measured 2026-08-18
+(§9.5). Note 0 plays slice 0, note 1 slice 1, and so on. Notes at or above the
+slice count are **silent**: they neither wrap nor clamp.
+
+`status.md` currently says the base is "C-1 = MIDI 24, derived from C-4=60".
+That derivation is **wrong** and this measurement replaces it. The device's
+lowest displayed octave maps to MIDI 0 in the keyjazz numbering, not to 24.
 
 ### 3.2 What to implement
 
@@ -101,12 +106,17 @@ In `SamplerEngine::computeRegion`, when `s.slice >= 2`:
 
 ```cpp
     const int count = std::clamp(s.slice, 2, 128);
-    const int idx   = std::clamp(noteMidi - 24, 0, count - 1);   // C-1 upward
+    const int idx   = noteMidi;                    // slice index IS the note
+    if (idx >= count) { m_finished = true; return; }   // out of range == silent
     const int32_t sliceLen = frames / count;
     m_startFrame = idx * sliceLen;
     m_loopStart  = m_startFrame;
     m_loopEnd    = m_startFrame + sliceLen;
 ```
+
+Note the early-out. A note past the last slice produces **nothing** on hardware
+(§9.5) — do not clamp it to the last slice, which is the obvious-looking thing
+to write and is audibly wrong.
 
 `computeRegion` does not currently receive the note. It is called from
 `SamplerEngine::noteOn` and from `SynthVoice::noteOn`; both have the frequency
@@ -115,17 +125,17 @@ from frequency — a derived note is wrong the moment DETUNE or a table transpos
 is in play, and slice choice must follow the written note, not the sounding
 pitch.
 
-### 3.3 The one thing to confirm on hardware first
+### 3.3 START is ignored when slicing — measured
 
-How SLICE interacts with `START` and `LENGTH` is **not** measured. Two readings
-are plausible: slices divide the whole file and ignore START/LENGTH, or they
-divide the START..START+LENGTH region. Settle it with one capture before
-writing the code — set SLICE to `04`, START to `40`, play C-1 and C-2, and see
-whether the onsets move.
+Slices divide the **whole file**. `START` has no effect on them: captured at
+SLICE `04`, note 0, with START `00` and START `40`, the two recordings align at
+**r = 0.948** (§9.6) — the same audio, within the jitter of capturing a
+percussive sample twice. Meanwhile slices 1, 2 and 3 correlate with slice 0 at
+only 0.08–0.23, so the four regions really are four different quarters.
 
-Until then, implement "slices divide the whole file", which is the simpler
-reading and matches how the manual describes it ("slices the sample into equal
-length sections"), and leave a comment saying it is unconfirmed.
+So `computeRegion` should compute the slice region from `frames` and ignore
+`s.start` entirely when `s.slice >= 2`. `LENGTH` was not tested separately;
+treat it as ignored too and say so in a comment.
 
 ---
 
@@ -243,6 +253,11 @@ Do not reuse the instrument screen's byte scaling here.
 
 Vertical: `RECORD → SELECT → LOOP REGION → SLICE MARKER → PROCESS → NAME → SAVE`.
 
+**The editor opens with the cursor on `SELECT`, not on `RECORD`**, when a sample
+is loaded. Worth matching, and worth knowing while scripting the device: two
+enumeration attempts during this work mis-landed because they assumed the
+cursor started at the top.
+
 Horizontal on the RECORD row: `START → SRC → VOL → ARM → SONG`.
 
 `SELECT` and `LOOP REGION` each have two values; treat them as two cursor stops
@@ -284,9 +299,29 @@ the first four; lazy chop needs the transport and belongs with F.
 
 ## 7. E — PROCESS actions
 
-Sixteen actions from the manual: CROP, DELETE, DUPLICATE, NORMALIZE, SILENCE,
-REVERSE, INVERT, FADE IN, FADE OUT, XFADE LOOP, SQUISH (OTT), MONO:MIX/LEFT/RIGHT,
-DOWNSAMPLE, 16-BIT, 8-BIT, SLICE:AUTO, SLICE:SILENC, SLICE:[0-128].
+The list, **measured off the device** 2026-08-18 by stepping `EDIT`+`RIGHT`
+from the top (§9.4). Use these strings, not the manual's:
+
+| # | String | | # | String |
+|---|---|---|---|---|
+| 0 | `CROP` | | 9 | `XFADE LOOP` |
+| 1 | `DELETE` | | 10 | `SQUISH(OTT)` |
+| 2 | `DUPLICATE` | | 11 | `MONO:MIX` |
+| 3 | `NORMALIZE` | | 12 | `MONO:LEFT` |
+| 4 | `SILENCE` | | 13 | `MONO:RIGHT` |
+| 5 | `REVERSE` | | 14 | `DOWNSAMPLE` |
+| 6 | `INVERT` | | 15 | `8-BIT` |
+| 7 | `FADE IN` | | 16 | `SLICE:AUTO` |
+| 8 | `FADE OUT` | | 17 | `SLICE:SILEN` |
+| | | | 18+ | `SLICE:002` … `SLICE:128` |
+
+Two differences from the manual worth noting. It writes `SLICE:SILENC`; the
+device draws `SLICE:SILEN`. It lists `16-BIT/8-BIT`; the device offered only
+`8-BIT` for the 16-bit sample under test — so **`16-BIT` is conditional on the
+source bit depth** and simply absent when it would be a no-op. Match that:
+build the list per-sample rather than as a fixed array.
+
+`SLICE:NNN` starts at `002`, so the manual's `SLICE:[0-128]` means 2–128.
 
 All but three are straightforward buffer operations on the SELECT range and need
 no hardware reference: CROP, DELETE, DUPLICATE, NORMALIZE, SILENCE, REVERSE,
@@ -390,7 +425,38 @@ Stepping `EDIT`+`RIGHT` from `L&R` to the end stop gave, in order:
 `L&R, MIC, USB, INL, INR, U.L, U.R, ALL, T1, T2, T3, T4, T5, T6, T7, T8` — 16
 values, no wrap.
 
-### 9.4 Behaviours worth copying
+### 9.4 The PROCESS list
+
+Enumerated by stepping `EDIT`+`RIGHT` from `CROP` with `ST-01/ALIGATOR.WAV`
+loaded. 26 presses reached `SLICE:010`, with the `SLICE:NNN` run continuing;
+the full list is in §7. With **no** sample loaded the field does not move at all.
+
+### 9.5 Slice index is the raw MIDI note
+
+`SLICE` set to `04` (drawn `04(004)` — the byte, then the resulting slice count
+in parentheses), everything else default, keyjazz captures:
+
+| Note | Peak | |
+|---|---|---|
+| 0 | 0.2142 | slice 0 |
+| 1 | 0.1769 | slice 1 |
+| 2 | 0.1615 | slice 2 |
+| 3 | 0.1460 | slice 3 |
+| 4, 5 | 0.0000 | past the last slice — silent |
+| 12, 24, 25, 26, 36, 48, 60, 61 | 0.0000 | silent |
+
+Control: the same instrument with `SLICE` at `00` plays note 60 at peak 0.19.
+So the silence is slicing, not the instrument.
+
+The four sounding notes are genuinely different audio — cross-correlated against
+slice 0, slices 1/2/3 score 0.08 / 0.15 / 0.23.
+
+### 9.6 START does not move a slice
+
+Slice 0 captured with `START` at `00` and at `40`: aligned correlation
+**+0.948** at a 192-sample lag, peaks 0.2142 vs 0.2100. Same region.
+
+### 9.7 Behaviours worth copying
 
 - `PROCESS` does not respond at all when no sample is loaded.
 - `OPT` from the editor returns to the instrument screen with no confirmation
@@ -426,11 +492,34 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
   it: how STEPS maps to a count, whether REPITCH repitches while BPM
   time-stretches, and what the ratio law is. `status.md` has the screen mapping
   already (REPITCH exposes STEPS, BPM exposes BPM, in the row under PLAY,
-  default `0x80`) but not the audio behaviour. One capture session with a
-  known-length loop at two tempi settles it.
-- **Q2 — SLICE vs START/LENGTH** (§3.3).
-- **Q3 — the PROCESS strings** (§7).
-- **Q4 — XFADE LOOP curve, SLICE:AUTO/SILENC thresholds** (§7).
+  default `0x80`) but not the audio behaviour.
+
+  **How to settle it:** load a sample of known length, set PLAY to `09`
+  (REPITCH), and capture the same note at two project tempi — 120 and 240 BPM.
+  Measure both the fundamental and the played duration. If the duration halves
+  and the pitch is unchanged, it time-stretches; if the pitch doubles and the
+  duration halves, it repitches. Repeat with STEPS at `0x80` and `0x40` to get
+  the STEPS ratio, then again with PLAY `0C` (REP.BPM) to see how the BPM family
+  differs. Six captures, one session. The measuring tools already exist —
+  `m8_capture` plus the cycle-extraction in
+  `tools/wavetables/compare_capture.py`.
+- ~~**Q2 — SLICE vs START/LENGTH**~~ — **resolved** 2026-08-18 (§3.3, §9.6):
+  START is ignored; slices divide the whole file.
+- ~~**Q3 — the PROCESS strings**~~ — **resolved** 2026-08-18 (§7, §9.4), and it
+  turned up a conditional entry (`16-BIT`) the manual does not mention.
+- **Q4 — XFADE LOOP curve, SLICE:AUTO/SILEN thresholds** (§7).
+
+  **How to settle the slice ones cheaply:** they are screen-readable, no audio
+  needed. Run `SLICE:AUTO` on a sample, then step the `SLICE MARKER` field —
+  it displays `NN:XXXXXXXX`, marker index and frame position — and read every
+  marker off the screen. Do the same with `SLICE:SILEN`. Compare against the
+  same WAV analysed locally to back out the threshold. The catch is that the
+  sample must exist on both the SD card and our disk; the M8 factory samples are
+  not in this repo, so record a short test WAV, put it on the card, and use that.
+
+  XFADE LOOP is harder — it needs the processed audio back, which means saving
+  to the card and capturing playback rather than reading a screen. Equal-power
+  is a reasonable default until someone wants it exact.
 - **Q5 — the upper-pitch limit.** The manual describes a pitch ceiling enforced
   per bit depth and channel count, because the device streams from SD. We hold
   samples in RAM and have no such constraint. Almost certainly correct to ignore;
