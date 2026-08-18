@@ -10,6 +10,9 @@
 | `docs/tools/agent_guide.md` | reference | active | Operational guide for driving real M8 hardware over serial |
 | `docs/tools/hw_findings.md` | findings | active | Append-only record of hardware measurements and empirical findings |
 | `docs/tools/m8_*.md` (9 files) | reference | active | Tool docs (`analyze`, `capture`, `composesong`, `diffcheck`, `makeprobe`, `makesong`, `nav`, `render`, `spectrum`) |
+| `docs/tools/m8drv.md` | reference | active | Unattended hardware driver (Python supervision layer over `m8_nav --serve`) |
+| `docs/tools/extract_manual_wavetables.md` | reference | active | Digitises the 61 WavSynth wave tables out of the manual's vector Wave Table Index |
+| `docs/tools/compare_capture.md` | reference | active | Verifies digitised wave table frames against a real-hardware capture |
 | `songs/README.md` | reference | active | Demo song structures, asset paths, and playback instructions |
 | `src/engine/braids/README.md` | reference | active | Braids oscillator port notes and licensing |
 | `tests/fixtures/measurements/unverified/README.md` | reference | active | Quarantined measurement records lacking verified inputs |
@@ -26,7 +29,9 @@
 | `specs/M8_MEASUREMENT_EVIDENCE_SPEC.md` | plan | active | Reproducible measurement artifacts plan (W4-W5 invalidated) |
 | `specs/M8_SAMPLER_COMPLETION_SPEC.md` | plan | active | Sampler instrument feature completion plan |
 | `specs/TABLE_IMPLEMENTATION.md` | plan | active | Table execution engine implementation plan |
-| `specs/WAVSYNTH_IMPLEMENTATION.md` | plan | active | Real-time wavetable synth implementation plan |
+| `specs/WAVSYNTH_IMPLEMENTATION.md` | plan | active | Real-time wavetable synth implementation plan (Phase 1; DSP sections superseded by the Phase 2 spec) |
+| `specs/WAVSYNTH_PHASE2_SPEC.md` | plan | active | WavSynth UI screen, DSP rebuild, 9 base shapes — hardware-measured layout and enums |
+| `specs/WAVSYNTH_PHASE3_SPEC.md` | plan | active | The 61 built-in wave tables, digitised from the manual and verified against hardware |
 | `archive/BUG_TESTFILE_DC_DRONE.md` | plan | complete-archived | Archived fix record for DC drone bug |
 | `archive/M8_AUDIO_ANALYSIS_SPEC.md` | plan | complete-archived | Audio analysis & A/B spectrum tools spec (see `docs/tools/m8_analyze.md`) |
 | `archive/M8_CAPTURE_SPEC.md` | plan | complete-archived | Hardware audio capture spec (see `docs/tools/m8_capture.md`) |

@@ -23,6 +23,8 @@ it's the main app). None of them require the full `m8_clone` app to build or run
 | [`m8_nav`](m8_nav.md) | hardware device driver | Decodes the M8's serial display protocol; navigates screens, edits fields, loads files, runs `.m8script` scripts — closed-loop, verified against the real framebuffer. The most complex tool here, under active reliability work. |
 | [`m8_diffcheck`](m8_diffcheck.md) | device-vs-golden diff | Runs a `.m8script` on the real device and diffs the resulting screen against a stored text reference. |
 | [`m8drv`](m8drv.md) | unattended driver (Python) | Holds **one** `m8_nav --serve` connection open and supervises it: per-command timeouts, kill/restart/re-home recovery, and up-front refusal of fields that provably can't be driven. Not a second driver — the supervision layer that lets an agent drive the device with no human hand on it. |
+| [`extract_manual_wavetables`](extract_manual_wavetables.md) | data extraction (Python) | Digitises the 61 WavSynth wave tables out of the manual's Wave Table Index — the plots there are vector polylines, so the index is a machine-readable source for the data itself. Emits the engine's generated wave table bank. |
+| [`compare_capture`](compare_capture.md) | wave table verification (Python) | Folds an `m8_capture` recording down to one averaged cycle and reports which of a wave table's 64 frames it matches. How the extraction above was verified against real hardware. |
 
 **Not covered by a doc here** (out of this index's scope, documented elsewhere):
 - `m8_clone` — the actual application (SDL3 UI + engine + headless `.m8script` runner). See
@@ -56,6 +58,20 @@ m8_makeprobe --type sampler --sample-path ...  →  probe.m8s
                     ↓
         m8_spectrum --ref ref.wav --test mine.wav  →  where do they diverge
         m8_analyze ref.wav  →  is the *capture itself* healthy (not silent, not clipped)
+```
+
+**Wave table digitisation loop** (the manual is the data source; hardware is the check):
+```
+manual/wavesynth.pdf
+        ↓
+extract_manual_wavetables  →  src/engine/data/WavetableBank.cpp  (compiled into m8_engine)
+                           →  wavetables.bin  (--bin, for the comparator only)
+        ↓
+m8drv batch  →  set the device to one wave table, everything else neutral
+        ↓
+m8_capture --keyjazz 36  →  cap.wav
+        ↓
+compare_capture cap.wav <TABLE> --scan <byte>  →  which frame is this, really
 ```
 
 **Device-driver testing** (no audio involved, screen-state only):
