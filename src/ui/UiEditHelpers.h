@@ -59,7 +59,7 @@ inline void ModifyValue(m8::engine::Step& step, int col, int delta, bool largeSt
     } else if (col == 3 || col == 5 || col == 7) {
         // FX Command
         int idx = (col == 3) ? 0 : (col == 5) ? 1 : 2;
-        constexpr int kMaxFx = static_cast<int>(FxCmd::LT2);
+        constexpr int kMaxFx = static_cast<int>(FxCmd::USB);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;
@@ -109,7 +109,7 @@ inline void ModifyTableValue(m8::engine::TableStep& step, int col, int delta, bo
     } else if (col == 2 || col == 4 || col == 6) {
         // FX Command
         int idx = (col == 2) ? 0 : (col == 4) ? 1 : 2;
-        constexpr int kMaxFx = static_cast<int>(FxCmd::LT2);
+        constexpr int kMaxFx = static_cast<int>(FxCmd::USB);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;

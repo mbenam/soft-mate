@@ -236,6 +236,17 @@ struct Instrument {
         default: return 0;
         }
     }
+
+    void setEq(int val) {
+        switch (type) {
+        case InstType::INST_SAMPLER:  sampler.eq = val; break;
+        case InstType::INST_MACROSYN: macrosyn.eq = val; break;
+        case InstType::INST_HYPERSYN: hyper.eq = val; break;
+        case InstType::INST_FMSYNTH:  fm.eq = val; break;
+        case InstType::INST_WAVSYNTH: wav.eq = val; break;
+        default: break;
+        }
+    }
 };
 
 struct ProjectSettings {
@@ -428,6 +439,7 @@ struct EffectsState {
     // chorus; SHIMMER is a pitch-shifted reverb feedback path.
     int modfx_type   = 0x00;  // +25. 00 Chorus, 01 Phaser, 02 Flanger.
     int rev_shimmer  = 0x00;  // +22.
+    bool rev_freeze  = false;
 };
 
 struct TableState {

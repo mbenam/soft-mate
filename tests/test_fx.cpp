@@ -269,3 +269,32 @@ TEST_CASE("FX: Instrument Mod Parameter offsets", "[fx]") {
     REQUIRE(notes.size() >= 1);
 }
 
+TEST_CASE("FX: Mixer volumes and DJ filter commands", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::VMV, 0xA0);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::VT1, 0xC0);
+    setFx(host.sequencer(), 0, 0, 2, FxCmd::DJC, 0x40);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.2);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+}
+
+TEST_CASE("FX: Send Effects XDT and XRD parameters", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::XDT, 0x34);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::XDF, 0x80);
+    setFx(host.sequencer(), 0, 0, 2, FxCmd::XRD, 0x90);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.2);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+}
+
+

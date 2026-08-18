@@ -684,6 +684,97 @@ void Engine::tickTrack(int t) {
             else if (fx.cmd == FxCmd::LF2) {
                 m_voices[t].m_modP3Offset[1] += static_cast<int8_t>(fx.val);
             }
+            else if (fx.cmd == FxCmd::VMV) {
+                m_state.mixer.mix_vol = fx.val;
+            }
+            else if (fx.cmd == FxCmd::VMX) {
+                m_state.mixer.cho_vol = fx.val;
+            }
+            else if (fx.cmd == FxCmd::VDE) {
+                m_state.mixer.del_vol = fx.val;
+            }
+            else if (fx.cmd == FxCmd::VRE) {
+                m_state.mixer.rev_vol = fx.val;
+            }
+            else if (fx.cmd >= FxCmd::VT1 && fx.cmd <= FxCmd::VT8) {
+                int trk = static_cast<int>(fx.cmd) - static_cast<int>(FxCmd::VT1);
+                m_state.mixer.track_vol[trk] = fx.val;
+            }
+            else if (fx.cmd == FxCmd::DJC) {
+                m_state.mixer.djf_freq = fx.val;
+            }
+            else if (fx.cmd == FxCmd::DJR) {
+                m_state.mixer.djf_res = fx.val;
+            }
+            else if (fx.cmd == FxCmd::DJT) {
+                m_state.mixer.djf_typ = fx.val;
+            }
+            else if (fx.cmd == FxCmd::EQI) {
+                if (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) {
+                    m_state.instruments[m_trackInstrument[t]].setEq(fx.val & 0x7F);
+                }
+            }
+            else if (fx.cmd == FxCmd::XMT) {
+                m_state.effects.modfx_type = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XMM) {
+                m_state.effects.cho_mod_depth = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XMF) {
+                m_state.effects.cho_mod_freq = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XMW) {
+                m_state.effects.cho_width = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XMR) {
+                m_state.effects.cho_reverb = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XDT) {
+                m_state.effects.del_time_l = ((fx.val >> 4) & 0x0F) * 16;
+                m_state.effects.del_time_r = (fx.val & 0x0F) * 16;
+            }
+            else if (fx.cmd == FxCmd::XDF) {
+                m_state.effects.del_feedback = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XDW) {
+                m_state.effects.del_width = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XDR) {
+                m_state.effects.del_reverb = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRS) {
+                m_state.effects.rev_size = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRD) {
+                m_state.effects.rev_decay = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRM) {
+                m_state.effects.rev_mod_depth = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRF) {
+                m_state.effects.rev_mod_freq = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRW) {
+                m_state.effects.rev_width = fx.val;
+            }
+            else if (fx.cmd == FxCmd::XRZ) {
+                m_state.effects.rev_freeze = (fx.val > 0);
+            }
+            else if (fx.cmd == FxCmd::IVO || fx.cmd == FxCmd::IV2) {
+                m_state.mixer.in_vol = fx.val;
+            }
+            else if (fx.cmd == FxCmd::IMX || fx.cmd == FxCmd::IM2) {
+                m_state.mixer.in_cho = fx.val;
+            }
+            else if (fx.cmd == FxCmd::IDE || fx.cmd == FxCmd::ID2) {
+                m_state.mixer.in_del = fx.val;
+            }
+            else if (fx.cmd == FxCmd::IRV || fx.cmd == FxCmd::IR2) {
+                m_state.mixer.in_rev = fx.val;
+            }
+            else if (fx.cmd == FxCmd::USB) {
+                m_state.mixer.usb_vol = fx.val;
+            }
         };
         parseFX(step.fx[0]); parseFX(step.fx[1]); parseFX(step.fx[2]);
         

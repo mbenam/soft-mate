@@ -135,11 +135,12 @@ word.
 Song→chain→phrase across 8 tracks, all advancing the song row together (empty chain = rest).
 Chain transpose, **gated per-instrument by the TRANSP flag** (TRANSP OFF ignores transpose, e.g.
 for drum samples — `Engine.cpp`, test B4.12). Groove/swing with 32 groove banks.
-**All Sequencer & Common Instrument FX commands implemented and tested (2026-08-18):**
+**All Sequencer, Instrument & Mixer FX commands implemented and tested (2026-08-18):**
 `DEL`, `KIL`, `OFF`, `HOP`, `TBL`, `TBX`, `THO`, `GRV`, `GGR`, `SCA`, `SCG`, `TIC`, `VOL`, `PIT`,
 `ARP`, `ARC`, `CHA`, `SED`, `RND`, `RNL`, `RET`, `REP`, `RTO`, `PSL`, `PBN`, `PVB`, `PVX`, `SNG`,
 `RMX`, `NTH`, `NXT`, `TPO`, `TSP`, `INS`, `MTT`,
-`FIN`, `EA1`, `EA2`, `AT1`, `AT2`, `HO1`, `HO2`, `DE1`, `DE2`, `ET1`, `ET2`, `LA1`, `LA2`, `LF1`, `LF2`, `LT1`, `LT2`.
+`FIN`, `EA1`, `EA2`, `AT1`, `AT2`, `HO1`, `HO2`, `DE1`, `DE2`, `ET1`, `ET2`, `LA1`, `LA2`, `LF1`, `LF2`, `LT1`, `LT2`,
+`EQM`, `EQI`, `VMV`, `VMX`, `VDE`, `VRE`, `VT1`..`VT8`, `DJC`, `DJR`, `DJT`, `XMT`, `XMM`, `XMF`, `XMW`, `XMR`, `XDT`, `XDF`, `XDW`, `XDR`, `XRS`, `XRD`, `XRM`, `XRF`, `XRW`, `XRZ`, `IVO`, `IMX`, `IDE`, `IRV`, `IV2`, `IM2`, `ID2`, `IR2`, `USB`.
 Bounds-checked, fuzzed 10k under ASan. Note release on chain end.
 
 ### Audio engine

@@ -118,11 +118,18 @@ enum class FxCmd : uint8_t {
 | LA1/LA2 | yes | -- | preserved | yes | **Implemented** |
 | LF1/LF2 | yes | -- | preserved | yes | **Implemented** |
 | LT1/LT2 | yes | -- | preserved | yes | **Implemented** |
+| EQM/EQI | yes | -- | preserved | yes | **Implemented** |
+| VMV/VMX/VDE/VRE | yes | -- | preserved | yes | **Implemented** |
+| VT1..VT8 | yes | -- | preserved | yes | **Implemented** |
+| DJC/DJR/DJT | yes | -- | preserved | yes | **Implemented** |
+| XMT/XMM/XMF/XMW/XMR | yes | -- | preserved | yes | **Implemented** |
+| XDT/XDF/XDW/XDR | yes | -- | preserved | yes | **Implemented** |
+| XRS/XRD/XRM/XRF/XRW/XRZ | yes | -- | preserved | yes | **Implemented** |
+| IVO/IMX/IDE/IRV | yes | -- | preserved | yes | **Implemented** |
+| IV2/IM2/ID2/IR2 | yes | -- | preserved | yes | **Implemented** |
+| USB | yes | -- | preserved | yes | **Implemented** |
 
-**Sequencer & Common Instrument FX Implementation Complete (2026-08-18).** All sequencer and common instrument FX commands are implemented, selectable in UI edit modes, active at tick time in both phrase and table engines, and covered by unit tests (`[fx]`). Unmodeled commands continue to preserve their raw bytes for lossless `.m8s` file round-trips.
-
-### Remaining Unimplemented FX Categories
-- **Mixer / Send Effect FX**: `VMV`, `VMX`, `VDE`, `VRE`, `VT1`..`VT8`, `XDT`, `XDF`, etc. (Part J).
+**Full M8 FX Suite Implementation Complete (2026-08-18).** All sequencer, instrument parameter/modulation, and mixer/effects commands are implemented, selectable in UI edit modes, active at tick time in both phrase and table engines, and covered by unit tests (`[fx]`). Unmodeled commands continue to preserve their raw bytes for lossless `.m8s` file round-trips.
 
 ---
 
@@ -1025,9 +1032,7 @@ These commands directly modify `EngineState.mixer` and `EngineState.effects`.
 
 All mixer/FX commands are **absolute** (not relative).
 
-**Implementation**: In `tickTrack` parseFX, after the existing command dispatch,
-add a fallthrough for these commands that directly writes to the mixer/effects
-struct.
+**Implemented (2026-08-18)**: All mixer, send effects, and line input commands are implemented in `Engine.cpp` `parseFX`, selectable across UI views, and verified in `test_fx.cpp`.
 
 ---
 
