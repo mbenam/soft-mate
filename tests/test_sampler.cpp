@@ -718,3 +718,77 @@ TEST_CASE("Sampler BPM mode playback ratio", "[sampler]") {
 
     freeSample(sd);
 }
+
+TEST_CASE("SampleEditor SLICE:AUTO detects transients", "[sampler]") {
+    using namespace m8::ui::sample_editor;
+
+    // Buffer with three bursts: frame 0, frame 500, frame 1200
+    SampleData sd{};
+    sd.frames = 2000;
+    sd.channels = 1;
+    sd.sampleRate = 44100;
+    sd.data = (float*)calloc(2000, sizeof(float));
+
+    for (int i = 0; i < 50; ++i) sd.data[0 + i] = 0.8f;
+    for (int i = 0; i < 50; ++i) sd.data[500 + i] = 0.9f;
+    for (int i = 0; i < 50; ++i) sd.data[1200 + i] = 0.85f;
+
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    SampleEditorState st;
+    st.init(0, inst, &sd);
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.key = SDLK_RETURN;
+    st.row = CursorRow::PROCESS;
+    st.processIndex = 16; // SLICE:AUTO
+    st.subCol = 1; // '>'
+
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
+
+    // Marker 0 is at 0, and markers should be detected near 500 and 1200
+    REQUIRE(sd.sliceMarkerCount >= 3);
+    REQUIRE(sd.sliceMarkers[0] == 0);
+    REQUIRE(std::abs(static_cast<int>(sd.sliceMarkers[1]) - 500) < 100);
+    REQUIRE(std::abs(static_cast<int>(sd.sliceMarkers[2]) - 1200) < 100);
+
+    st.freeUndo();
+    freeSample(sd);
+}
+
+TEST_CASE("SampleEditor SLICE:SILEN detects sound onsets after silence", "[sampler]") {
+    using namespace m8::ui::sample_editor;
+
+    // 0..400 tone, 400..900 silence (0), 900..1500 tone, 1500..2000 silence
+    SampleData sd{};
+    sd.frames = 2000;
+    sd.channels = 1;
+    sd.sampleRate = 44100;
+    sd.data = (float*)calloc(2000, sizeof(float));
+
+    for (int i = 0; i < 400; ++i) sd.data[i] = 0.5f;
+    for (int i = 900; i < 1500; ++i) sd.data[i] = 0.5f;
+
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    SampleEditorState st;
+    st.init(0, inst, &sd);
+
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.key = SDLK_RETURN;
+    st.row = CursorRow::PROCESS;
+    st.processIndex = 17; // SLICE:SILEN
+    st.subCol = 1;
+
+    HandleSampleEditorInput(ev, true, false, *(m8::engine::EngineState*)nullptr, st, &sd, *(m8::ui::CommandSink*)nullptr);
+
+    // Marker 0 at 0, second marker near 900
+    REQUIRE(sd.sliceMarkerCount >= 2);
+    REQUIRE(sd.sliceMarkers[0] == 0);
+    REQUIRE(std::abs(static_cast<int>(sd.sliceMarkers[1]) - 900) < 150);
+
+    st.freeUndo();
+    freeSample(sd);
+}

@@ -417,8 +417,84 @@ static void ExecuteProcess(SampleEditorState& st, engine::SampleData* sd, int pr
         }
         break;
     }
-    case 16: // SLICE:AUTO
-    case 17: // SLICE:SILEN
+    case 16: { // SLICE:AUTO (Transient Onset Detection)
+        std::vector<uint32_t> markers;
+        markers.push_back(0);
+        constexpr int kHop = 32;
+        constexpr int kWin = 64;
+        constexpr int kMinDistance = 128;
+        if (frames > kWin * 2) {
+            float prevEnergy = 0.0f;
+            uint32_t lastMarker = 0;
+            for (uint32_t f = kWin; f + kWin <= frames; f += kHop) {
+                float energy = 0.0f;
+                for (int i = 0; i < kWin; ++i) {
+                    for (int c = 0; c < ch; ++c) {
+                        float v = sd->data[(f + i) * ch + c];
+                        energy += v * v;
+                    }
+                }
+                energy /= (kWin * ch);
+                float diff = energy - prevEnergy;
+                if (diff > 0.004f && (f - lastMarker >= kMinDistance)) {
+                    // Pinpoint the first sample in this window crossing above floor
+                    uint32_t onset = f;
+                    for (int i = 0; i < kWin && f + i < frames; ++i) {
+                        float maxSamp = 0.0f;
+                        for (int c = 0; c < ch; ++c) maxSamp = std::max(maxSamp, std::abs(sd->data[(f + i) * ch + c]));
+                        if (maxSamp > 0.05f) { onset = f + i; break; }
+                    }
+                    if (onset > lastMarker + 64) {
+                        markers.push_back(onset);
+                        lastMarker = onset;
+                        if (markers.size() >= engine::SampleData::kMaxSliceMarkers) break;
+                    }
+                }
+                prevEnergy = energy * 0.85f;
+            }
+        }
+        sd->sliceMarkerCount = static_cast<int>(markers.size());
+        for (size_t m = 0; m < markers.size(); ++m) {
+            sd->sliceMarkers[m] = markers[m];
+        }
+        break;
+    }
+    case 17: { // SLICE:SILEN (Silence Slicing)
+        std::vector<uint32_t> markers;
+        markers.push_back(0);
+        constexpr int kBlock = 128;
+        constexpr float kSilenceThreshold = 0.002f; // ~ -54 dB
+        bool inSilence = false;
+        uint32_t silenceLen = 0;
+        for (uint32_t f = 0; f + kBlock <= frames; f += kBlock) {
+            float rms = 0.0f;
+            for (int i = 0; i < kBlock; ++i) {
+                for (int c = 0; c < ch; ++c) {
+                    float v = sd->data[(f + i) * ch + c];
+                    rms += v * v;
+                }
+            }
+            rms = std::sqrt(rms / (kBlock * ch));
+            if (rms < kSilenceThreshold) {
+                silenceLen += kBlock;
+                if (silenceLen >= 256) inSilence = true;
+            } else {
+                if (inSilence && f > 0) {
+                    if (markers.back() != f) {
+                        markers.push_back(f);
+                        if (markers.size() >= engine::SampleData::kMaxSliceMarkers) break;
+                    }
+                    inSilence = false;
+                }
+                silenceLen = 0;
+            }
+        }
+        sd->sliceMarkerCount = static_cast<int>(markers.size());
+        for (size_t m = 0; m < markers.size(); ++m) {
+            sd->sliceMarkers[m] = markers[m];
+        }
+        break;
+    }
     default: { // SLICE:002..128
         int sliceCount = (processIdx >= 18) ? (processIdx - 18 + 2) : 16;
         sliceCount = std::clamp(sliceCount, 2, 128);

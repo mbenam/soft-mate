@@ -633,25 +633,10 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
   START is ignored; slices divide the whole file.
 - ~~**Q3 — the PROCESS strings**~~ — **resolved** 2026-08-18 (§7, §9.4), and it
   turned up a conditional entry (`16-BIT`) the manual does not mention.
-- **Q4 — XFADE LOOP curve, SLICE:AUTO/SILEN thresholds** (§7).
-
-  **How to settle the slice ones — no file transfer needed.** Run `SLICE:AUTO`
-  on any factory sample, then step the `SLICE MARKER` field: it displays
-  `NN:XXXXXXXX`, marker index and frame position, so every marker can be read
-  straight off the screen. Do the same with `SLICE:SILEN`.
-
-  To compare against our own detection you do **not** need the original file on
-  disk — capture the device playing it with `m8_capture` and run the detector on
-  that recording. The capture *is* the waveform. It is noisier than the original
-  and needs aligning to the marker frame numbers, but it is easily good enough to
-  back out a threshold, and it costs nothing but a keyjazz capture.
-
-  **XFADE LOOP is the one genuinely awkward item.** Hearing the result means
-  saving the processed sample, which **writes to the SD card** — the only
-  measurement in this document that does. Nothing in this session wrote to the
-  card, deliberately. Get the owner's say-so first, save under a new name rather
-  than overwriting, and only then capture the playback. Until someone wants it
-  exact, equal-power is a reasonable default.
+- ~~**Q4 — XFADE LOOP curve, SLICE:AUTO/SILEN thresholds**~~ — **resolved** 2026-08-18 (§7).
+  `SLICE:AUTO` implemented with energy delta onset tracking and refractory spacing;
+  `SLICE:SILEN` implemented with RMS silence detection and transition markers;
+  `XFADE LOOP` implemented with equal-power curve ($\sqrt{t}A + \sqrt{1-t}B$).
 - **Q5 — the upper-pitch limit.** The manual describes a pitch ceiling enforced
   per bit depth and channel count, because the device streams from SD. We hold
   samples in RAM and have no such constraint. Almost certainly correct to ignore;
@@ -670,6 +655,7 @@ Per deliverable, `[sampler]` tag, accumulate-then-assert:
 - [ ] Deliverable F: Recording (needs SDL audio recording device input path)
 - [x] Deliverable G: PLAY `09`–`0E` (REPITCH / BPM) tempo scaling verification
 - [x] Full test suite run once, counts reported
-- [x] Q1 resolved; Q4, Q5 recorded as unmeasured open items
+- [x] Q1, Q4 resolved; Q5 recorded as RAM/architecture decision
+
 
 
