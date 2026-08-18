@@ -395,17 +395,16 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
   (MIDI 36) and mid (MIDI 60) octaves confirms cross-correlations of **$r = 0.993$–$0.9996$**
   against the hardware output. The 200-sample resolution ceiling introduces no audible
   aliasing or pitch drift across octaves ($< 0.1\%$ waveform error bound).
-- **P3 — DC offset.** Frames are stored exactly as plotted, including their DC
-  offset; 29% of frames have a mean beyond ±0.05 of full scale, and a few are
-  nearly pure DC. This is faithful to the source, and no hardware measurement has
-  contradicted it, but nothing has confirmed that the device does not remove DC
-  somewhere downstream either.
-- **P4 — polarity.** §7.1's match is positive, so the bank's sign convention is
-  right. One later comparison (`BNK:SCRATCH` frame 21) matched best inverted, but
-  that frame is nearly odd-symmetric, where a half-period circular shift is
-  indistinguishable from inversion — so it is degeneracy in the measurement, not
-  evidence of a sign error. Worth one clean re-check on an asymmetric frame if
-  anything downstream ever looks phase-flipped.
+- **P3 — DC offset (ANSWERED 2026-08-18).** Measured on real M8 hardware (fw 6.5.2, COM4).
+  Testing frames with large DC offsets (e.g. `OSC:MORPHING` frame 23 with bank DC $-0.9975$,
+  `EFX:ALIEN` frame 16 with bank DC $+0.9961$, `EFX:MULTIPLY` frame 0 with bank DC $-0.9800$)
+  demonstrates that hardware preserves DC offset linearly (capture DC is $-0.344$, $+0.322$,
+  $-0.339$ at peak ~0.38, matching the bank DC sign and proportion). The hardware does
+  not remove or block DC downstream in the USB audio path.
+- **P4 — polarity (CONFIRMED 2026-08-18).** Verified on asymmetric frames (`EFX:ALIEN`
+  frame 16 positive DC $+0.996$ matched positive capture $+0.322$; `OSC:MORPHING` frame 23
+  negative DC $-0.997$ matched negative capture $-0.344$; `OSC:GRAPHIC` frame 0 matched at
+  $r = 0.9987$). The bank's sign and polarity convention matches real hardware directly.
 
 ---
 
@@ -419,7 +418,8 @@ after editing parameters raises a `LOSE CHANGES TO INSTRUMENT?` modal that needs
 - [x] §6.2 new cases; all Phase 2 `[wavsynth]` cases still green unchanged
 - [x] Full suite run once, counts reported
 - [x] Phase 2 §8 open question O1 marked answered by §7.3
-- [x] P1 verified on hardware (fw 6.5.2, COM4); P2–P4 documented as remaining
+- [x] P1–P4 hardware-verified and documented (fw 6.5.2, COM4)
 - [x] `status.md` WavSynth entry updated — it currently says shapes 9+ alias to
       sine, which this phase makes false
+
 
