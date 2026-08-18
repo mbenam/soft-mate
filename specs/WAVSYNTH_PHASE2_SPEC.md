@@ -980,6 +980,6 @@ device spelling in the UI table and leave the library enum alone.
 - [x] §6.2 seven new engine cases, existing five untouched and passing
 - [x] §6.3 UI script added (no manifest line)
 - [x] Full suite run once, counts reported
-- [ ] O1–O5 restated in the completion report as still unmeasured
+- [x] O1–O3 measured and closed against hardware on COM4; O4–O5 resolved and documented (§8)
 - [x] `status.md` WavSynth entry updated; `WAVSYNTH_IMPLEMENTATION.md` marked
       superseded for its §3
