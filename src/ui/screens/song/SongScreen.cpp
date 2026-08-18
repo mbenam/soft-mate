@@ -2,6 +2,7 @@
 #include "SongScreenLayout.h"
 #include "ui/HexFmt.h"
 #include "ui/UiEditHelpers.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -10,11 +11,7 @@ namespace ui {
 namespace song {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; // colorRed
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; // colorGrey
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; // colorCyan
-    if (colorName == "VALUE") return {255, 255, 255, 255}; // colorWhite
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 void RenderSongScreen(Renderer& renderer, 
@@ -91,7 +88,7 @@ void RenderSongScreen(Renderer& renderer,
             if (isPlaying && playheads[x].is(engine::PlayMode::SONG) && actual_y == playheads[x].songRow && val != "--") {
                 int px = (cell.col - 1) * 8 + 4;
                 int py = cell.row * 8 + 1;
-                SDL_Color cGreen = {0, 255, 100, 255};
+                SDL_Color cGreen = GetThemeColor("PLAY_MARKERS");
                 renderer.drawLinePixel(px, py, px, py+4, cGreen);
                 renderer.drawLinePixel(px+1, py+1, px+1, py+3, cGreen);
                 renderer.drawLinePixel(px+2, py+2, px+2, py+2, cGreen);
@@ -106,7 +103,7 @@ void RenderSongScreen(Renderer& renderer,
             if (isSelected) {
                 // Draw cursor bracket around the value
                 // Length is always 2 for Song screen
-                renderer.drawBracket(cell.col, cell.row, 2, {0, 255, 255, 255}); // colorCyan
+                renderer.drawBracket(cell.col, cell.row, 2, GetThemeColor("CURSOR"));
             }
         }
     }

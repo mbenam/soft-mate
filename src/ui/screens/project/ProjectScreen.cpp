@@ -1,6 +1,7 @@
 #include "ProjectScreen.h"
 #include "ProjectScreenLayout.h"
 #include "../../UiEditHelpers.h"
+#include "../../Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -15,12 +16,7 @@ void setSampleRoot(const std::string& root) { g_sampleRoot = root; }
 const std::string& getSampleRoot() { return g_sampleRoot; }
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
-    if (colorName == "ACCENT") return {255, 60, 60, 255}; 
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static std::string ToHex(int value) {
@@ -164,10 +160,10 @@ void RenderProjectScreen(Renderer& renderer,
                 if (fieldId == CursorId::NAME) {
                     if (isBlinkOn) {
                         int clampedIdx = std::clamp(nameCharIndex, 0, 11);
-                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, {0, 255, 255, 255});
+                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, GetThemeColor("CURSOR"));
                     }
                 } else {
-                    renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                    renderer.drawBracket(comp.col, comp.row, drawText.length(), GetThemeColor("CURSOR"));
                 }
             }
         }

@@ -10,9 +10,9 @@ wait 1
 assert_no_overlap
 
 # 2. assert_cell_color: "S" of "SONG" title at row 0, col 0
-#    SongScreen draws "SONG" at (0,0) with TITLE color {255,60,60,255} = FF3C3CFF
-#    Confirmed from dump_json: colors[0][0] = "FF3C3CFF"
-assert_cell_color row 0 col 0 is FF3C3CFF
+#    SongScreen draws "SONG" at (0,0) with TEXT_TITLES color {0xFF, 0x20, 0x40, 255} = FF2040FF
+#    Confirmed from dump_json: colors[0][0] = "FF2040FF"
+assert_cell_color row 0 col 0 is FF2040FF
 
 # 3. assert_row_matches: row 3 (raw vram index, i.e. SONG row "00"'s chain-ref
 #    line) should start with hex chain refs.

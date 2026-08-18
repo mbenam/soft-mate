@@ -1,4 +1,5 @@
 #include "ViewManager.h"
+#include "Theme.h"
 #include <algorithm>
 
 namespace m8 {
@@ -82,8 +83,8 @@ bool ViewManager::handleNavigation(const SDL_Event& event, bool shiftHeld) {
 void ViewManager::renderChrome(Renderer& renderer, int bpm) {
     if (!m_modalStack.empty()) return;
 
-    SDL_Color dim = {100, 100, 100, 255};
-    SDL_Color lite = {0, 255, 255, 255};
+    SDL_Color dim = GetThemeColor("LABEL_DIM");
+    SDL_Color lite = GetThemeColor("LABEL_LITE");
 
     renderer.drawString("T>" + std::to_string(bpm), 34, 2, dim);
 

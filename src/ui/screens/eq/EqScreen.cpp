@@ -1,4 +1,5 @@
 #include "EqScreen.h"
+#include "ui/Theme.h"
 #include "../../../engine/EqFilter.h"
 #include <algorithm>
 #include <cmath>
@@ -10,16 +11,13 @@ namespace ui {
 namespace eq {
 
 static SDL_Color GetColorFromString(const std::string& name) {
-    if (name == "TITLE") return {255, 60, 60, 255};
-    if (name == "LABEL_DIM") return {100, 100, 100, 255};
-    if (name == "LABEL_LITE") return {0, 255, 255, 255};
-    return {255, 255, 255, 255};
+    return GetThemeColor(name);
 }
 
-static const SDL_Color kCurveColor  = {0, 255, 255, 255};
-static const SDL_Color kZeroLine    = {45, 60, 60, 255};
-static const SDL_Color kValueColor  = {255, 255, 255, 255};
-static const SDL_Color kSelColor    = {0, 255, 255, 255};
+#define kCurveColor (GetThemeColor("SCOPE_SLIDER"))
+#define kZeroLine   (GetThemeColor("LABEL_DIM"))
+#define kValueColor (GetThemeColor("VALUE"))
+#define kSelColor   (GetThemeColor("CURSOR"))
 
 // Curve glyphs are a dash at one of seven pixel rows within a cell
 // (font.h 0x08..0x0E), so a 12-cell graph has 84 vertical positions.

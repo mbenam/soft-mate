@@ -1,5 +1,6 @@
 #include "EffectsScreen.h"
 #include "EffectsScreenLayout.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -8,11 +9,7 @@ namespace ui {
 namespace effects {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static std::string ToHex(int value) {
@@ -73,7 +70,7 @@ void RenderEffectsScreen(Renderer& renderer,
             renderer.drawString(drawText, comp.col, comp.row, color);
 
             if (isActive && comp.has_cursor_box && comp.role == "value") {
-                renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                renderer.drawBracket(comp.col, comp.row, drawText.length(), GetThemeColor("CURSOR"));
             }
         }
     }

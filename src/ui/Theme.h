@@ -75,14 +75,24 @@ struct Theme {
 inline Theme g_currentTheme;
 
 inline SDL_Color GetThemeColor(const std::string& name) {
-    if (name == "TITLE") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_TITLES)].toSDL();
-    if (name == "LABEL_DIM") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_EMPTY)].toSDL();
-    if (name == "LABEL_LITE") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_DEFAULT)].toSDL();
-    if (name == "VALUE") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_VALUE)].toSDL();
-    if (name == "ACCENT") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_TITLES)].toSDL();
+    if (name == "BACKGROUND") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::BACKGROUND)].toSDL();
+    if (name == "LABEL_DIM" || name == "TEXT_EMPTY" || name == "DIM") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_EMPTY)].toSDL();
+    if (name == "TEXT_INFO" || name == "INFO") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_INFO)].toSDL();
+    if (name == "LABEL_LITE" || name == "TEXT_DEFAULT" || name == "LITE") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_DEFAULT)].toSDL();
+    if (name == "VALUE" || name == "TEXT_VALUE") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_VALUE)].toSDL();
+    if (name == "TITLE" || name == "TEXT_TITLES" || name == "ACCENT") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::TEXT_TITLES)].toSDL();
+    if (name == "PLAY" || name == "PLAY_MARKERS" || name == "PLAY_MARKER") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::PLAY_MARKERS)].toSDL();
     if (name == "CURSOR") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::CURSOR)].toSDL();
-    if (name == "PLAY_MARKERS") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::PLAY_MARKERS)].toSDL();
+    if (name == "SELECTION") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::SELECTION)].toSDL();
+    if (name == "SCOPE" || name == "SCOPE_SLIDER") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::SCOPE_SLIDER)].toSDL();
+    if (name == "METER_LOW") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::METER_LOW)].toSDL();
+    if (name == "METER_MID") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::METER_MID)].toSDL();
+    if (name == "METER_PEAK") return g_currentTheme.colors[static_cast<size_t>(ThemeSlot::METER_PEAK)].toSDL();
     return {255, 255, 255, 255};
+}
+
+inline SDL_Color GetThemeColor(ThemeSlot slot) {
+    return g_currentTheme.colors[static_cast<size_t>(slot)].toSDL();
 }
 
 } // namespace ui

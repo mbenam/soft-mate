@@ -1,4 +1,5 @@
 #include "SampleEditorScreen.h"
+#include "ui/Theme.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -9,12 +10,7 @@ namespace ui {
 namespace sample_editor {
 
 static SDL_Color GetColorFromString(const std::string& name) {
-    if (name == "TEXT_ACCENT") return {0, 255, 255, 255};
-    if (name == "LABEL_LITE")  return {200, 220, 255, 255};
-    if (name == "LABEL_DIM")   return {80, 100, 140, 255};
-    if (name == "VALUE")       return {255, 255, 255, 255};
-    if (name == "ACCENT")      return {0, 255, 255, 255};
-    return {160, 160, 160, 255};
+    return GetThemeColor(name);
 }
 
 void RenderSampleEditorScreen(Renderer& renderer,
@@ -89,23 +85,23 @@ void RenderSampleEditorScreen(Renderer& renderer,
             if (yBot <= yTop) yBot = yTop + 1;
             int barH = yBot - yTop;
 
-            SDL_Color waveColor = {0, 255, 255, 255};
+            SDL_Color waveColor = GetThemeColor("SCOPE_SLIDER");
             renderer.fillRectPixel(waveX0 + px, yTop, 1, barH, waveColor);
         }
 
-        // Draw slice markers (yellow/amber vertical lines)
+        // Draw slice markers (vertical lines)
         for (int m = 0; m < sd->sliceMarkerCount; ++m) {
             uint32_t mf = sd->sliceMarkers[m];
             int mpx = (static_cast<uint64_t>(mf) * waveW) / totalFrames;
-            renderer.fillRectPixel(waveX0 + mpx, waveY0, 1, waveH, {255, 200, 50, 255});
+            renderer.fillRectPixel(waveX0 + mpx, waveY0, 1, waveH, GetThemeColor("METER_MID"));
         }
 
-        // Draw loop start and loop end markers (green / red)
+        // Draw loop start and loop end markers
         if (st.loopEnd > st.loopStart) {
             int lsPx = (static_cast<uint64_t>(st.loopStart) * waveW) / totalFrames;
             int lePx = (static_cast<uint64_t>(st.loopEnd) * waveW) / totalFrames;
-            renderer.fillRectPixel(waveX0 + lsPx, waveY0, 1, waveH, {50, 255, 100, 255});
-            renderer.fillRectPixel(waveX0 + lePx, waveY0, 1, waveH, {255, 80, 80, 255});
+            renderer.fillRectPixel(waveX0 + lsPx, waveY0, 1, waveH, GetThemeColor("PLAY_MARKERS"));
+            renderer.fillRectPixel(waveX0 + lePx, waveY0, 1, waveH, GetThemeColor("METER_PEAK"));
         }
     }
 
@@ -148,7 +144,7 @@ void RenderSampleEditorScreen(Renderer& renderer,
     renderer.drawString("OVERWRITE", 18, 18, GetColorFromString(st.row == CursorRow::SAVE && st.subCol == 1 ? "VALUE" : "LABEL_DIM"));
 
     // Render active cursor brackets
-    SDL_Color cursorColor = {0, 255, 255, 255};
+    SDL_Color cursorColor = GetThemeColor("CURSOR");
     switch (st.row) {
     case CursorRow::RECORD:
         if (st.subCol == 0) renderer.drawBracket(8, 2, 5, cursorColor);

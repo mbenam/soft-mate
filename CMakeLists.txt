@@ -108,6 +108,7 @@ add_executable(m8_clone
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp
     src/ui/ScriptRunner.cpp
+    src/io/ThemeIO.cpp
     src/ui/screens/song/SongScreen.cpp
     src/ui/screens/chain/ChainScreen.cpp
     src/ui/screens/phrase/PhraseScreen.cpp
@@ -261,6 +262,7 @@ add_executable(m8_tests
     tests/test_mixer_bus.cpp
     tests/test_eq.cpp
     tests/test_system_settings.cpp
+    src/io/ThemeIO.cpp
     src/ui/FileBrowser.cpp
     src/ui/ConfirmationDialog.cpp
     src/ui/CharPicker.cpp

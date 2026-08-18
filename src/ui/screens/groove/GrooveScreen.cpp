@@ -2,6 +2,7 @@
 #include "GrooveScreenLayout.h"
 #include "ui/HexFmt.h"
 #include "ui/UiEditHelpers.h"
+#include "ui/Theme.h"
 #include <algorithm>
 #include <cstdio>
 #include <iomanip>
@@ -12,11 +13,7 @@ namespace ui {
 namespace groove {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static int ComputeCurrentPPQ(const engine::Groove& g) {

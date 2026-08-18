@@ -3,6 +3,7 @@
 #include <sstream>
 #include "ui/HexFmt.h"
 #include "ui/UiEditHelpers.h"
+#include "ui/Theme.h"
 #include <iomanip>
 
 namespace m8 {
@@ -10,11 +11,7 @@ namespace ui {
 namespace phrase {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; // colorRed
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; // colorGrey
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; // colorCyan
-    if (colorName == "VALUE") return {255, 255, 255, 255}; // colorWhite
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static bool initialized = false;
@@ -108,7 +105,7 @@ void RenderPhraseScreen(Renderer& renderer,
             if (x == 0 && isActiveRow) {
                 int px = (cell.col - 1) * 8 + 2;
                 int py = cell.row * 8 + 1;
-                SDL_Color cGreen = {0, 255, 100, 255};
+                SDL_Color cGreen = GetThemeColor("PLAY_MARKERS");
                 for (int ty = 0; ty < 7; ++ty) {
                     int w = (ty < 4) ? (ty + 1) : (7 - ty);
                     renderer.drawLinePixel(px, py + ty, px + w - 1, py + ty, cGreen);
@@ -123,7 +120,7 @@ void RenderPhraseScreen(Renderer& renderer,
             
             if (isSelected) {
                 int cw = val.length();
-                renderer.drawBracket(cell.col, cell.row, cw, {0, 255, 255, 255});
+                renderer.drawBracket(cell.col, cell.row, cw, GetThemeColor("CURSOR"));
             }
         }
     }

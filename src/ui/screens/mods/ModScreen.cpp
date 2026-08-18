@@ -1,5 +1,6 @@
 #include "ModScreen.h"
 #include "ModScreenLayout.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -8,13 +9,8 @@ namespace ui {
 namespace mods {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
-    if (colorName == "ACCENT") return {255, 60, 60, 255}; 
-    if (colorName == "SLIDER_BG") return {100, 100, 100, 255}; 
-    return {255, 255, 255, 255};
+    if (colorName == "SLIDER_BG") return GetThemeColor("LABEL_DIM");
+    return GetThemeColor(colorName);
 }
 
 static std::string ToHex(int value) {
@@ -130,7 +126,7 @@ void RenderModScreen(Renderer& renderer,
                 if (isActive && comp.has_cursor_box && comp.role == "value") {
                     // M8 aesthetic: Include the width of the accent text in the cyan bracket bounds
                     int bracketLen = drawText.length() + (accentText.empty() ? 0 : 1 + accentText.length());
-                    renderer.drawBracket(comp.col, comp.row, bracketLen, {0, 255, 255, 255});
+                    renderer.drawBracket(comp.col, comp.row, bracketLen, GetThemeColor("CURSOR"));
                 }
             }
         }

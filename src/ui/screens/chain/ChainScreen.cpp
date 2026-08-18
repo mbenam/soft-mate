@@ -2,6 +2,7 @@
 #include "ChainScreenLayout.h"
 #include "ui/HexFmt.h"
 #include "ui/UiEditHelpers.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -10,11 +11,7 @@ namespace ui {
 namespace chain {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; // colorRed
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; // colorGrey
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; // colorCyan
-    if (colorName == "VALUE") return {255, 255, 255, 255}; // colorWhite
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 void RenderChainScreen(Renderer& renderer, 
@@ -109,7 +106,7 @@ void RenderChainScreen(Renderer& renderer,
             if (x == 0 && isActiveRow && val != emptyVal) {
                 int px = (cell.col - 1) * 8 + 4; // similar to song screen logic, offset by 1 column and shift a bit
                 int py = cell.row * 8 + 1;
-                SDL_Color cGreen = {0, 255, 100, 255};
+                SDL_Color cGreen = GetThemeColor("PLAY_MARKERS");
                 // Draw tiny right pointing triangle
                 renderer.drawLinePixel(px, py, px, py+4, cGreen);
                 renderer.drawLinePixel(px+1, py+1, px+1, py+3, cGreen);
@@ -125,7 +122,7 @@ void RenderChainScreen(Renderer& renderer,
             if (isSelected) {
                 // Draw cursor bracket around the value
                 // Length is 2 for both PH (e.g. "0A") and TSP (e.g. "12")
-                renderer.drawBracket(cell.col, cell.row, 2, {0, 255, 255, 255}); // colorCyan
+                renderer.drawBracket(cell.col, cell.row, 2, GetThemeColor("CURSOR"));
             }
         }
     }

@@ -4,6 +4,7 @@
 #include "InstrumentFmsynthLayout.h"
 #include "InstrumentHypersynLayout.h"
 #include "InstrumentWavsynthLayout.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 #include <cstdio>
@@ -26,13 +27,8 @@ struct HypChordClipboard {
 static HypChordClipboard s_hypChordClipboard;
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255};
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255};
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255};
-    if (colorName == "VALUE") return {255, 255, 255, 255};
-    if (colorName == "ACCENT") return {255, 60, 60, 255};
-    if (colorName == "SLIDER_BG") return {100, 100, 100, 255};
-    return {255, 255, 255, 255};
+    if (colorName == "SLIDER_BG") return GetThemeColor("LABEL_DIM");
+    return GetThemeColor(colorName);
 }
 
 // Helper: Formats an integer as a 2-digit uppercase hex string
@@ -399,7 +395,7 @@ void RenderInstrumentScreen(Renderer& renderer,
 
                 if (isActive && comp.has_cursor_box) {
                     if (fieldId == CursorId::NAME) {
-                        renderer.drawBracket(comp.col + std::clamp(nameCharIndex, 0, 11), comp.row, 1, {0, 255, 255, 255});
+                        renderer.drawBracket(comp.col + std::clamp(nameCharIndex, 0, 11), comp.row, 1, GetThemeColor("CURSOR"));
                     } else {
                         int bracketLen = static_cast<int>(drawText.length());
                         for (const auto& other : components) {
@@ -409,7 +405,7 @@ void RenderInstrumentScreen(Renderer& renderer,
                                 break;
                             }
                         }
-                        renderer.drawBracket(comp.col, comp.row, bracketLen, {0, 255, 255, 255});
+                        renderer.drawBracket(comp.col, comp.row, bracketLen, GetThemeColor("CURSOR"));
                     }
                 }
             }

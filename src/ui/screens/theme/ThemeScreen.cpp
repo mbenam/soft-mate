@@ -3,10 +3,17 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 namespace m8 {
 namespace ui {
 namespace theme {
+
+static std::string getThemesInitialDir() {
+    std::filesystem::path p("Themes");
+    if (std::filesystem::exists(p)) return p.string();
+    return "";
+}
 
 static std::string ToHex(uint8_t value) {
     std::stringstream ss;
@@ -169,8 +176,30 @@ void RenderThemeScreen(Renderer& renderer, const ThemeScreenState& state) {
     }
 }
 
+void HandleThemeEditRelease(ThemeScreenState& state, ThemeActionState* actions) {
+    if (state.cursorRow == 15) {
+        if (state.cursorCol == 0) { // LOAD
+            if (actions) {
+                actions->themeBrowserMode = ThemeBrowserMode::LOAD;
+                actions->fileBrowser.init(getThemesInitialDir(), ".m8t");
+                actions->fileBrowser.setTitle("LOAD THEME");
+                actions->viewManager.pushModal(ViewType::FILE_BROWSER);
+            }
+        } else if (state.cursorCol == 1) { // SAVE
+            if (actions) {
+                actions->themeBrowserMode = ThemeBrowserMode::SAVE;
+                actions->fileBrowser.init(getThemesInitialDir(), ".m8t", FileBrowser::Mode::DIRECTORY);
+                actions->fileBrowser.setTitle("SELECT SAVE DIRECTORY");
+                actions->viewManager.pushModal(ViewType::FILE_BROWSER);
+            }
+        } else if (state.cursorCol == 2) { // RESET
+            g_currentTheme.resetDefault();
+        }
+    }
+}
+
 bool HandleThemeInput(const SDL_Event& event, bool editHeld, bool& arrowPressedDuringEdit,
-                      ThemeScreenState& state, ViewManager& viewManager) {
+                      ThemeScreenState& state, ViewManager& viewManager, ThemeActionState* actions) {
     (void)viewManager;
     if (event.type != SDL_EVENT_KEY_DOWN) return false;
 
@@ -179,11 +208,9 @@ bool HandleThemeInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
         return true;
     }
 
-    // Action buttons trigger (row 15)
+    // Action buttons trigger (row 15) on Enter/Return or X
     if ((event.key.key == SDLK_X || event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && state.cursorRow == 15) {
-        if (state.cursorCol == 2) {
-            g_currentTheme.resetDefault();
-        }
+        HandleThemeEditRelease(state, actions);
         return false;
     }
 
@@ -221,6 +248,13 @@ bool HandleThemeInput(const SDL_Event& event, bool editHeld, bool& arrowPressedD
                 else if (state.cursorCol == 2) v = static_cast<uint8_t>(std::clamp(static_cast<int>(v) + delta, 0, 255));
                 HsvToRgb(h, s, v, col.r, col.g, col.b);
             }
+        } else if (state.cursorRow == 14) { // THEME NAME character editing
+            char c = g_currentTheme.name[state.nameCharIndex];
+            if (c < ' ' || c > '~') c = 'A';
+            c = static_cast<char>(c + step);
+            if (c < ' ') c = '~';
+            if (c > '~') c = ' ';
+            g_currentTheme.name[state.nameCharIndex] = c;
         }
         return false;
     }

@@ -1,5 +1,6 @@
 #include "MixerScreen.h"
 #include "MixerScreenLayout.h"
+#include "ui/Theme.h"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -9,11 +10,7 @@ namespace ui {
 namespace mixer {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255};
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255};
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255};
-    if (colorName == "VALUE") return {255, 255, 255, 255};
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static std::string ToHex(int value) {
@@ -54,16 +51,16 @@ static int ResolveMixerValue(CursorId fieldId, const engine::MixerState& mx) {
 
 static constexpr char kFillFull = 0x07;
 
-// Colour ramp bottom-to-top: teal, green, yellow, then red at the very top.
+// Colour ramp bottom-to-top using theme meter colors
 static SDL_Color LevelColor(float fractionOfHeight, bool clipped) {
-    if (clipped && fractionOfHeight > 0.92f) return {255, 60, 60, 255};
-    if (fractionOfHeight > 0.85f) return {255, 140, 60, 255};
-    if (fractionOfHeight > 0.65f) return {230, 220, 90, 255};
-    if (fractionOfHeight > 0.35f) return {150, 220, 130, 255};
-    return {120, 210, 200, 255};
+    if (clipped || fractionOfHeight > 0.85f) return GetThemeColor("METER_PEAK");
+    if (fractionOfHeight > 0.50f) return GetThemeColor("METER_MID");
+    return GetThemeColor("METER_LOW");
 }
 
-static const SDL_Color kSettingColor = {60, 80, 80, 255};
+static SDL_Color SettingColor() {
+    return GetThemeColor("LABEL_DIM");
+}
 
 // Draw one bar. `level` and `setting` are 0..255; `level` is live audio and
 // `setting` is the parameter behind it (pass 0 for a pure meter).
@@ -93,7 +90,7 @@ static void DrawGlyphBar(Renderer& renderer, int col, int rowTop, int rowBottom,
         // Bright where live audio reaches, dim where only the setting does.
         const bool live = (liveInCell > 0) && (liveInCell >= settingInCell);
         const float frac = static_cast<float>(cellBase + fill) / static_cast<float>(totalSteps);
-        renderer.drawChar(glyph, col, row, live ? LevelColor(frac, clipped) : kSettingColor);
+        renderer.drawChar(glyph, col, row, live ? LevelColor(frac, clipped) : SettingColor());
     }
 }
 
@@ -146,7 +143,7 @@ void RenderMixerScreen(Renderer& renderer,
             renderer.drawString(drawText, comp.col, comp.row, color);
 
             if (isActive && comp.has_cursor_box && comp.role == "value") {
-                renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                renderer.drawBracket(comp.col, comp.row, drawText.length(), GetThemeColor("CURSOR"));
             }
         }
     }

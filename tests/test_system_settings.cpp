@@ -115,11 +115,25 @@ TEST_CASE("Theme Settings: Navigation, Color Edits, and Reset", "[ui]") {
     theme::HandleThemeInput(rightEv, false, arrow, state, vm);
     REQUIRE(state.cursorCol == 1);
 
-    // Edit Nudge <> (shifts hues)
-    uint8_t oldR = g_currentTheme.colors[1].r;
+    // Edit Nudge <> with Right arrow (large step +0x10)
+    uint8_t oldG5 = g_currentTheme.colors[5].g;
+    theme::HandleThemeInput(rightEv, true, arrow, state, vm);
+    // Highly saturated slot 5 (TEXT_TITLES) shifted hue
+    REQUIRE(g_currentTheme.colors[5].g != oldG5);
+
+    // Edit Theme Name
+    state.cursorRow = 14;
+    state.nameCharIndex = 0;
+    g_currentTheme.name[0] = 'D';
     theme::HandleThemeInput(editEv, true, arrow, state, vm);
-    // Theme colors shifted
-    REQUIRE(g_currentTheme.colors[1].r != oldR || g_currentTheme.colors[1].g != 0x28 || g_currentTheme.colors[1].b != 0x30);
+    REQUIRE(g_currentTheme.name[0] == 'E');
+
+    // Test HandleThemeEditRelease on RESET
+    state.cursorRow = 15;
+    state.cursorCol = 2;
+    g_currentTheme.colors[0].r = 0x55;
+    theme::HandleThemeEditRelease(state, nullptr);
+    REQUIRE(g_currentTheme.colors[0].r == 0x00);
 
     // Option key (Z) exits Theme screen
     SDL_Event optEv{};
@@ -128,3 +142,4 @@ TEST_CASE("Theme Settings: Navigation, Color Edits, and Reset", "[ui]") {
     bool shouldExit = theme::HandleThemeInput(optEv, false, arrow, state, vm);
     REQUIRE(shouldExit == true);
 }
+

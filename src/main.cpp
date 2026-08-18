@@ -35,6 +35,7 @@
 #include "ui/screens/system_settings/SystemSettingsScreen.h"
 #include "ui/screens/theme/ThemeScreen.h"
 #include "ui/Theme.h"
+#include "io/ThemeIO.h"
 #include "io/RenderAudio.h"
 #include "io/BundleExport.h"
 #include "engine/SongCleanup.h"
@@ -398,7 +399,7 @@ int main(int argc, char* argv[]) {
     fileBrowser.init("Samples");
     m8::ui::ConfirmationDialog confirmDialog;
     m8::ui::CharPicker charPicker;
-    enum class CharPickerTarget { PROJECT, SCALE, RENDER, INSTRUMENT };
+    enum class CharPickerTarget { PROJECT, SCALE, RENDER, INSTRUMENT, THEME };
     CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
     m8::ui::render::RenderScreenState renderScreenState;
     m8::ui::eq::EqScreenState eqScreenState;
@@ -412,6 +413,7 @@ int main(int argc, char* argv[]) {
     bool browserForSongLoad = false;  // true = browser filters .m8s for song load
     m8::ui::scale::ScaleBrowserMode scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
     m8::ui::instrument::InstrumentBrowserMode instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
+    m8::ui::theme::ThemeBrowserMode themeBrowserMode = m8::ui::theme::ThemeBrowserMode::NONE;
     m8::io::ensureFactoryScales("Scales");
     m8::io::ensureFactoryInstruments("Instruments");
     bool textInputActive = false;
@@ -568,11 +570,36 @@ int main(int argc, char* argv[]) {
                     PushParam(commandSink, uiEngineState, m8::engine::ParamID::SCALE_NOTE_OFFSET, 0, currentScaleIndex, i, loadedScale.notes[i].offset);
                 }
             }
-            scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
         } else if (scaleBrowserMode == m8::ui::scale::ScaleBrowserMode::SAVE_DIR) {
             std::string outPath, err;
             m8::io::saveScale(path, uiEngineState.scales[currentScaleIndex], outPath, err);
             scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+        } else if (themeBrowserMode == m8::ui::theme::ThemeBrowserMode::LOAD) {
+            std::string err;
+            if (!m8::io::loadTheme(path, m8::ui::g_currentTheme, err)) {
+                songStatusMsg = "LOAD THEME FAILED: " + err;
+                songStatusExpireTime = SDL_GetTicks() + 3000;
+            } else {
+                songStatusMsg = "THEME LOADED";
+                songStatusExpireTime = SDL_GetTicks() + 3000;
+            }
+            themeBrowserMode = m8::ui::theme::ThemeBrowserMode::NONE;
+        } else if (themeBrowserMode == m8::ui::theme::ThemeBrowserMode::SAVE) {
+            std::string nameStr = m8::ui::g_currentTheme.name;
+            while (!nameStr.empty() && (nameStr.back() == '-' || nameStr.back() == ' ')) {
+                nameStr.pop_back();
+            }
+            if (nameStr.empty()) nameStr = "THEME";
+            std::filesystem::path outPath = std::filesystem::path(path) / (nameStr + ".m8t");
+            std::string err;
+            if (!m8::io::saveTheme(outPath.string(), m8::ui::g_currentTheme, err)) {
+                songStatusMsg = "SAVE THEME FAILED: " + err;
+                songStatusExpireTime = SDL_GetTicks() + 3000;
+            } else {
+                songStatusMsg = "THEME SAVED";
+                songStatusExpireTime = SDL_GetTicks() + 3000;
+            }
+            themeBrowserMode = m8::ui::theme::ThemeBrowserMode::NONE;
         } else if (browserForSongLoad) {
             std::filesystem::path sp(path);
             std::string effectiveSampleRoot = sampleRoot;
@@ -706,6 +733,20 @@ int main(int argc, char* argv[]) {
                     } else if (textInputPrompt == "SAMPLE ROOT:") {
                         sampleRoot = textInputBuffer;
                         m8::ui::project::setSampleRoot(sampleRoot);
+                    } else if (textInputPrompt == "SAVE THEME AS:") {
+                        if (!textInputBuffer.empty()) {
+                            std::string themeFileName = textInputBuffer;
+                            std::filesystem::create_directories("Themes");
+                            std::string path = "Themes/" + themeFileName + ".m8t";
+                            std::string err;
+                            bool ok = m8::io::saveTheme(path, m8::ui::g_currentTheme, err);
+                            if (ok) {
+                                songStatusMsg = "THEME SAVED: " + themeFileName;
+                            } else {
+                                songStatusMsg = "SAVE THEME FAILED: " + err;
+                            }
+                            songStatusExpireTime = SDL_GetTicks() + 3000;
+                        }
                     } else if (textInputPrompt == "NEW DIR:") {
                         if (!textInputBuffer.empty()) {
                             std::filesystem::path newDirPath = std::filesystem::path(fileBrowser.getCurrentDirectory()) / textInputBuffer;
@@ -817,6 +858,8 @@ int main(int argc, char* argv[]) {
                         SDL_StartTextInput(SDL_GetKeyboardFocus());
                     } else if (result == FileBrowser::Result::CANCELLED) {
                         scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
+                        instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
+                        themeBrowserMode = m8::ui::theme::ThemeBrowserMode::NONE;
                         viewManager.popModal();
                     }
                     continue;
@@ -855,6 +898,12 @@ int main(int argc, char* argv[]) {
                             char curChar = (nameCharIndex < (int)std::strlen(uiEngineState.instruments[currentInstIndex].name)) ? uiEngineState.instruments[currentInstIndex].name[nameCharIndex] : 'A';
                             charPicker.init(curChar);
                             charPickerTarget = CharPickerTarget::INSTRUMENT;
+                            viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS &&
+                                   m8::ui::theme::g_themeScreenState.cursorRow == 14) {
+                            char curChar = (m8::ui::theme::g_themeScreenState.nameCharIndex < (int)std::strlen(m8::ui::g_currentTheme.name)) ? m8::ui::g_currentTheme.name[m8::ui::theme::g_themeScreenState.nameCharIndex] : 'A';
+                            charPicker.init(curChar);
+                            charPickerTarget = CharPickerTarget::THEME;
                             viewManager.pushModal(m8::ui::ViewType::CHAR_PICKER);
                         }
                     }
@@ -961,9 +1010,12 @@ int main(int argc, char* argv[]) {
                         viewManager.popModal();
                     }
                 } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS) {
+                    m8::ui::theme::ThemeActionState themeActions{
+                        fileBrowser, viewManager, themeBrowserMode, textInputActive, textInputBuffer, textInputPrompt
+                    };
                     if (m8::ui::theme::HandleThemeInput(event, editHeld, arrowPressedDuringEdit,
                                                        m8::ui::theme::g_themeScreenState,
-                                                       viewManager)) {
+                                                       viewManager, &themeActions)) {
                         viewManager.popModal();
                     }
                 }
@@ -1066,6 +1118,22 @@ int main(int argc, char* argv[]) {
                                     }
                                 }
                                 viewManager.popModal();
+                            } else if (charPickerTarget == CharPickerTarget::THEME) {
+                                if (charPicker.isRandomSelected()) {
+                                    std::string rnd = m8::ui::CharPicker::generateRandomName();
+                                    std::strncpy(m8::ui::g_currentTheme.name, rnd.c_str(), 12);
+                                    m8::ui::g_currentTheme.name[12] = '\0';
+                                } else {
+                                    char picked = charPicker.getSelectedChar();
+                                    if (picked != '\0') {
+                                        if (m8::ui::theme::g_themeScreenState.nameCharIndex >= 0 && m8::ui::theme::g_themeScreenState.nameCharIndex < 12) {
+                                            m8::ui::g_currentTheme.name[m8::ui::theme::g_themeScreenState.nameCharIndex] = picked;
+                                            m8::ui::g_currentTheme.name[12] = '\0';
+                                            m8::ui::theme::g_themeScreenState.nameCharIndex = (m8::ui::theme::g_themeScreenState.nameCharIndex + 1) % 12;
+                                        }
+                                    }
+                                }
+                                viewManager.popModal();
                             } else { // CharPickerTarget::PROJECT
                                 if (charPicker.isRandomSelected()) {
                                     std::string rnd = m8::ui::CharPicker::generateRandomName();
@@ -1100,6 +1168,13 @@ int main(int argc, char* argv[]) {
                             if (!arrowPressedDuringEdit) {
                                 m8::ui::render::HandleRenderEditRelease(renderScreenState, uiSequencer, uiEngineState, viewManager, charPicker);
                             }
+                        } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS) {
+                            if (!arrowPressedDuringEdit) {
+                                m8::ui::theme::ThemeActionState themeActions{
+                                    fileBrowser, viewManager, themeBrowserMode, textInputActive, textInputBuffer, textInputPrompt
+                                };
+                                m8::ui::theme::HandleThemeEditRelease(m8::ui::theme::g_themeScreenState, &themeActions);
+                            }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                             SDL_Event simEvent;
                             simEvent.type = SDL_EVENT_KEY_DOWN;
@@ -1118,6 +1193,7 @@ int main(int argc, char* argv[]) {
                             } else if (result == FileBrowser::Result::CANCELLED) {
                                 scaleBrowserMode = m8::ui::scale::ScaleBrowserMode::NONE;
                                 instrumentBrowserMode = m8::ui::instrument::InstrumentBrowserMode::NONE;
+                                themeBrowserMode = m8::ui::theme::ThemeBrowserMode::NONE;
                                 viewManager.popModal();
                             }
                         } else if (viewManager.getCurrentView() == m8::ui::ViewType::TABLE) {
@@ -1215,7 +1291,7 @@ int main(int argc, char* argv[]) {
             recStream = nullptr;
         }
 
-        renderer.clear(colorBg);
+        renderer.clear(m8::ui::GetThemeColor("BACKGROUND"));
 
         if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {
             m8::ui::phrase::RenderPhraseScreen(renderer, uiSequencer, uiEngineState, playheads, currentPhrase, cursorCol, cursorRow, songCol, isPlaying);
@@ -1255,17 +1331,17 @@ int main(int argc, char* argv[]) {
             const m8::engine::SampleData* sd = sampleEditorState.editorSample.data ? &sampleEditorState.editorSample : nullptr;
             m8::ui::sample_editor::RenderSampleEditorScreen(renderer, uiEngineState, sampleEditorState, sd);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
-            fileBrowser.update(renderer, colorWhite, colorCyan, colorRed);
+            fileBrowser.update(renderer, m8::ui::GetThemeColor("VALUE"), m8::ui::GetThemeColor("LABEL_LITE"), m8::ui::GetThemeColor("TITLE"));
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
-            confirmDialog.render(renderer, colorRed, colorWhite, colorCyan);
+            confirmDialog.render(renderer, m8::ui::GetThemeColor("TITLE"), m8::ui::GetThemeColor("VALUE"), m8::ui::GetThemeColor("LABEL_LITE"));
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CHAR_PICKER) {
-            charPicker.render(renderer, colorWhite, colorCyan, colorCyan);
+            charPicker.render(renderer, m8::ui::GetThemeColor("VALUE"), m8::ui::GetThemeColor("CURSOR"), m8::ui::GetThemeColor("LABEL_LITE"));
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::SYSTEM_SETTINGS) {
             m8::ui::system_settings::RenderSystemSettingsScreen(renderer, m8::ui::system_settings::g_systemSettingsState);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::THEME_SETTINGS) {
             m8::ui::theme::RenderThemeScreen(renderer, m8::ui::theme::g_themeScreenState);
         } else {
-            renderer.drawString("NOT IMPLEMENTED", 10, 10, colorWhite);
+            renderer.drawString("NOT IMPLEMENTED", 10, 10, m8::ui::GetThemeColor("VALUE"));
         }
 
         // Legacy Shared Right side UI has been removed because it is now driven by JSON.

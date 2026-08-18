@@ -65,19 +65,33 @@ void FileBrowser::scanDirectory(const std::string& selectTargetName) {
     };
 
     if (mode == Mode::DIRECTORY) {
-        // Format relative display directory string e.g. "/SCALES" or "/SCALES/FACTORY"
+        // Format relative display directory string e.g. "/THEMES", "/SCALES", "/SCALES/FACTORY"
         std::string relPath = currentDirStr;
-        auto scalesPos = relPath.find("Scales");
-        if (scalesPos == std::string::npos) scalesPos = relPath.find("scales");
-        if (scalesPos != std::string::npos) {
-            relPath = "/" + relPath.substr(scalesPos);
-        } else {
-            relPath = "/" + currentDir.filename().generic_string();
-        }
-        std::transform(relPath.begin(), relPath.end(), relPath.begin(), ::toupper);
+        for (char& c : relPath) if (c == '\\') c = '/';
 
-        // 1. First entry: "SAVE TO <relPath>"
-        entries.push_back({"SAVE TO " + relPath, currentDir.generic_string(), false});
+        auto findKnown = [&](const std::string& folderName) -> std::string {
+            auto pos = relPath.find(folderName);
+            if (pos == std::string::npos) {
+                std::string lower = folderName;
+                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                pos = relPath.find(lower);
+            }
+            if (pos != std::string::npos) {
+                return "/" + relPath.substr(pos);
+            }
+            return "";
+        };
+
+        std::string displayRel = findKnown("Themes");
+        if (displayRel.empty()) displayRel = findKnown("Scales");
+        if (displayRel.empty()) displayRel = findKnown("Instruments");
+        if (displayRel.empty()) displayRel = findKnown("Songs");
+        if (displayRel.empty()) displayRel = "/" + currentDir.filename().generic_string();
+
+        std::transform(displayRel.begin(), displayRel.end(), displayRel.begin(), ::toupper);
+
+        // 1. First entry: "SAVE TO <displayRel>"
+        entries.push_back({"SAVE TO " + displayRel, currentDir.generic_string(), false});
 
         // 2. Parent directory
         if (currentDir.has_parent_path() && currentDir != currentDir.parent_path()) {
@@ -169,6 +183,7 @@ void FileBrowser::scanDirectory(const std::string& selectTargetName) {
 }
 
 FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHeld) {
+    (void)editHeld;
     if (event.type != SDL_EVENT_KEY_DOWN) {
         return Result::NONE;
     }
@@ -211,7 +226,8 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
         return Result::NONE;
     }
 
-    if (key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER || (key == SDLK_X && !editHeld)) {
+    // EDIT key (X / Enter / KP_Enter / Right Arrow) selects / executes current row
+    if (key == SDLK_RIGHT || key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_X) {
         if (cursorIndex >= 0 && cursorIndex < (int)entries.size()) {
             const auto& entry = entries[cursorIndex];
             if (entry.name.rfind("SAVE TO ", 0) == 0) {
@@ -236,8 +252,8 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
         return Result::NONE;
     }
 
+    // Left arrow navigates up if inside subfolder, or cancels if at root
     if (key == SDLK_LEFT) {
-        // If we are inside a subfolder and have a parent entry, navigate up
         if (!entries.empty()) {
             for (const auto& e : entries) {
                 if (e.name == "/..") {
@@ -246,11 +262,11 @@ FileBrowser::Result FileBrowser::handleInput(const SDL_Event& event, bool editHe
                 }
             }
         }
-        // At root boundary -> cancel modal
         return Result::CANCELLED;
     }
 
-    if (key == SDLK_ESCAPE || key == SDLK_Z) {
+    // OPTION key (Z / Escape / Alt) cancels back to previous screen
+    if (key == SDLK_ESCAPE || key == SDLK_Z || key == SDLK_LALT || key == SDLK_RALT) {
         return Result::CANCELLED;
     }
 
@@ -273,24 +289,24 @@ void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color col
         std::string name = entries[entryIdx].name;
         if (name.length() > 34) name = name.substr(0, 34);
 
+        bool isSelected = (entryIdx == cursorIndex);
+
         if (name.rfind("SAVE TO ", 0) == 0) {
-            if (entryIdx == cursorIndex) {
+            renderer.drawString(name, 2, y, colorCyan);
+            if (isSelected) {
                 renderer.drawBracket(2, y, name.length(), colorCyan);
             }
-            renderer.drawString(name, 2, y, colorCyan);
         } else if (name == "(CREATE DIRECTORY)") {
-            if (entryIdx == cursorIndex) {
-                renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed);
-                renderer.drawString(name, 2, y, {255, 255, 255, 255});
-            } else {
-                renderer.drawString(name, 2, y, {140, 140, 140, 255});
+            renderer.drawString(name, 2, y, isSelected ? colorWhite : SDL_Color{140, 140, 140, 255});
+            if (isSelected) {
+                renderer.drawBracket(2, y, name.length(), colorCyan);
             }
-        } else if (entryIdx == cursorIndex) {
-            renderer.fillRectPixel(2 * 8 - 2, y * 8, name.length() * 8 + 4, 8, colorRed);
-            renderer.drawString(name, 2, y, {255, 255, 255, 255});
         } else {
-            SDL_Color itemColor = entries[entryIdx].isDirectory ? colorWhite : colorWhite;
+            SDL_Color itemColor = isSelected ? colorWhite : (entries[entryIdx].isDirectory ? SDL_Color{180, 180, 180, 255} : colorWhite);
             renderer.drawString(name, 2, y, itemColor);
+            if (isSelected) {
+                renderer.drawBracket(2, y, name.length(), colorCyan);
+            }
         }
     }
 }

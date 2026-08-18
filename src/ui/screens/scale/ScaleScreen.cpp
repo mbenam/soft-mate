@@ -1,5 +1,6 @@
 #include "ScaleScreen.h"
 #include "ScaleScreenLayout.h"
+#include "ui/Theme.h"
 #include <iomanip>
 #include <sstream>
 
@@ -8,11 +9,7 @@ namespace ui {
 namespace scale {
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
-    if (colorName == "TITLE") return {255, 60, 60, 255}; 
-    if (colorName == "LABEL_DIM") return {100, 100, 100, 255}; 
-    if (colorName == "LABEL_LITE") return {0, 255, 255, 255}; 
-    if (colorName == "VALUE") return {255, 255, 255, 255}; 
-    return {255, 255, 255, 255};
+    return GetThemeColor(colorName);
 }
 
 static std::string ResolveScaleValue(CursorId fieldId, const engine::Scale& scale) {
@@ -136,10 +133,10 @@ void RenderScaleScreen(Renderer& renderer,
                     bool isBlinkOn = ((SDL_GetTicks() / 500) % 2) == 0;
                     if (isBlinkOn) {
                         int clampedIdx = std::clamp(nameCharIndex, 0, 15);
-                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, {0, 255, 255, 255});
+                        renderer.drawBracket(comp.col + clampedIdx, comp.row, 1, GetThemeColor("CURSOR"));
                     }
                 } else {
-                    renderer.drawBracket(comp.col, comp.row, drawText.length(), {0, 255, 255, 255});
+                    renderer.drawBracket(comp.col, comp.row, drawText.length(), GetThemeColor("CURSOR"));
                 }
             }
         }
