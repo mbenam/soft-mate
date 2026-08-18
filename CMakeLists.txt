@@ -122,6 +122,7 @@ add_executable(m8_clone
     src/ui/screens/mixer/MixerScreen.cpp
     src/ui/screens/effects/EffectsScreen.cpp
     src/ui/screens/eq/EqScreen.cpp
+    src/ui/screens/sample_editor/SampleEditorScreen.cpp
 )
 
 # Link SDL3 and engine
@@ -267,6 +268,7 @@ add_executable(m8_tests
     src/ui/screens/render/RenderScreen.cpp
     src/ui/screens/inst_pool/InstPoolScreen.cpp
     src/ui/screens/eq/EqScreen.cpp
+    src/ui/screens/sample_editor/SampleEditorScreen.cpp
     tests/support/OfflineHost.cpp
     tests/support/AllocGuard.cpp
 )

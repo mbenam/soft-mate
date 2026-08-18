@@ -296,26 +296,57 @@ void FileBrowser::update(Renderer& renderer, SDL_Color colorWhite, SDL_Color col
 }
 
 bool FileBrowser::loadWavFile(const std::string& path, m8::engine::SampleData& outData) {
-    unsigned int channels;
-    unsigned int sampleRate;
-    drwav_uint64 totalPCMFrameCount;
-    float* pSampleData = drwav_open_file_and_read_pcm_frames_f32(path.c_str(), &channels, &sampleRate, &totalPCMFrameCount, NULL);
+    drwav wav;
+    if (!drwav_init_file_with_metadata(&wav, path.c_str(), 0, NULL)) {
+        return false;
+    }
 
-    if (pSampleData == NULL) {
+    float* pSampleData = (float*)malloc(wav.totalPCMFrameCount * wav.channels * sizeof(float));
+    if (!pSampleData) {
+        drwav_uninit(&wav);
+        return false;
+    }
+
+    drwav_uint64 framesRead = drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, pSampleData);
+    if (framesRead == 0 && wav.totalPCMFrameCount > 0) {
+        free(pSampleData);
+        drwav_uninit(&wav);
         return false;
     }
 
     outData.data = pSampleData;
-    outData.frames = totalPCMFrameCount;
-    outData.channels = channels;
-    outData.sampleRate = sampleRate;
+    outData.frames = static_cast<uint32_t>(wav.totalPCMFrameCount);
+    outData.channels = static_cast<uint8_t>(wav.channels);
+    outData.sampleRate = wav.sampleRate;
+    outData.sliceMarkerCount = 0;
+    outData.loopStartFrame = 0;
+    outData.loopEndFrame = 0;
 
+    for (drwav_uint32 i = 0; i < wav.metadataCount; ++i) {
+        if (wav.pMetadata[i].type == drwav_metadata_type_cue) {
+            const auto& cue = wav.pMetadata[i].data.cue;
+            int count = std::min<int>(static_cast<int>(cue.cuePointCount), m8::engine::SampleData::kMaxSliceMarkers);
+            outData.sliceMarkerCount = count;
+            for (int m = 0; m < count; ++m) {
+                outData.sliceMarkers[m] = cue.pCuePoints[m].sampleOffset;
+            }
+            std::sort(outData.sliceMarkers, outData.sliceMarkers + outData.sliceMarkerCount);
+        } else if (wav.pMetadata[i].type == drwav_metadata_type_smpl) {
+            const auto& smpl = wav.pMetadata[i].data.smpl;
+            if (smpl.loopCount > 0 && smpl.pLoops) {
+                outData.loopStartFrame = smpl.pLoops[0].firstSampleOffset;
+                outData.loopEndFrame = smpl.pLoops[0].lastSampleOffset;
+            }
+        }
+    }
+
+    drwav_uninit(&wav);
     return true;
 }
 
 void FileBrowser::freeWavFile(m8::engine::SampleData& data) {
     if (data.data) {
-        drwav_free(data.data, NULL);
+        free(data.data);
         data.data = nullptr;
     }
 }

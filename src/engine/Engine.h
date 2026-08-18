@@ -455,6 +455,7 @@ struct EngineState {
     int playTick[8] = {0};
     int playGrooveIndex[8] = {0};
     float pendingFreq[8] = {0};
+    int pendingNote[8] = {60, 60, 60, 60, 60, 60, 60, 60};
     float pendingVol[8] = {0};
     bool pendingVolValid[8] = {false};
     const Instrument* pendingInst[8] = {nullptr};

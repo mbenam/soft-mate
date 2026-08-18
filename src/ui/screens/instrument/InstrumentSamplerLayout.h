@@ -48,7 +48,7 @@ inline std::unordered_map<CursorId, std::vector<UI_GridCell>> GetSamplerInteract
         }},
         {C::SAMPLE_LOAD, {
             {"SAMPLE", 0, 6, "LABEL_DIM", "LABEL_LITE", "label", false, 0},
-            {"LOAD", 8, 6, "ACCENT", "LABEL_LITE", "accent", false, 0}
+            {"LOAD", 8, 6, "VALUE", "LABEL_LITE", "value", true, 0}
         }},
         {C::SAMPLE_REC, { {"REC.", 25, 6, "VALUE", "LABEL_LITE", "value", true, 0} }},
         {C::SLICE, {

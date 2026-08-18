@@ -31,6 +31,7 @@
 #include "ui/screens/render/RenderScreen.h"
 #include "ui/screens/render/RenderScreenLayout.h"
 #include "ui/screens/eq/EqScreen.h"
+#include "ui/screens/sample_editor/SampleEditorScreen.h"
 #include "io/RenderAudio.h"
 #include "io/BundleExport.h"
 #include "engine/SongCleanup.h"
@@ -389,6 +390,7 @@ int main(int argc, char* argv[]) {
     CharPickerTarget charPickerTarget = CharPickerTarget::PROJECT;
     m8::ui::render::RenderScreenState renderScreenState;
     m8::ui::eq::EqScreenState eqScreenState;
+    m8::ui::sample_editor::SampleEditorState sampleEditorState;
 
     // Song persistence state
     m8::io::LoadResult currentLoadResult;
@@ -918,6 +920,19 @@ int main(int argc, char* argv[]) {
                                                   uiEngineState, eqScreenState, commandSink)) {
                         viewManager.popModal();
                     }
+                } else if (viewManager.getCurrentView() == m8::ui::ViewType::SAMPLE_EDITOR) {
+                    engine::SampleData* sd = nullptr;
+                    if (sampleEditorState.instIndex >= 0 && sampleEditorState.instIndex < static_cast<int>(uiEngineState.instruments.size())) {
+                        auto& inst = uiEngineState.instruments[sampleEditorState.instIndex];
+                        if (inst.sampler.sample >= 0) {
+                            sd = const_cast<engine::SampleData*>(engine.getSamplePool().get(inst.sampler.sample));
+                        }
+                    }
+                    if (m8::ui::sample_editor::HandleSampleEditorInput(event, editHeld, optHeld,
+                                                                      uiEngineState, sampleEditorState,
+                                                                      sd, commandSink)) {
+                        viewManager.popModal();
+                    }
                 }
 
                 if (event.key.key == SDLK_ESCAPE) {
@@ -1172,6 +1187,15 @@ int main(int argc, char* argv[]) {
             m8::ui::render::RenderRenderScreen(renderer, renderScreenState);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::EQ) {
             m8::ui::eq::RenderEqScreen(renderer, uiEngineState, eqScreenState);
+        } else if (viewManager.getCurrentView() == m8::ui::ViewType::SAMPLE_EDITOR) {
+            const engine::SampleData* sd = nullptr;
+            if (sampleEditorState.instIndex >= 0 && sampleEditorState.instIndex < static_cast<int>(uiEngineState.instruments.size())) {
+                auto& inst = uiEngineState.instruments[sampleEditorState.instIndex];
+                if (inst.sampler.sample >= 0) {
+                    sd = engine.getSamplePool().get(inst.sampler.sample);
+                }
+            }
+            m8::ui::sample_editor::RenderSampleEditorScreen(renderer, uiEngineState, sampleEditorState, sd);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
             fileBrowser.update(renderer, colorWhite, colorCyan, colorRed);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::CONFIRMATION) {
@@ -1292,6 +1316,7 @@ int main(int argc, char* argv[]) {
                         case m8::ui::ViewType::FILE_BROWSER: return "FILE BROWSER";
                         case m8::ui::ViewType::CONFIRMATION: return "CONFIRMATION";
                         case m8::ui::ViewType::CHAR_PICKER: return "CHAR PICKER";
+                        case m8::ui::ViewType::SAMPLE_EDITOR: return "SAMPLE EDITOR";
                         default: return "UNKNOWN";
                     }
                 };

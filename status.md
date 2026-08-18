@@ -1043,6 +1043,10 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
   DSP rebuild with cached tables, guard sample continuous loop, unipolar WARP, PWM via SCAN mirror,
   70 shape names, 12 filter modes, and the 61 digitised wave tables with linear SCAN morphing across 64 frames.
   MacroSynth/Braids has no standalone spec — the port lives in `src/engine/braids/` + `stmlib/`.
+- `SAMPLER_EDITOR_SPEC.md` — **Deliverables A–E implemented (2026-08-18).** SLICE equal divisions (2..128)
+  and FILE mode (cue markers), stateful SAMPLE row (displays stem name and EDIT), WAV cue/smpl metadata extraction,
+  Sample Editor screen (`src/ui/screens/sample_editor/`) with waveform rendering, navigation, and full buffer process suite
+  (CROP, DELETE, DUPLICATE, NORMALIZE, SILENCE, REVERSE, INVERT, FADES, MONO, 8-BIT, DOWNSAMPLE, SLICE, UNDO). Tests: `[sampler]`.
 - `M8_APP_AUTOMATION_SPEC.md` — **new (2026-07-17), design + phased plan.** Matures the clone's
   headless script harness from underused (only 1 of 13 `.m8script`s is CI-gated) to a first-class
   automation system: a discovered runner that gates every script, deterministic playhead/condition

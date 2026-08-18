@@ -3,18 +3,48 @@
 
 namespace m8::engine {
 
-void SamplerEngine::noteOn(const SamplerState& s, const SampleData* d) {
+void SamplerEngine::noteOn(const SamplerState& s, const SampleData* d, int noteMidi) {
     m_data = d;
-    computeRegion(s);
+    computeRegion(s, noteMidi);
 }
 
-void SamplerEngine::computeRegion(const SamplerState& s) {
+void SamplerEngine::computeRegion(const SamplerState& s, int noteMidi) {
     if (!m_data || m_data->frames == 0) { m_finished = true; return; }
     const int32_t frames = int32_t(m_data->frames);
-    m_startFrame = int32_t((s.start   / 255.0) * frames);
-    m_loopStart  = int32_t((s.loop_st / 255.0) * frames);
-    const int32_t len = int32_t((s.length / 255.0) * frames);
-    m_loopEnd    = m_loopStart + len;
+
+    if (s.slice == 1) {
+        // SLICE 01 = FILE (embedded cue markers in WAV)
+        if (m_data->sliceMarkerCount > 0) {
+            const int count = m_data->sliceMarkerCount;
+            const int idx = noteMidi;
+            if (idx >= count) { m_finished = true; return; }
+            m_startFrame = clampi(static_cast<int32_t>(m_data->sliceMarkers[idx]), 0, frames - 1);
+            m_loopStart  = m_startFrame;
+            m_loopEnd    = (idx + 1 < count) ? clampi(static_cast<int32_t>(m_data->sliceMarkers[idx + 1]), m_loopStart + 1, frames) : frames;
+        } else {
+            m_startFrame = int32_t((s.start   / 255.0) * frames);
+            m_loopStart  = int32_t((s.loop_st / 255.0) * frames);
+            const int32_t len = int32_t((s.length / 255.0) * frames);
+            m_loopEnd    = m_loopStart + len;
+        }
+    } else if (s.slice >= 2) {
+        // SLICE 02..80 = Equal divisions (byte value is the slice count).
+        // Slice index = MIDI note number. Notes >= count produce silence.
+        // Slices divide the whole file; START and LENGTH are ignored (§3.3).
+        const int count = std::clamp(static_cast<int>(s.slice), 2, 128);
+        const int idx   = noteMidi;
+        if (idx >= count) { m_finished = true; return; }
+        const int32_t sliceLen = frames / count;
+        m_startFrame = idx * sliceLen;
+        m_loopStart  = m_startFrame;
+        m_loopEnd    = m_startFrame + sliceLen;
+    } else {
+        m_startFrame = int32_t((s.start   / 255.0) * frames);
+        m_loopStart  = int32_t((s.loop_st / 255.0) * frames);
+        const int32_t len = int32_t((s.length / 255.0) * frames);
+        m_loopEnd    = m_loopStart + len;
+    }
+
     m_startFrame = clampi(m_startFrame, 0, frames - 1);
     m_loopStart  = clampi(m_loopStart,  0, frames - 1);
     m_loopEnd    = clampi(m_loopEnd, m_loopStart + 1, frames);

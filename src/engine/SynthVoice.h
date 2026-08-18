@@ -21,7 +21,7 @@ public:
     ~SynthVoice() = default;
 
     void setInstrument(const Instrument* inst) { m_instrument = inst; }
-    void noteOn(float frequency, float volume, const Instrument* inst = nullptr);
+    void noteOn(float frequency, float volume, const Instrument* inst = nullptr, int noteMidi = 60);
     void noteOff();
     void resetOscillator() {
         m_braidsOsc.Init();

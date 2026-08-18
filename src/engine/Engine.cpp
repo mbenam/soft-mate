@@ -465,6 +465,7 @@ void Engine::tickTrack(int t) {
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
             
             m_state.pendingFreq[t] = freq;
+            m_state.pendingNote[t] = step.note;
             m_state.pendingVol[t] = v;
             m_state.pendingVolValid[t] = false;
             m_state.pendingInst[t] = currentInst;
@@ -488,7 +489,7 @@ void Engine::tickTrack(int t) {
             if (m_state.pendingInst[t] && m_state.pendingInst[t]->type == InstType::INST_SAMPLER) {
                 m_voices[t].setSample(m_samplePool.get(m_state.pendingInst[t]->sampler.sample));
             }
-            m_voices[t].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], m_state.pendingInst[t]);
+            m_voices[t].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], m_state.pendingInst[t], m_state.pendingNote[t]);
             EngineEvent e_on{};
             e_on.type = EventType::NOTE_ON;
             e_on.track = t;

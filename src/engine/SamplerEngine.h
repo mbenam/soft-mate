@@ -18,7 +18,7 @@ enum class SamplePlayMode : uint8_t {
 
 inline bool isLoopMode(SamplePlayMode m) {
     auto v = static_cast<uint8_t>(m);
-    return v >= 2 && v <= 8;
+    return (v >= 2 && v <= 8) || (v >= 9 && v <= 14);
 }
 inline bool isPingPongMode(SamplePlayMode m) {
     auto v = static_cast<uint8_t>(m);
@@ -45,11 +45,11 @@ struct SamplerState;
 
 class SamplerEngine {
 public:
-    void noteOn(const SamplerState& s, const SampleData* d);
+    void noteOn(const SamplerState& s, const SampleData* d, int noteMidi = 60);
     void setSample(const SampleData* d) { m_data = d; }
     void setLoop(int32_t loopStart, int32_t loopEnd);
     void render(float ratio, float out[2]);
-    void computeRegion(const SamplerState& s);
+    void computeRegion(const SamplerState& s, int noteMidi = 60);
     bool finished() const { return m_finished; }
     double phase() const { return m_phase; }
     const SampleData* data() const { return m_data; }

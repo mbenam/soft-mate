@@ -502,3 +502,169 @@ TEST_CASE("S-ST2 a mono sample stays centred", "[sampler]") {
     REQUIRE(r.side < r.mid * 0.01f);
     freeSample(sd);
 }
+
+TEST_CASE("Sampler SLICE equal divisions plays correct quarter per note", "[sampler]") {
+    // 4000-frame ramp: sample values go linearly from 0.0 to 1.0
+    SampleData sd = makeRamp(4000, 1);
+
+    auto renderNote = [&](int slice, int note) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_SAMPLER;
+        state.instruments[0].sampler.slice = slice;
+        state.instruments[0].sampler.play = 0; // FWD
+        state.instruments[0].sampler.amp = 0x00; // 00 is unity on sampler
+        state.instruments[0].sampler.lim = 0;
+        state.instruments[0].sampler.filter_type = 0;
+        state.instruments[0].sampler.dry = 0xC0;
+        state.instruments[0].sampler.pan = 0x80;
+        host.engine().getSamplePool().install(sd);
+        state.instruments[0].sampler.sample = 0;
+
+        setStep(host.sequencer(), 0, 0, note, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(50); // First 50 frames
+        const auto& aud = host.audio();
+        // Return first non-zero frame left channel
+        for (size_t i = 0; i < aud.size(); i += 2) {
+            if (std::abs(aud[i]) > 1e-5f) return aud[i];
+        }
+        return 0.0f;
+    };
+
+    // SLICE 04 divides into 4 equal 1000-frame slices
+    // Note 0 -> slice 0 (starts at 0.00)
+    // Note 1 -> slice 1 (starts at ~0.25)
+    // Note 2 -> slice 2 (starts at ~0.50)
+    // Note 3 -> slice 3 (starts at ~0.75)
+    // Note 4.. -> silent
+    float v0 = renderNote(4, 0);
+    float v1 = renderNote(4, 1);
+    float v2 = renderNote(4, 2);
+    float v3 = renderNote(4, 3);
+    float v4 = renderNote(4, 4);
+    float v60 = renderNote(4, 60);
+
+    REQUIRE(v0 < 0.05f);
+    REQUIRE(std::abs(v1 - 0.25f) < 0.05f);
+    REQUIRE(std::abs(v2 - 0.50f) < 0.05f);
+    REQUIRE(std::abs(v3 - 0.75f) < 0.05f);
+    REQUIRE(v4 == 0.0f);
+    REQUIRE(v60 == 0.0f);
+
+    // Control: SLICE 00 plays note 60 normally from the beginning
+    float vCtrl = renderNote(0, 60);
+    REQUIRE(vCtrl < 0.05f);
+
+    freeSample(sd);
+}
+
+TEST_CASE("Sampler SLICE ignores START and LENGTH", "[sampler]") {
+    SampleData sd = makeRamp(4000, 1);
+
+    auto renderSliceWithStart = [&](int start, int length) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_SAMPLER;
+        state.instruments[0].sampler.slice = 4;
+        state.instruments[0].sampler.start = start;
+        state.instruments[0].sampler.length = length;
+        state.instruments[0].sampler.play = 0;
+        state.instruments[0].sampler.amp = 0x00;
+        state.instruments[0].sampler.lim = 0;
+        state.instruments[0].sampler.filter_type = 0;
+        state.instruments[0].sampler.dry = 0xC0;
+        state.instruments[0].sampler.pan = 0x80;
+        host.engine().getSamplePool().install(sd);
+        state.instruments[0].sampler.sample = 0;
+
+        setStep(host.sequencer(), 0, 0, 1, 100, 0); // Note 1 = Slice 1
+        host.push(playPhrase(0, 0, 0));
+        host.render(50);
+        const auto& aud = host.audio();
+        for (size_t i = 0; i < aud.size(); i += 2) {
+            if (std::abs(aud[i]) > 1e-5f) return aud[i];
+        }
+        return 0.0f;
+    };
+
+    float valDefault = renderSliceWithStart(0x00, 0xFF);
+    float valMoved   = renderSliceWithStart(0x40, 0x40);
+
+    // Both should start at slice 1's origin (~0.25)
+    REQUIRE(std::abs(valDefault - 0.25f) < 0.05f);
+    REQUIRE(std::abs(valMoved - 0.25f) < 0.05f);
+    REQUIRE(std::abs(valDefault - valMoved) < 0.01f);
+
+    freeSample(sd);
+}
+
+TEST_CASE("SampleData is trivially copyable POD", "[sampler]") {
+    REQUIRE(std::is_trivially_copyable_v<SampleData>);
+    REQUIRE(std::is_standard_layout_v<SampleData>);
+}
+
+#include "ui/screens/sample_editor/SampleEditorScreen.h"
+
+TEST_CASE("SampleEditor buffer operations work correctly", "[sampler]") {
+    using namespace m8::ui::sample_editor;
+
+    SampleData sd = makeRamp(1000, 1);
+    Instrument inst{};
+    inst.type = InstType::INST_SAMPLER;
+    std::strncpy(inst.sampler.samplePath, "Samples/TEST.WAV", sizeof(inst.sampler.samplePath));
+
+    SampleEditorState st;
+    st.init(0, inst, &sd);
+
+    REQUIRE(st.selectStart == 0);
+    REQUIRE(st.selectEnd == 1000);
+    REQUIRE(std::string(st.name) == "TEST");
+
+    // Test REVERSE on full buffer
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_KEY_DOWN;
+    st.row = CursorRow::PROCESS;
+    st.processIndex = 5; // REVERSE
+    st.subCol = 1; // '>'
+    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+
+    // After reverse, first sample should be ~1.0, last sample ~0.0
+    REQUIRE(sd.data[0] > 0.95f);
+    REQUIRE(sd.data[sd.frames - 1] < 0.05f);
+
+    // Test UNDO
+    st.subCol = 2; // 'UNDO'
+    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    REQUIRE(sd.data[0] < 0.05f);
+    REQUIRE(sd.data[sd.frames - 1] > 0.95f);
+
+    // Test INVERT on selection [200, 400]
+    st.selectStart = 200;
+    st.selectEnd = 400;
+    st.processIndex = 6; // INVERT
+    st.subCol = 1;
+    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    REQUIRE(sd.data[300] < 0.0f);
+    REQUIRE(sd.data[100] > 0.0f);
+    REQUIRE(sd.data[500] > 0.0f);
+
+    // Test SILENCE on selection [500, 600]
+    st.selectStart = 500;
+    st.selectEnd = 600;
+    st.processIndex = 4; // SILENCE
+    st.subCol = 1;
+    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    REQUIRE(sd.data[550] == 0.0f);
+
+    // Test CROP on [200, 600]
+    st.selectStart = 200;
+    st.selectEnd = 600;
+    st.processIndex = 0; // CROP
+    st.subCol = 1;
+    HandleSampleEditorInput(ev, true, false, *(engine::EngineState*)nullptr, st, &sd, *(CommandSink*)nullptr);
+    REQUIRE(sd.frames == 400);
+
+    st.freeUndo();
+    freeSample(sd);
+}

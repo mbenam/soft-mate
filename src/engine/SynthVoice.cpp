@@ -270,7 +270,7 @@ SynthVoice::SynthVoice() {
     for (int i = 0; i < 24; ++i) m_braidsBuffer[i] = 0;
 }
 
-void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
+void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst, int noteMidi) {
     if (inst) m_instrument = inst;
     m_frequency = frequency;
     m_currentVolume = volume;
@@ -280,7 +280,7 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst) {
     m_velocityTakeover = false;
 
     if (m_instrument && m_instrument->type == InstType::INST_SAMPLER) {
-        m_sampler.computeRegion(m_instrument->sampler);
+        m_sampler.computeRegion(m_instrument->sampler, noteMidi);
     }
     m_zdf.reset();
     m_zdfR.reset();

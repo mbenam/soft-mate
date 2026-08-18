@@ -145,8 +145,20 @@ static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instru
     if (fieldId == C::NAME) return inst.name;
     if (fieldId == C::CMD_LOAD) return "LOAD";
     if (fieldId == C::CMD_SAVE) return "SAVE";
-    if (fieldId == C::SAMPLE_LOAD) return "LOAD";
-    if (fieldId == C::SAMPLE_REC) return "REC.";
+    if (fieldId == C::SAMPLE_LOAD) {
+        if (inst.sampler.samplePath[0] != '\0') {
+            std::string p = inst.sampler.samplePath;
+            size_t slash = p.find_last_of("/\\");
+            std::string name = (slash != std::string::npos) ? p.substr(slash + 1) : p;
+            size_t dot = name.find_last_of('.');
+            if (dot != std::string::npos) name = name.substr(0, dot);
+            return name;
+        }
+        return "LOAD";
+    }
+    if (fieldId == C::SAMPLE_REC) {
+        return (inst.sampler.samplePath[0] != '\0') ? "EDIT" : "REC.";
+    }
 
     if (fieldId == C::TRANSP) return (isWav ? inst.wav.transp : (isHyp ? inst.hyper.transp : (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp)))) ? "ON" : "OFF";
     int eq = isWav ? inst.wav.eq : (isHyp ? inst.hyper.eq : (isMac ? inst.macrosyn.eq : (isFm ? inst.fm.eq : inst.sampler.eq)));
@@ -620,6 +632,8 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
                 fileBrowser.setTitle("LOAD SAMPLE");
                 instrumentBrowserMode = InstrumentBrowserMode::NONE;
                 viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+            } else if (cursor_id == C::SAMPLE_REC) {
+                viewManager.pushModal(m8::ui::ViewType::SAMPLE_EDITOR);
             }
         }
     }
@@ -646,6 +660,8 @@ void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
         fileBrowser.setTitle("LOAD SAMPLE");
         instrumentBrowserMode = InstrumentBrowserMode::NONE;
         viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
+    } else if (cursor_id == CursorId::SAMPLE_REC) {
+        viewManager.pushModal(m8::ui::ViewType::SAMPLE_EDITOR);
     } else if (cursor_id == CursorId::EQ) {
         viewManager.pushModal(m8::ui::ViewType::EQ);
     }
