@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/OfflineHost.h"
+#include "ui/screens/instrument/InstrumentScreen.h"
+#include "ui/screens/instrument/InstrumentCursorId.h"
 #include <atomic>
 #include <cmath>
 
@@ -7,6 +9,7 @@ extern std::atomic<int> g_allocCount;
 
 using namespace m8::test;
 using namespace m8::engine;
+using namespace m8::ui::instrument;
 
 TEST_CASE("FMSynth renders all 12 algorithms without NaN", "[fmsynth]") {
     for (int algo = 0; algo < 12; ++algo) {
@@ -123,6 +126,60 @@ TEST_CASE("FMSynth feedback increases complexity", "[fmsynth]") {
     float sumNoFB = renderFMFB(0);
     float sumHighFB = renderFMFB(0xFF);
     REQUIRE(sumHighFB != sumNoFB);
+}
+
+TEST_CASE("FMSynth modulation destinations (LEV, RAT, PIT, FBK)", "[fmsynth]") {
+    auto renderWithMod = [](uint8_t modSlot, uint8_t modVal) -> float {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_FMSYNTH;
+        auto& fm = state.instruments[0].fm;
+        fm.algo = 0x0B; // Additive mode
+        fm.ops[0].shape = 0; fm.ops[0].level = 0x80; fm.ops[0].ratio = 1;
+        fm.ops[0].mod_a = modSlot; // e.g. 1LEV (0x01), 1RAT (0x02), 1PIT (0x03), 1FBK (0x04)
+        fm.mod1 = modVal;
+        fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+        fm.dry = 0xC0; fm.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+        float sum = 0;
+        for (float v : host.audio()) sum += std::abs(v);
+        return sum;
+    };
+
+    // PIT mod (0x03) changes output when mod1 differs
+    float pitLow = renderWithMod(0x03, 0x00);
+    float pitHigh = renderWithMod(0x03, 0xFF);
+    REQUIRE(pitLow != pitHigh);
+
+    // RAT mod (0x02)
+    float ratLow = renderWithMod(0x02, 0x00);
+    float ratHigh = renderWithMod(0x02, 0xFF);
+    REQUIRE(ratLow != ratHigh);
+}
+
+TEST_CASE("FMSynth filter and limiter modes apply cleanly", "[fmsynth]") {
+    for (int filt = 0; filt < 8; ++filt) {
+        OfflineHost host;
+        auto& state = host.engine().getStateForInit();
+        state.instruments[0].type = InstType::INST_FMSYNTH;
+        auto& fm = state.instruments[0].fm;
+        fm.algo = 0x0B;
+        fm.ops[0].shape = 7; fm.ops[0].level = 0x80; fm.ops[0].ratio = 1;
+        fm.filter_type = filt; fm.cutoff = 0x80; fm.res = 0x80;
+        fm.amp = 0x40; fm.lim = filt % 9;
+        fm.dry = 0xC0; fm.pan = 0x80;
+
+        setStep(host.sequencer(), 0, 0, 60, 100, 0);
+        host.push(playPhrase(0, 0, 0));
+        host.render(1000);
+
+        for (float val : host.audio()) {
+            REQUIRE(std::isfinite(val));
+        }
+    }
 }
 
 TEST_CASE("FMSynth RT safety -- zero allocations", "[fmsynth]") {

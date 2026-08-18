@@ -409,27 +409,60 @@ int main(int argc, char* argv[]) {
 
     auto pushFullInstrument = [&](int instIdx, const m8::engine::Instrument& inst, const std::optional<m8::engine::EqBank>& eq) {
         uiEngineState.instruments[instIdx] = inst;
+        bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
+        bool isFm  = (inst.type == m8::engine::InstType::INST_FMSYNTH);
+        bool isHyp = (inst.type == m8::engine::InstType::INST_HYPERSYN);
+        bool isWav = (inst.type == m8::engine::InstType::INST_WAVSYNTH);
+
+        int transp = isHyp ? inst.hyper.transp : (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : (isWav ? inst.wav.transp : inst.sampler.transp)));
+        int amp = isHyp ? inst.hyper.amp : (isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : (isWav ? inst.wav.amp : inst.sampler.amp)));
+        int lim = isHyp ? inst.hyper.lim : (isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : (isWav ? inst.wav.lim : inst.sampler.lim)));
+        int pan = isHyp ? inst.hyper.pan : (isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : (isWav ? inst.wav.pan : inst.sampler.pan)));
+        int dry = isHyp ? inst.hyper.dry : (isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : (isWav ? inst.wav.dry : inst.sampler.dry)));
+        int cho = isHyp ? inst.hyper.cho : (isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : (isWav ? inst.wav.cho : inst.sampler.cho)));
+        int del = isHyp ? inst.hyper.del : (isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : (isWav ? inst.wav.del : inst.sampler.del)));
+        int rev = isHyp ? inst.hyper.rev : (isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : (isWav ? inst.wav.rev : inst.sampler.rev)));
+        int degrade = isMac ? inst.macrosyn.degrade : inst.sampler.degrade;
+        int filter_type = isHyp ? inst.hyper.filter_type : (isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : (isWav ? inst.wav.filter_type : inst.sampler.filter_type)));
+        int cutoff = isHyp ? inst.hyper.cutoff : (isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : (isWav ? inst.wav.cutoff : inst.sampler.cutoff)));
+        int res = isHyp ? inst.hyper.res : (isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : (isWav ? inst.wav.res : inst.sampler.res)));
+
         PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, static_cast<int>(inst.type), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.transp : inst.sampler.transp), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, transp, instIdx);
         PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, inst.getTblTic(), instIdx);
         PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, inst.getEq(), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.amp : inst.sampler.amp), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.lim : inst.sampler.lim), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.pan : inst.sampler.pan), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.dry : inst.sampler.dry), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.cho : inst.sampler.cho), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.del : inst.sampler.del), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.rev : inst.sampler.rev), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.degrade : inst.sampler.degrade), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.filter_type : inst.sampler.filter_type), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.cutoff : inst.sampler.cutoff), instIdx);
-        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, (inst.type == m8::engine::InstType::INST_MACROSYN ? inst.macrosyn.res : inst.sampler.res), instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, amp, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, lim, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, pan, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, dry, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, cho, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, del, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, rev, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, degrade, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, filter_type, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, cutoff, instIdx);
+        PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, res, instIdx);
 
         if (inst.type == m8::engine::InstType::INST_MACROSYN) {
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, inst.macrosyn.shape, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, inst.macrosyn.timbre, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, inst.macrosyn.color, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, inst.macrosyn.redux, instIdx);
+        } else if (inst.type == m8::engine::InstType::INST_FMSYNTH) {
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_ALGO, inst.fm.algo, instIdx);
+            for (int o = 0; o < 4; ++o) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_SHAPE, inst.fm.ops[o].shape, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO, inst.fm.ops[o].ratio, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO_FINE, inst.fm.ops[o].ratio_fine, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_LEVEL, inst.fm.ops[o].level, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_FB, inst.fm.ops[o].feedback, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_A, inst.fm.ops[o].mod_a, instIdx, o);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_B, inst.fm.ops[o].mod_b, instIdx, o);
+            }
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD1, inst.fm.mod1, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD2, inst.fm.mod2, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD3, inst.fm.mod3, instIdx);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD4, inst.fm.mod4, instIdx);
         } else if (inst.type == m8::engine::InstType::INST_SAMPLER) {
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, inst.sampler.play, instIdx);
             PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, inst.sampler.slice, instIdx);

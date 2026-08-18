@@ -515,11 +515,13 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             float effLevel = op.level / 255.0f;
             float effRatio = float(op.ratio) + float(op.ratio_fine) / 256.0f;
             float effFeedback = op.feedback / 255.0f;
+            float opPitchOffset = 0.0f;
 
             auto applyMod = [&](int dest, float mod_val) {
                 switch (dest) {
                 case 1: effLevel *= (mod_val + 1.0f) * 0.5f; break;
                 case 2: effRatio += mod_val * 16.0f; break;
+                case 3: opPitchOffset += mod_val * 24.0f; break;
                 case 4: effFeedback *= (mod_val + 1.0f) * 0.5f; break;
                 default: break;
                 }
@@ -529,7 +531,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
             opLevel[i] = std::clamp(effLevel, 0.0f, 1.0f);
             opFeedback[i] = std::clamp(effFeedback, 0.0f, 1.0f);
-            opFreq[i] = noteFreq * std::clamp(effRatio, 0.0f, 32.0f);
+            opFreq[i] = noteFreq * std::pow(2.0f, opPitchOffset / 12.0f) * std::clamp(effRatio, 0.0f, 32.0f);
             opShape[i] = std::clamp(op.shape, 0, kFMNumShapes - 1);
         }
 

@@ -1,0 +1,37 @@
+# synth_fmsynth.m8script — UI script coverage for FMSynth screen and engine
+load songs/sunrise.m8s
+wait 1
+assert_no_error
+
+# Navigate to Instrument screen
+goto INSTRUMENT
+assert_field TYPE SAMPLER
+repeat 3 {
+    key X+UP
+}
+wait 1
+assert_field TYPE FMSYNTH
+
+# Move down to ALGO
+key DOWN
+key DOWN
+key DOWN
+wait 1
+assert_field ALGO 00 A > B > C > D
+
+# Move down to RATIO (through Op Shapes at row 7)
+key DOWN
+key DOWN
+wait 1
+assert_field RATIO 00.00 00.00 00.00 00.00
+
+# Edit Op A ratio from 00.00 to 01.00
+key X+UP
+wait 1
+assert_field RATIO 01.00 00.00 00.00 00.00
+
+# Render 1 second of FM audio
+render 1 fm.wav
+assert_wav fm.wav nonfinite == 0
+assert_wav fm.wav clipped == 0
+assert_wav fm.wav peak > 0.0

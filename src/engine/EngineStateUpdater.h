@@ -108,6 +108,19 @@ struct EngineStateUpdater {
             case ParamID::MAC_TIMBRE:
             case ParamID::MAC_COLOR:
             case ParamID::MAC_REDUX:
+            case ParamID::FM_ALGO:
+            case ParamID::FM_OP_SHAPE:
+            case ParamID::FM_OP_RATIO:
+            case ParamID::FM_OP_RATIO_FINE:
+            case ParamID::FM_OP_LEVEL:
+            case ParamID::FM_OP_FB:
+            case ParamID::FM_OP_RETRIG:
+            case ParamID::FM_OP_MOD_A:
+            case ParamID::FM_OP_MOD_B:
+            case ParamID::FM_MOD1:
+            case ParamID::FM_MOD2:
+            case ParamID::FM_MOD3:
+            case ParamID::FM_MOD4:
             case ParamID::MOD_TYPE:
             case ParamID::MOD_DEST:
             case ParamID::MOD_AMT:

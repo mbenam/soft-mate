@@ -1,12 +1,21 @@
 #include "InstrumentScreen.h"
 #include "InstrumentSamplerLayout.h"
 #include "InstrumentMacrosynLayout.h"
+#include "InstrumentFmsynthLayout.h"
 #include <iomanip>
 #include <sstream>
+#include <cstdio>
+#include <algorithm>
 
 namespace m8 {
 namespace ui {
 namespace instrument {
+
+struct FMOpClipboard {
+    bool hasData = false;
+    m8::engine::FMSynthState::FMOp op;
+};
+static FMOpClipboard s_fmOpClipboard;
 
 static SDL_Color GetColorFromString(const std::string& colorName) {
     if (colorName == "TITLE") return {255, 60, 60, 255};
@@ -25,52 +34,6 @@ static std::string ToHex(int value) {
     return ss.str();
 }
 
-// Helper: Resolves the live string value for a given Field ID
-static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instrument& inst) {
-    using C = CursorId;
-    bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
-
-    if (fieldId == C::TYPE) return isMac ? "MACROSYN" : "SAMPLER ";
-    if (fieldId == C::NAME) return inst.name;
-    if (fieldId == C::CMD_LOAD) return "LOAD";
-    if (fieldId == C::CMD_SAVE) return "SAVE";
-    if (fieldId == C::SAMPLE_LOAD) return "LOAD";
-    if (fieldId == C::SAMPLE_REC) return "REC.";
-
-    if (fieldId == C::TRANSP) return (isMac ? inst.macrosyn.transp : inst.sampler.transp) ? "ON" : "OFF";
-    int eq = isMac ? inst.macrosyn.eq : inst.sampler.eq;
-    if (fieldId == C::EQ) return eq == 0 ? "--" : ToHex(eq);
-
-    // Enums that have separate string accents
-    if (fieldId == C::FILTER) return ToHex(isMac ? inst.macrosyn.filter_type : inst.sampler.filter_type);
-    if (fieldId == C::PLAY) return ToHex(inst.sampler.play);
-    if (fieldId == C::LIM) return ToHex(isMac ? inst.macrosyn.lim : inst.sampler.lim);
-    if (fieldId == C::SLICE) return ToHex(inst.sampler.slice);
-
-    // Standard Hex values
-    if (fieldId == C::TBL_TIC) return ToHex(isMac ? inst.macrosyn.tbl_tic : inst.sampler.tbl_tic);
-    if (fieldId == C::START) return ToHex(inst.sampler.start);
-    if (fieldId == C::LOOP_ST) return ToHex(inst.sampler.loop_st);
-    if (fieldId == C::LENGTH) return ToHex(inst.sampler.length);
-    if (fieldId == C::DETUNE) return ToHex(inst.sampler.detune);
-    if (fieldId == C::DEGRADE) return ToHex(isMac ? inst.macrosyn.degrade : inst.sampler.degrade);
-    if (fieldId == C::CUTOFF) return ToHex(isMac ? inst.macrosyn.cutoff : inst.sampler.cutoff);
-    if (fieldId == C::RES) return ToHex(isMac ? inst.macrosyn.res : inst.sampler.res);
-    if (fieldId == C::AMP) return ToHex(isMac ? inst.macrosyn.amp : inst.sampler.amp);
-    if (fieldId == C::PAN) return ToHex(isMac ? inst.macrosyn.pan : inst.sampler.pan);
-    if (fieldId == C::DRY) return ToHex(isMac ? inst.macrosyn.dry : inst.sampler.dry);
-    if (fieldId == C::CHO) return ToHex(isMac ? inst.macrosyn.cho : inst.sampler.cho);
-    if (fieldId == C::DEL) return ToHex(isMac ? inst.macrosyn.del : inst.sampler.del);
-    if (fieldId == C::REV) return ToHex(isMac ? inst.macrosyn.rev : inst.sampler.rev);
-
-    if (fieldId == C::SHAPE) return ToHex(inst.macrosyn.shape);
-    if (fieldId == C::TIMBRE) return ToHex(inst.macrosyn.timbre);
-    if (fieldId == C::COLOR) return ToHex(inst.macrosyn.color);
-    if (fieldId == C::REDUX) return ToHex(inst.macrosyn.redux);
-
-    return "--";
-}
-
 static const char* const kMacroShapes[44] = {
     "CSAW", "MORPH", "SAW SQUARE", "SINE TRIANGLE", "BUZZ",
     "SQUARE SUB", "SAW SUB", "SQUARE SYNC", "SAW SYNC",
@@ -86,11 +49,11 @@ static const char* const kMacroShapes[44] = {
 };
 
 static const char* const kFilterModes[8] = {
-    "OFF", "LOWPASS", "HIGHPAS", "BANDPAS", "BANDSTP", "LP>HP", "ZDF LP", "ZDF HP"
+    "OFF", "LP ", "HP ", "BP ", "BS ", "LP>HP", "ZDF LP", "ZDF HP"
 };
 
 static const char* const kLimModes[9] = {
-    "CLIP", "SIN", "FOLD", "WRAP", "POST", "POST:AD", "POST:W1", "POST:W2", "POST:W3"
+    "CLIP", "SIN ", "FOLD", "WRAP", "POST", "POST:AD", "POST:W1", "POST:W2", "POST:W3"
 };
 
 static const char* const kPlayModes[15] = {
@@ -98,20 +61,164 @@ static const char* const kPlayModes[15] = {
     "OSC PP", "REPITCH", "REP.REV", "REP.PP", "REP.BPM", "BPM.REV", "BPM.PP"
 };
 
+static const char* const kFMShapeNames[12] = {
+    "SIN", "SW2", "SW3", "SW4", "SW5", "SW6", "TRI", "SAW", "SQU", "PUL", "IMP", "NOISE"
+};
+
+static const char* const kFMAlgoNames[12] = {
+    "A > B > C > D",
+    "[A + B] > C > D",
+    "[A > B + C] > D",
+    "[A > B + A > C] > D",
+    "[A + B + C] > D",
+    "[A > B > C] + D",
+    "[A > B > C] + [A > B > D]",
+    "[A > B] + [C > D]",
+    "[A > B] + [A > C] + [A > D]",
+    "[A > B] + [A > C] + D",
+    "[A > B] + C + D",
+    "A + B + C + D"
+};
+
+static const char* const kFMModNames[17] = {
+    "-----",
+    "1LEV", "1RAT", "1PIT", "1FBK",
+    "2LEV", "2RAT", "2PIT", "2FBK",
+    "3LEV", "3RAT", "3PIT", "3FBK",
+    "4LEV", "4RAT", "4PIT", "4FBK"
+};
+
+static uint8_t ModIndexToByte(int idx) {
+    if (idx <= 0 || idx > 16) return 0;
+    int zeroBased = idx - 1;
+    int src = zeroBased / 4;
+    int dest = (zeroBased % 4) + 1;
+    return static_cast<uint8_t>((src << 4) | dest);
+}
+
+static int ByteToModIndex(uint8_t b) {
+    int dest = b & 0x0F;
+    int src = (b >> 4) & 0x0F;
+    if (dest < 1 || dest > 4 || src < 0 || src > 3) return 0;
+    return 1 + src * 4 + (dest - 1);
+}
+
+static int GetOpIndexFromCursor(CursorId cid) {
+    using C = CursorId;
+    switch (cid) {
+    case C::FM_OP_A_SHAPE: case C::FM_OP_A_RATIO: case C::FM_OP_A_LEV: case C::FM_OP_A_FB: case C::FM_OP_A_MOD1: case C::FM_OP_A_MOD2: return 0;
+    case C::FM_OP_B_SHAPE: case C::FM_OP_B_RATIO: case C::FM_OP_B_LEV: case C::FM_OP_B_FB: case C::FM_OP_B_MOD1: case C::FM_OP_B_MOD2: return 1;
+    case C::FM_OP_C_SHAPE: case C::FM_OP_C_RATIO: case C::FM_OP_C_LEV: case C::FM_OP_C_FB: case C::FM_OP_C_MOD1: case C::FM_OP_C_MOD2: return 2;
+    case C::FM_OP_D_SHAPE: case C::FM_OP_D_RATIO: case C::FM_OP_D_LEV: case C::FM_OP_D_FB: case C::FM_OP_D_MOD1: case C::FM_OP_D_MOD2: return 3;
+    default: return -1;
+    }
+}
+
+// Helper: Resolves the live string value for a given Field ID
+static std::string ResolveInstrumentValue(CursorId fieldId, const engine::Instrument& inst) {
+    using C = CursorId;
+    bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
+
+    if (fieldId == C::TYPE) {
+        if (isMac) return "MACROSYN";
+        if (isFm)  return "FMSYNTH ";
+        if (inst.type == engine::InstType::INST_HYPERSYN) return "HYPERSYN";
+        if (inst.type == engine::InstType::INST_WAVSYNTH) return "WAVSYNTH";
+        return "SAMPLER ";
+    }
+    if (fieldId == C::NAME) return inst.name;
+    if (fieldId == C::CMD_LOAD) return "LOAD";
+    if (fieldId == C::CMD_SAVE) return "SAVE";
+    if (fieldId == C::SAMPLE_LOAD) return "LOAD";
+    if (fieldId == C::SAMPLE_REC) return "REC.";
+
+    if (fieldId == C::TRANSP) return (isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp)) ? "ON" : "OFF";
+    int eq = isMac ? inst.macrosyn.eq : (isFm ? inst.fm.eq : inst.sampler.eq);
+    if (fieldId == C::EQ) return eq == 0 ? "--" : ToHex(eq);
+
+    // Enums that have separate string accents
+    if (fieldId == C::FILTER) return ToHex(isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type));
+    if (fieldId == C::PLAY) return ToHex(inst.sampler.play);
+    if (fieldId == C::LIM) return ToHex(isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim));
+    if (fieldId == C::SLICE) return ToHex(inst.sampler.slice);
+
+    // Standard Hex values
+    if (fieldId == C::TBL_TIC) return ToHex(isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic));
+    if (fieldId == C::START) return ToHex(inst.sampler.start);
+    if (fieldId == C::LOOP_ST) return ToHex(inst.sampler.loop_st);
+    if (fieldId == C::LENGTH) return ToHex(inst.sampler.length);
+    if (fieldId == C::DETUNE) return ToHex(inst.sampler.detune);
+    if (fieldId == C::DEGRADE) return ToHex(isMac ? inst.macrosyn.degrade : inst.sampler.degrade);
+    if (fieldId == C::CUTOFF) return ToHex(isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff));
+    if (fieldId == C::RES) return ToHex(isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res));
+    if (fieldId == C::AMP) return ToHex(isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp));
+    if (fieldId == C::PAN) return ToHex(isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan));
+    if (fieldId == C::DRY) return ToHex(isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry));
+    if (fieldId == C::CHO) return ToHex(isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho));
+    if (fieldId == C::DEL) return ToHex(isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del));
+    if (fieldId == C::REV) return ToHex(isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev));
+
+    if (fieldId == C::SHAPE) return ToHex(inst.macrosyn.shape);
+    if (fieldId == C::TIMBRE) return ToHex(inst.macrosyn.timbre);
+    if (fieldId == C::COLOR) return ToHex(inst.macrosyn.color);
+    if (fieldId == C::REDUX) return ToHex(inst.macrosyn.redux);
+
+    // FM Synth
+    if (fieldId == C::FM_ALGO) return ToHex(inst.fm.algo);
+    if (fieldId == C::FM_OP_A_SHAPE) return kFMShapeNames[std::clamp(inst.fm.ops[0].shape, 0, 11)];
+    if (fieldId == C::FM_OP_B_SHAPE) return kFMShapeNames[std::clamp(inst.fm.ops[1].shape, 0, 11)];
+    if (fieldId == C::FM_OP_C_SHAPE) return kFMShapeNames[std::clamp(inst.fm.ops[2].shape, 0, 11)];
+    if (fieldId == C::FM_OP_D_SHAPE) return kFMShapeNames[std::clamp(inst.fm.ops[3].shape, 0, 11)];
+
+    char rBuf[16];
+    if (fieldId == C::FM_OP_A_RATIO) { std::snprintf(rBuf, sizeof(rBuf), "%02X.%02X", inst.fm.ops[0].ratio & 0xFF, inst.fm.ops[0].ratio_fine & 0xFF); return rBuf; }
+    if (fieldId == C::FM_OP_B_RATIO) { std::snprintf(rBuf, sizeof(rBuf), "%02X.%02X", inst.fm.ops[1].ratio & 0xFF, inst.fm.ops[1].ratio_fine & 0xFF); return rBuf; }
+    if (fieldId == C::FM_OP_C_RATIO) { std::snprintf(rBuf, sizeof(rBuf), "%02X.%02X", inst.fm.ops[2].ratio & 0xFF, inst.fm.ops[2].ratio_fine & 0xFF); return rBuf; }
+    if (fieldId == C::FM_OP_D_RATIO) { std::snprintf(rBuf, sizeof(rBuf), "%02X.%02X", inst.fm.ops[3].ratio & 0xFF, inst.fm.ops[3].ratio_fine & 0xFF); return rBuf; }
+
+    if (fieldId == C::FM_OP_A_LEV) return ToHex(inst.fm.ops[0].level);
+    if (fieldId == C::FM_OP_A_FB)  return ToHex(inst.fm.ops[0].feedback);
+    if (fieldId == C::FM_OP_B_LEV) return ToHex(inst.fm.ops[1].level);
+    if (fieldId == C::FM_OP_B_FB)  return ToHex(inst.fm.ops[1].feedback);
+    if (fieldId == C::FM_OP_C_LEV) return ToHex(inst.fm.ops[2].level);
+    if (fieldId == C::FM_OP_C_FB)  return ToHex(inst.fm.ops[2].feedback);
+    if (fieldId == C::FM_OP_D_LEV) return ToHex(inst.fm.ops[3].level);
+    if (fieldId == C::FM_OP_D_FB)  return ToHex(inst.fm.ops[3].feedback);
+
+    if (fieldId == C::FM_OP_A_MOD1) return kFMModNames[ByteToModIndex(inst.fm.ops[0].mod_a)];
+    if (fieldId == C::FM_OP_B_MOD1) return kFMModNames[ByteToModIndex(inst.fm.ops[1].mod_a)];
+    if (fieldId == C::FM_OP_C_MOD1) return kFMModNames[ByteToModIndex(inst.fm.ops[2].mod_a)];
+    if (fieldId == C::FM_OP_D_MOD1) return kFMModNames[ByteToModIndex(inst.fm.ops[3].mod_a)];
+
+    if (fieldId == C::FM_OP_A_MOD2) return kFMModNames[ByteToModIndex(inst.fm.ops[0].mod_b)];
+    if (fieldId == C::FM_OP_B_MOD2) return kFMModNames[ByteToModIndex(inst.fm.ops[1].mod_b)];
+    if (fieldId == C::FM_OP_C_MOD2) return kFMModNames[ByteToModIndex(inst.fm.ops[2].mod_b)];
+    if (fieldId == C::FM_OP_D_MOD2) return kFMModNames[ByteToModIndex(inst.fm.ops[3].mod_b)];
+
+    if (fieldId == C::FM_MOD1) return ToHex(inst.fm.mod1);
+    if (fieldId == C::FM_MOD2) return ToHex(inst.fm.mod2);
+    if (fieldId == C::FM_MOD3) return ToHex(inst.fm.mod3);
+    if (fieldId == C::FM_MOD4) return ToHex(inst.fm.mod4);
+
+    return "--";
+}
+
 // Helper: Resolves the accent string for enums
 static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instrument& inst, const std::string& fallback) {
     using C = CursorId;
     bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
 
     if (fieldId == C::FILTER) {
-        int filter_type = isMac ? inst.macrosyn.filter_type : inst.sampler.filter_type;
+        int filter_type = isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type);
         if (filter_type >= 0 && filter_type < 8) return kFilterModes[filter_type];
     }
     if (fieldId == C::PLAY) {
         if (inst.sampler.play >= 0 && inst.sampler.play < 15) return kPlayModes[inst.sampler.play];
     }
     if (fieldId == C::LIM) {
-        int lim = isMac ? inst.macrosyn.lim : inst.sampler.lim;
+        int lim = isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim);
         if (lim >= 0 && lim < 9) return kLimModes[lim];
     }
     if (fieldId == C::SLICE) {
@@ -122,6 +229,11 @@ static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instr
             return kMacroShapes[inst.macrosyn.shape];
         }
     }
+    if (fieldId == C::FM_ALGO) {
+        if (inst.fm.algo >= 0 && inst.fm.algo < 12) {
+            return kFMAlgoNames[inst.fm.algo];
+        }
+    }
     return fallback;
 }
 
@@ -129,6 +241,7 @@ static std::string ResolveInstrumentAccent(CursorId fieldId, const engine::Instr
 static int GetSliderValue(CursorId fieldId, const engine::Instrument& inst) {
     using C = CursorId;
     bool isMac = (inst.type == engine::InstType::INST_MACROSYN);
+    bool isFm  = (inst.type == engine::InstType::INST_FMSYNTH);
 
     if (fieldId == C::START) return inst.sampler.start;
     if (fieldId == C::LOOP_ST) return inst.sampler.loop_st;
@@ -136,14 +249,14 @@ static int GetSliderValue(CursorId fieldId, const engine::Instrument& inst) {
     if (fieldId == C::DETUNE) return inst.sampler.detune;
 
     if (fieldId == C::DEGRADE) return isMac ? inst.macrosyn.degrade : inst.sampler.degrade;
-    if (fieldId == C::CUTOFF) return isMac ? inst.macrosyn.cutoff : inst.sampler.cutoff;
-    if (fieldId == C::RES) return isMac ? inst.macrosyn.res : inst.sampler.res;
-    if (fieldId == C::AMP) return isMac ? inst.macrosyn.amp : inst.sampler.amp;
-    if (fieldId == C::PAN) return isMac ? inst.macrosyn.pan : inst.sampler.pan;
-    if (fieldId == C::DRY) return isMac ? inst.macrosyn.dry : inst.sampler.dry;
-    if (fieldId == C::CHO) return isMac ? inst.macrosyn.cho : inst.sampler.cho;
-    if (fieldId == C::DEL) return isMac ? inst.macrosyn.del : inst.sampler.del;
-    if (fieldId == C::REV) return isMac ? inst.macrosyn.rev : inst.sampler.rev;
+    if (fieldId == C::CUTOFF) return isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff);
+    if (fieldId == C::RES) return isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res);
+    if (fieldId == C::AMP) return isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp);
+    if (fieldId == C::PAN) return isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan);
+    if (fieldId == C::DRY) return isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry);
+    if (fieldId == C::CHO) return isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho);
+    if (fieldId == C::DEL) return isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del);
+    if (fieldId == C::REV) return isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev);
 
     if (fieldId == C::TIMBRE) return inst.macrosyn.timbre;
     if (fieldId == C::COLOR) return inst.macrosyn.color;
@@ -159,10 +272,11 @@ void RenderInstrumentScreen(Renderer& renderer,
 
     const engine::Instrument& currentInst = engState.instruments[currentInstIndex];
     bool isMac = (currentInst.type == engine::InstType::INST_MACROSYN);
+    bool isFm  = (currentInst.type == engine::InstType::INST_FMSYNTH);
 
-    const std::vector<UI_GridCell>& staticText = isMac ? GetMacrosynStaticText() : GetSamplerStaticText();
-    const std::vector<UI_GridCell>& dynamicText = isMac ? GetMacrosynDynamicTextDefaults() : GetSamplerDynamicTextDefaults();
-    const std::unordered_map<CursorId, std::vector<UI_GridCell>>& interactiveFields = isMac ? GetMacrosynInteractiveFields() : GetSamplerInteractiveFields();
+    const std::vector<UI_GridCell>& staticText = isFm ? GetFmsynthStaticText() : (isMac ? GetMacrosynStaticText() : GetSamplerStaticText());
+    const std::vector<UI_GridCell>& dynamicText = isFm ? GetFmsynthDynamicTextDefaults() : (isMac ? GetMacrosynDynamicTextDefaults() : GetSamplerDynamicTextDefaults());
+    const std::unordered_map<CursorId, std::vector<UI_GridCell>>& interactiveFields = isFm ? GetFmsynthInteractiveFields() : (isMac ? GetMacrosynInteractiveFields() : GetSamplerInteractiveFields());
 
     // Render Static Background Text
     for (const auto& cell : staticText) {
@@ -227,44 +341,105 @@ void HandleInstrumentInput(const SDL_Event& event, bool editHeld, bool& arrowPre
                             ViewManager& viewManager, bool& browserForSongLoad,
                             ::FileBrowser& fileBrowser, InstrumentBrowserMode& instrumentBrowserMode) {
     using C = CursorId;
-    bool isMac = (uiEngineState.instruments[currentInstIndex].type == m8::engine::InstType::INST_MACROSYN);
-    auto navMap = isMac ? GetMacrosynNavMap() : GetSamplerNavMap();
+    const m8::engine::Instrument& inst = uiEngineState.instruments[currentInstIndex];
+    bool isMac = (inst.type == m8::engine::InstType::INST_MACROSYN);
+    bool isFm  = (inst.type == m8::engine::InstType::INST_FMSYNTH);
+    auto navMap = isFm ? GetFmsynthNavMap() : (isMac ? GetMacrosynNavMap() : GetSamplerNavMap());
+
+    int opIdx = GetOpIndexFromCursor(cursor_id);
+    bool shiftActive = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+
+    if (isFm && opIdx >= 0 && shiftActive) {
+        // [SHIFT] + [OPT] (SDLK_Z or SDLK_LALT) -> Copy OP
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_Z || event.key.key == SDLK_LALT)) {
+            s_fmOpClipboard.hasData = true;
+            s_fmOpClipboard.op = inst.fm.ops[opIdx];
+            return;
+        }
+        // [SHIFT] + [EDIT] (SDLK_X) -> Paste OP
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_X)) {
+            if (s_fmOpClipboard.hasData) {
+                const auto& srcOp = s_fmOpClipboard.op;
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_SHAPE, srcOp.shape, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO, srcOp.ratio, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO_FINE, srcOp.ratio_fine, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_LEVEL, srcOp.level, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_FB, srcOp.feedback, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_A, srcOp.mod_a, currentInstIndex, opIdx);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_B, srcOp.mod_b, currentInstIndex, opIdx);
+            }
+            return;
+        }
+    }
 
     if (editHeld && (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP || event.key.key == SDLK_LEFT || event.key.key == SDLK_DOWN)) {
         arrowPressedDuringEdit = true;
         int step = (event.key.key == SDLK_RIGHT || event.key.key == SDLK_UP) ? 1 : -1;
-        const m8::engine::Instrument& inst = uiEngineState.instruments[currentInstIndex];
-        bool isMac2 = (inst.type == m8::engine::InstType::INST_MACROSYN);
 
-        if (cursor_id == C::TYPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, std::clamp<int>(static_cast<int>(inst.type) + step, 0, 1), currentInstIndex);
-        else if (cursor_id == C::TRANSP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isMac2 ? inst.macrosyn.transp : inst.sampler.transp) + step, 0, 1), currentInstIndex);
-        else if (cursor_id == C::TBL_TIC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isMac2 ? inst.macrosyn.tbl_tic : inst.sampler.tbl_tic) + step, 0, 255), currentInstIndex);
-        // Bank index, not a byte: clamp to what the loaded song actually carries
-        // (32 banks on a V4 file, 128 on V4.1+), or the assignment would be lost
-        // on save. getEq() rather than a sampler/macrosyn pick -- every
-        // instrument type has an eq field.
+        if (cursor_id == C::TYPE) {
+            int newType = std::clamp<int>(static_cast<int>(inst.type) + step, 0, 3);
+            PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TYPE, newType, currentInstIndex);
+            cursor_id = C::TYPE;
+        }
+        else if (cursor_id == C::TRANSP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TRANSP, std::clamp<int>((isMac ? inst.macrosyn.transp : (isFm ? inst.fm.transp : inst.sampler.transp)) + step, 0, 1), currentInstIndex);
+        else if (cursor_id == C::TBL_TIC) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_TBL_TIC, std::clamp<int>((isMac ? inst.macrosyn.tbl_tic : (isFm ? inst.fm.tbl_tic : inst.sampler.tbl_tic)) + step, 0, 255), currentInstIndex);
         else if (cursor_id == C::EQ) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_EQ, std::clamp<int>(inst.getEq() + step, 0, uiEngineState.eqBankCount - 1), currentInstIndex);
-        else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac2 ? inst.macrosyn.amp : inst.sampler.amp) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac2 ? inst.macrosyn.lim : inst.sampler.lim) + step, 0, 8), currentInstIndex);
-        else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac2 ? inst.macrosyn.pan : inst.sampler.pan) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::DRY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>((isMac2 ? inst.macrosyn.dry : inst.sampler.dry) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>((isMac2 ? inst.macrosyn.cho : inst.sampler.cho) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>((isMac2 ? inst.macrosyn.del : inst.sampler.del) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>((isMac2 ? inst.macrosyn.rev : inst.sampler.rev) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::DEGRADE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, std::clamp<int>((isMac2 ? inst.macrosyn.degrade : inst.sampler.degrade) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac2 ? inst.macrosyn.filter_type : inst.sampler.filter_type) + step, 0, 7), currentInstIndex);
-        else if (cursor_id == C::CUTOFF) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isMac2 ? inst.macrosyn.cutoff : inst.sampler.cutoff) + step, 0, 255), currentInstIndex);
-        else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isMac2 ? inst.macrosyn.res : inst.sampler.res) + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::SLICE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 14), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::START) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::LOOP_ST) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::LENGTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length + step, 0, 255), currentInstIndex);
-        else if (!isMac2 && cursor_id == C::DETUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune + step, 0, 255), currentInstIndex);
-        else if (isMac2 && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape + step, 0, 43), currentInstIndex);
-        else if (isMac2 && cursor_id == C::TIMBRE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, std::clamp<int>(inst.macrosyn.timbre + step, 0, 255), currentInstIndex);
-        else if (isMac2 && cursor_id == C::COLOR) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, std::clamp<int>(inst.macrosyn.color + step, 0, 255), currentInstIndex);
-        else if (isMac2 && cursor_id == C::REDUX) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, std::clamp<int>(inst.macrosyn.redux + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::AMP) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_AMP, std::clamp<int>((isMac ? inst.macrosyn.amp : (isFm ? inst.fm.amp : inst.sampler.amp)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::LIM) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_LIM, std::clamp<int>((isMac ? inst.macrosyn.lim : (isFm ? inst.fm.lim : inst.sampler.lim)) + step, 0, 8), currentInstIndex);
+        else if (cursor_id == C::PAN) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_PAN, std::clamp<int>((isMac ? inst.macrosyn.pan : (isFm ? inst.fm.pan : inst.sampler.pan)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::DRY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DRY, std::clamp<int>((isMac ? inst.macrosyn.dry : (isFm ? inst.fm.dry : inst.sampler.dry)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::CHO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CHO, std::clamp<int>((isMac ? inst.macrosyn.cho : (isFm ? inst.fm.cho : inst.sampler.cho)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::DEL) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEL, std::clamp<int>((isMac ? inst.macrosyn.del : (isFm ? inst.fm.del : inst.sampler.del)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::REV) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_REV, std::clamp<int>((isMac ? inst.macrosyn.rev : (isFm ? inst.fm.rev : inst.sampler.rev)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::DEGRADE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_DEGRADE, std::clamp<int>((isMac ? inst.macrosyn.degrade : inst.sampler.degrade) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::FILTER) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_FILTER, std::clamp<int>((isMac ? inst.macrosyn.filter_type : (isFm ? inst.fm.filter_type : inst.sampler.filter_type)) + step, 0, 7), currentInstIndex);
+        else if (cursor_id == C::CUTOFF) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_CUTOFF, std::clamp<int>((isMac ? inst.macrosyn.cutoff : (isFm ? inst.fm.cutoff : inst.sampler.cutoff)) + step, 0, 255), currentInstIndex);
+        else if (cursor_id == C::RES) PushParam(commandSink, uiEngineState, m8::engine::ParamID::INST_RES, std::clamp<int>((isMac ? inst.macrosyn.res : (isFm ? inst.fm.res : inst.sampler.res)) + step, 0, 255), currentInstIndex);
+
+        // Sampler-specific
+        else if (!isMac && !isFm && cursor_id == C::SLICE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_SLICE, std::clamp<int>(inst.sampler.slice + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && cursor_id == C::PLAY) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_PLAY, std::clamp<int>(inst.sampler.play + step, 0, 14), currentInstIndex);
+        else if (!isMac && !isFm && cursor_id == C::START) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_START, std::clamp<int>(inst.sampler.start + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && cursor_id == C::LOOP_ST) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LOOP_ST, std::clamp<int>(inst.sampler.loop_st + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && cursor_id == C::LENGTH) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_LENGTH, std::clamp<int>(inst.sampler.length + step, 0, 255), currentInstIndex);
+        else if (!isMac && !isFm && cursor_id == C::DETUNE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::SAMP_DETUNE, std::clamp<int>(inst.sampler.detune + step, 0, 255), currentInstIndex);
+
+        // Macrosyn-specific
+        else if (isMac && cursor_id == C::SHAPE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_SHAPE, std::clamp<int>(inst.macrosyn.shape + step, 0, 43), currentInstIndex);
+        else if (isMac && cursor_id == C::TIMBRE) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_TIMBRE, std::clamp<int>(inst.macrosyn.timbre + step, 0, 255), currentInstIndex);
+        else if (isMac && cursor_id == C::COLOR) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_COLOR, std::clamp<int>(inst.macrosyn.color + step, 0, 255), currentInstIndex);
+        else if (isMac && cursor_id == C::REDUX) PushParam(commandSink, uiEngineState, m8::engine::ParamID::MAC_REDUX, std::clamp<int>(inst.macrosyn.redux + step, 0, 255), currentInstIndex);
+
+        // FMSynth-specific
+        else if (isFm && cursor_id == C::FM_ALGO) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_ALGO, std::clamp<int>(inst.fm.algo + step, 0, 11), currentInstIndex);
+        else if (isFm && opIdx >= 0) {
+            int o = opIdx;
+            if (cursor_id == C::FM_OP_A_SHAPE || cursor_id == C::FM_OP_B_SHAPE || cursor_id == C::FM_OP_C_SHAPE || cursor_id == C::FM_OP_D_SHAPE) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_SHAPE, std::clamp<int>(inst.fm.ops[o].shape + step, 0, 11), currentInstIndex, o);
+            } else if (cursor_id == C::FM_OP_A_RATIO || cursor_id == C::FM_OP_B_RATIO || cursor_id == C::FM_OP_C_RATIO || cursor_id == C::FM_OP_D_RATIO) {
+                if (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN) {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO, std::clamp<int>(inst.fm.ops[o].ratio + step, 0, 24), currentInstIndex, o);
+                } else {
+                    PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_RATIO_FINE, std::clamp<int>(inst.fm.ops[o].ratio_fine + step, 0, 255), currentInstIndex, o);
+                }
+            } else if (cursor_id == C::FM_OP_A_LEV || cursor_id == C::FM_OP_B_LEV || cursor_id == C::FM_OP_C_LEV || cursor_id == C::FM_OP_D_LEV) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_LEVEL, std::clamp<int>(inst.fm.ops[o].level + step, 0, 255), currentInstIndex, o);
+            } else if (cursor_id == C::FM_OP_A_FB || cursor_id == C::FM_OP_B_FB || cursor_id == C::FM_OP_C_FB || cursor_id == C::FM_OP_D_FB) {
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_FB, std::clamp<int>(inst.fm.ops[o].feedback + step, 0, 255), currentInstIndex, o);
+            } else if (cursor_id == C::FM_OP_A_MOD1 || cursor_id == C::FM_OP_B_MOD1 || cursor_id == C::FM_OP_C_MOD1 || cursor_id == C::FM_OP_D_MOD1) {
+                int curIdx = ByteToModIndex(inst.fm.ops[o].mod_a);
+                int newIdx = std::clamp<int>(curIdx + step, 0, 16);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_A, ModIndexToByte(newIdx), currentInstIndex, o);
+            } else if (cursor_id == C::FM_OP_A_MOD2 || cursor_id == C::FM_OP_B_MOD2 || cursor_id == C::FM_OP_C_MOD2 || cursor_id == C::FM_OP_D_MOD2) {
+                int curIdx = ByteToModIndex(inst.fm.ops[o].mod_b);
+                int newIdx = std::clamp<int>(curIdx + step, 0, 16);
+                PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_OP_MOD_B, ModIndexToByte(newIdx), currentInstIndex, o);
+            }
+        }
+        else if (isFm && cursor_id == C::FM_MOD1) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD1, std::clamp<int>(inst.fm.mod1 + step, 0, 255), currentInstIndex);
+        else if (isFm && cursor_id == C::FM_MOD2) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD2, std::clamp<int>(inst.fm.mod2 + step, 0, 255), currentInstIndex);
+        else if (isFm && cursor_id == C::FM_MOD3) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD3, std::clamp<int>(inst.fm.mod3 + step, 0, 255), currentInstIndex);
+        else if (isFm && cursor_id == C::FM_MOD4) PushParam(commandSink, uiEngineState, m8::engine::ParamID::FM_MOD4, std::clamp<int>(inst.fm.mod4 + step, 0, 255), currentInstIndex);
     } else {
         if (event.key.key == SDLK_DOWN) {
             if (navMap.count(cursor_id) && navMap[cursor_id].down != C::NONE) {
@@ -328,10 +503,6 @@ void HandleInstrumentEditRelease(CursorId cursor_id, bool& browserForSongLoad,
         instrumentBrowserMode = InstrumentBrowserMode::NONE;
         viewManager.pushModal(m8::ui::ViewType::FILE_BROWSER);
     } else if (cursor_id == CursorId::EQ) {
-        // An X tap on EQ opens the editor for whichever bank this instrument
-        // names. X+arrows still changes the bank number, so the release only
-        // opens the editor when no arrow was pressed -- main.cpp applies that
-        // guard before calling here.
         viewManager.pushModal(m8::ui::ViewType::EQ);
     }
 }
