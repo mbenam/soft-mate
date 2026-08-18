@@ -28,40 +28,38 @@ inline int8_t AdjustS8(int8_t val, int delta, int minVal, int maxVal, int8_t emp
     return newVal;
 }
 
+inline m8::engine::FxCmd g_defaultFxCmd = m8::engine::FxCmd::VOL;
+
 inline void ModifyValue(m8::engine::Step& step, int col, int delta, bool largeStep) {
     using namespace m8::engine;
     if (col == 0) {
-        if (step.note == NOTE_EMPTY) {
-            step.note = 60; // C-4
-            if (step.vol == VOL_EMPTY) step.vol = 0x64;
-            if (step.instr == INST_EMPTY) step.instr = 0;
-        } else {
-            int midi = step.note;
-            midi += (largeStep ? delta * 12 : delta);
-            if (midi < 0) midi = 0;
-            if (midi > 127) midi = 127;
-            step.note = midi;
+        // Note
+        if (step.note == NOTE_EMPTY) step.note = 60; // C-4
+        else {
+            int d = largeStep ? delta * 12 : delta;
+            step.note = static_cast<uint8_t>(std::clamp(static_cast<int>(step.note) + d, 0, 127));
         }
     } else if (col == 1) {
+        // Velocity (0..127)
         int d = largeStep ? delta * 0x10 : delta;
         if (step.vol == VOL_EMPTY) step.vol = 0x64;
-        else step.vol = std::clamp((int)step.vol + d, 0, 127);
+        else step.vol = static_cast<uint8_t>(std::clamp(static_cast<int>(step.vol) + d, 0, 127));
     } else if (col == 2) {
+        // Instrument (0..127)
         int d = largeStep ? delta * 0x10 : delta;
         if (step.instr == INST_EMPTY) step.instr = 0;
-        else step.instr = std::clamp((int)step.instr + d, 0, 127);
+        else step.instr = static_cast<uint8_t>(std::clamp(static_cast<int>(step.instr) + d, 0, 127));
     } else if (col == 4 || col == 6 || col == 8) {
+        // FX Value (0..255)
         int d = largeStep ? delta * 0x10 : delta;
         int idx = (col == 4) ? 0 : (col == 6) ? 1 : 2;
         if (step.fx[idx].cmd != FxCmd::NONE) {
-            step.fx[idx].val = std::clamp((int)step.fx[idx].val + d, 0, 255);
+            step.fx[idx].val = static_cast<uint8_t>(std::clamp(static_cast<int>(step.fx[idx].val) + d, 0, 255));
         }
     } else if (col == 3 || col == 5 || col == 7) {
+        // FX Command
         int idx = (col == 3) ? 0 : (col == 5) ? 1 : 2;
-        // Cycle through the modeled FX commands NONE(0)..TIC(9). UNKNOWN(0xFE) is a
-        // load/save passthrough and is not authorable — editing such a slot snaps it
-        // into the modeled range.
-        constexpr int kMaxFx = static_cast<int>(FxCmd::MTT);
+        constexpr int kMaxFx = static_cast<int>(FxCmd::LT2);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;
@@ -82,11 +80,11 @@ inline void InsertDefault(m8::engine::Step& step, int col) {
     } else if (col == 2 && step.instr == INST_EMPTY) {
         step.instr = 0;
     } else if (col == 3 && step.fx[0].cmd == FxCmd::NONE) {
-        step.fx[0] = {FxCmd::VOL, 0};
+        step.fx[0] = {g_defaultFxCmd, 0};
     } else if (col == 5 && step.fx[1].cmd == FxCmd::NONE) {
-        step.fx[1] = {FxCmd::VOL, 0};
+        step.fx[1] = {g_defaultFxCmd, 0};
     } else if (col == 7 && step.fx[2].cmd == FxCmd::NONE) {
-        step.fx[2] = {FxCmd::VOL, 0};
+        step.fx[2] = {g_defaultFxCmd, 0};
     }
 }
 
@@ -111,7 +109,7 @@ inline void ModifyTableValue(m8::engine::TableStep& step, int col, int delta, bo
     } else if (col == 2 || col == 4 || col == 6) {
         // FX Command
         int idx = (col == 2) ? 0 : (col == 4) ? 1 : 2;
-        constexpr int kMaxFx = static_cast<int>(FxCmd::MTT);
+        constexpr int kMaxFx = static_cast<int>(FxCmd::LT2);
         int cmd = static_cast<int>(step.fx[idx].cmd);
         if (cmd > kMaxFx) cmd = 0;
         cmd += delta;
@@ -129,11 +127,11 @@ inline void InsertTableDefault(m8::engine::TableStep& step, int col) {
     } else if (col == 1 && step.vol == VOL_EMPTY) {
         step.vol = 0x64;
     } else if (col == 2 && step.fx[0].cmd == FxCmd::NONE) {
-        step.fx[0] = {FxCmd::VOL, 0};
+        step.fx[0] = {g_defaultFxCmd, 0};
     } else if (col == 4 && step.fx[1].cmd == FxCmd::NONE) {
-        step.fx[1] = {FxCmd::VOL, 0};
+        step.fx[1] = {g_defaultFxCmd, 0};
     } else if (col == 6 && step.fx[2].cmd == FxCmd::NONE) {
-        step.fx[2] = {FxCmd::VOL, 0};
+        step.fx[2] = {g_defaultFxCmd, 0};
     }
 }
 

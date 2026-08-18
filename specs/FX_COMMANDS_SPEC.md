@@ -109,11 +109,19 @@ enum class FxCmd : uint8_t {
 | NXT | yes | -- | preserved | yes | **Implemented** |
 | OFF | yes | -- | preserved | yes | **Implemented** |
 | MTT | yes | -- | preserved | yes | **Implemented** |
+| FIN | yes | -- | preserved | yes | **Implemented** |
+| EA1/EA2 | yes | -- | preserved | yes | **Implemented** |
+| AT1/AT2 | yes | -- | preserved | yes | **Implemented** |
+| HO1/HO2 | yes | -- | preserved | yes | **Implemented** |
+| DE1/DE2 | yes | -- | preserved | yes | **Implemented** |
+| ET1/ET2 | yes | -- | preserved | yes | **Implemented** |
+| LA1/LA2 | yes | -- | preserved | yes | **Implemented** |
+| LF1/LF2 | yes | -- | preserved | yes | **Implemented** |
+| LT1/LT2 | yes | -- | preserved | yes | **Implemented** |
 
-**Sequencer FX Implementation Complete (2026-08-18).** All sequencer FX commands are implemented, selectable in UI edit modes, active at tick time in both phrase and table engines, and covered by unit tests (`[fx]`). Unmodeled commands continue to preserve their raw bytes for lossless `.m8s` file round-trips.
+**Sequencer & Common Instrument FX Implementation Complete (2026-08-18).** All sequencer and common instrument FX commands are implemented, selectable in UI edit modes, active at tick time in both phrase and table engines, and covered by unit tests (`[fx]`). Unmodeled commands continue to preserve their raw bytes for lossless `.m8s` file round-trips.
 
 ### Remaining Unimplemented FX Categories
-- **Instrument-specific parameter FX**: `FIN`, `EA1`/`EA2`, `AT1`/`AT2`, `HO1`/`HO2`, `DE1`/`DE2`, `ET1`/`ET2`, `LA1`/`LA2`, `LF1`/`LF2`, `LT1`/`LT2` (Part D.5).
 - **Mixer / Send Effect FX**: `VMV`, `VMX`, `VDE`, `VRE`, `VT1`..`VT8`, `XDT`, `XDF`, etc. (Part J).
 
 ---
@@ -463,14 +471,7 @@ the LFO." — also a clean, complete contract: unlike ET (pure trigger), LT's va
 
 ### Implementation status
 
-**None of this family is implemented, and none has a library FX byte assigned in Part K** — the
-manual doesn't document raw byte values (it's a user manual, not a file-format reference), so
-assigning these library bytes needs either `m8-files-cxx` source inspection or a device capture
-of the raw FX bytes when one of these commands is placed and saved. Do not guess byte offsets by
-extrapolating Part K's existing table (e.g. assuming FIN follows GGR at `0x24`) — that pattern
-isn't confirmed and these are architecturally different (per-instrument-type commands, not global
-sequencer commands), so they may not even be sequential with the rest of the enum in the actual
-file format.
+**Implemented (2026-08-18)**: All common instrument FX commands (`FIN`, `EA1`/`EA2`, `AT1`/`AT2`, `HO1`/`HO2`, `DE1`/`DE2`, `ET1`/`ET2`, `LA1`/`LA2`, `LF1`/`LF2`, `LT1`/`LT2`) are modeled, integrated into `SynthVoice` / `Engine`, selectable across UI edit helpers, and tested. Parameter-highlight default insertion from Instrument view to Phrase/Table views is also live.
 
 ---
 

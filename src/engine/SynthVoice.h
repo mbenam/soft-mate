@@ -62,6 +62,14 @@ public:
     float getSamplePhase() const { return m_samplePhase; }
 
     void triggerModsWithSource(uint8_t src);
+    void retriggerEnv(int slot);
+    void retriggerLfo(int slot, float phaseOffset);
+    void setModOffset(int slot, int p1, int p2, int p3, int amt);
+
+    int8_t m_modP1Offset[4] = {0};
+    int8_t m_modP2Offset[4] = {0};
+    int8_t m_modP3Offset[4] = {0};
+    int8_t m_modAmtOffset[4] = {0};
 
 private:
     // Per-voice output-stage helpers. applyFilter dispatches FILTER types

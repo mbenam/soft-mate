@@ -22,6 +22,7 @@ enum class FxCmd : uint8_t {
     VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC,
     SCA, SCG,
     ARP, ARC, CHA, GGR, INS, RND, RNL, RET, REP, RTO, RMX, NTH, PSL, PBN, PVB, PVX, SNG, SED, THO, TBX, TPO, TSP, NXT, OFF, MTT,
+    FIN, EA1, EA2, AT1, AT2, HO1, HO2, DE1, DE2, ET1, ET2, LA1, LA2, LF1, LF2, LT1, LT2,
     UNKNOWN = 0xFE
 };
 

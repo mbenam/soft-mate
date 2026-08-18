@@ -23,6 +23,7 @@ public:
     // twice, diff the WAVs). std::rand() used to break that -- global,
     // possibly-locking state with no per-voice determinism.
     void trigger() { m_phase = 0.0; m_done = false; m_lastOut = 0.0f; m_rngState = 0x9E3779B9u; }
+    void setPhase(double phase) { m_phase = phase; m_done = false; }
     bool done() const { return m_done; }
     float lastOutput() const { return m_lastOut; }
 

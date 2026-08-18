@@ -311,6 +311,13 @@ void SynthVoice::noteOn(float frequency, float volume, const Instrument* inst, i
     }
 
     for (int i = 0; i < 4; ++i) {
+        m_modP1Offset[i] = 0;
+        m_modP2Offset[i] = 0;
+        m_modP3Offset[i] = 0;
+        m_modAmtOffset[i] = 0;
+    }
+
+    for (int i = 0; i < 4; ++i) {
         if (m_instrument) {
             const Modulator& mod = m_instrument->mods[i];
             switch (mod.type) {
@@ -350,6 +357,26 @@ void SynthVoice::triggerModsWithSource(uint8_t src) {
     }
 }
 
+void SynthVoice::retriggerEnv(int slot) {
+    if (slot < 0 || slot >= 4) return;
+    m_ahdEnv[slot].trigger();
+    m_adsrEnv[slot].retrigger();
+    m_drumEnv[slot].trigger();
+}
+
+void SynthVoice::retriggerLfo(int slot, float phaseOffset) {
+    if (slot < 0 || slot >= 4) return;
+    m_lfo[slot].setPhase(std::clamp(static_cast<double>(phaseOffset), 0.0, 1.0));
+}
+
+void SynthVoice::setModOffset(int slot, int p1, int p2, int p3, int amt) {
+    if (slot < 0 || slot >= 4) return;
+    m_modP1Offset[slot] = static_cast<int8_t>(std::clamp(p1, -128, 127));
+    m_modP2Offset[slot] = static_cast<int8_t>(std::clamp(p2, -128, 127));
+    m_modP3Offset[slot] = static_cast<int8_t>(std::clamp(p3, -128, 127));
+    m_modAmtOffset[slot] = static_cast<int8_t>(std::clamp(amt, -128, 127));
+}
+
 void SynthVoice::setVolume(float v) { m_currentVolume = v; }
 
 float SynthVoice::renderSample(const EnvContext& ctx) {
@@ -375,13 +402,18 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             const Modulator& mod = m_instrument->mods[i];
             if (static_cast<ModDest>(mod.dest) == ModDest::OFF) continue;
 
+            uint8_t p1 = static_cast<uint8_t>(std::clamp(static_cast<int>(mod.p1) + m_modP1Offset[i], 0, 255));
+            uint8_t p2 = static_cast<uint8_t>(std::clamp(static_cast<int>(mod.p2) + m_modP2Offset[i], 0, 255));
+            uint8_t p3 = static_cast<uint8_t>(std::clamp(static_cast<int>(mod.p3) + m_modP3Offset[i], 0, 255));
+            uint8_t amt = static_cast<uint8_t>(std::clamp(static_cast<int>(mod.amt) + m_modAmtOffset[i], 0, 255));
+
             float mod_val = 0.0f;
             switch (mod.type) {
-            case 0: mod_val = m_ahdEnv[i].process(mod.p1, mod.p2, mod.p3, ctx); break;
-            case 1: mod_val = m_adsrEnv[i].process(mod.p1, mod.p2, mod.p3, mod.p4, ctx); break;
-            case 2: mod_val = m_drumEnv[i].process(mod.p1, mod.p2, mod.p3, ctx); break;
-            case 3: mod_val = m_lfo[i].process(mod.p1, mod.p3, mod.p2, ctx, noteOn); break;
-            case 4: mod_val = m_ahdEnv[i].process(mod.p1, mod.p2, mod.p3, ctx); break;
+            case 0: mod_val = m_ahdEnv[i].process(p1, p2, p3, ctx); break;
+            case 1: mod_val = m_adsrEnv[i].process(p1, p2, p3, mod.p4, ctx); break;
+            case 2: mod_val = m_drumEnv[i].process(p1, p2, p3, ctx); break;
+            case 3: mod_val = m_lfo[i].process(p1, p3, p2, ctx, noteOn); break;
+            case 4: mod_val = m_ahdEnv[i].process(p1, p2, p3, ctx); break;
             case 5: {
                 float src = 0.0f;
                 switch (mod.p1) {
@@ -397,7 +429,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             default: break;
             }
 
-            float scaled = mod_val * amtScale[i] * bipolarAmt(mod.amt);
+            float scaled = mod_val * amtScale[i] * bipolarAmt(amt);
 
             auto dest = static_cast<ModDest>(mod.dest);
             switch (dest) {

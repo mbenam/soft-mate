@@ -473,6 +473,7 @@ struct EngineState {
 
     float pendingVolOffset[8] = {0.0f};
     int pendingPitchOffset[8] = {0};
+    float pendingFinePitchOffset[8] = {0.0f};
     int retTicks[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int retVolDir[8] = {0};
     int retTickCounter[8] = {0};

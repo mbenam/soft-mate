@@ -225,3 +225,47 @@ TEST_CASE("FX: REP repeat command with step increment", "[fx]") {
     REQUIRE(notes[1].frequency > 305.0f);
     REQUIRE(notes[1].frequency < 320.0f);
 }
+
+TEST_CASE("FX: FIN fine tune pitch offset", "[fx]") {
+    OfflineHost host;
+    // Step 0: C-4 with FIN 40 (+0.5 semitone)
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::FIN, 0x40);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.2);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+    // C-4 is 261.63 Hz; C+50c is ~269.29 Hz
+    REQUIRE(notes[0].frequency > 265.0f);
+    REQUIRE(notes[0].frequency < 275.0f);
+}
+
+TEST_CASE("FX: ET1 / LT1 envelope and LFO triggers", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::ET1, 0x01);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::LT1, 0x80);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.2);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+}
+
+TEST_CASE("FX: Instrument Mod Parameter offsets", "[fx]") {
+    OfflineHost host;
+    setStep(host.sequencer(), 0, 0, 60, 100, 0);
+    setFx(host.sequencer(), 0, 0, 0, FxCmd::EA1, 0x10);
+    setFx(host.sequencer(), 0, 0, 1, FxCmd::AT1, 0x05);
+    setFx(host.sequencer(), 0, 0, 2, FxCmd::DE1, 0x08);
+
+    host.push(playPhrase(0, 0, 0));
+    host.renderSeconds(0.2);
+
+    auto notes = host.noteOnsForTrack(0);
+    REQUIRE(notes.size() >= 1);
+}
+

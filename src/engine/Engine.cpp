@@ -633,6 +633,57 @@ void Engine::tickTrack(int t) {
                     }
                 }
             }
+            else if (fx.cmd == FxCmd::FIN) {
+                m_state.pendingFinePitchOffset[t] += static_cast<float>(static_cast<int8_t>(fx.val)) / 128.0f;
+            }
+            else if (fx.cmd == FxCmd::ET1) {
+                if (fx.val > 0) m_voices[t].retriggerEnv(0);
+            }
+            else if (fx.cmd == FxCmd::ET2) {
+                if (fx.val > 0) m_voices[t].retriggerEnv(1);
+            }
+            else if (fx.cmd == FxCmd::LT1) {
+                m_voices[t].retriggerLfo(0, static_cast<float>(fx.val) / 255.0f);
+            }
+            else if (fx.cmd == FxCmd::LT2) {
+                m_voices[t].retriggerLfo(1, static_cast<float>(fx.val) / 255.0f);
+            }
+            else if (fx.cmd == FxCmd::EA1) {
+                m_voices[t].m_modAmtOffset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::EA2) {
+                m_voices[t].m_modAmtOffset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::AT1) {
+                m_voices[t].m_modP1Offset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::AT2) {
+                m_voices[t].m_modP1Offset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::HO1) {
+                m_voices[t].m_modP2Offset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::HO2) {
+                m_voices[t].m_modP2Offset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::DE1) {
+                m_voices[t].m_modP3Offset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::DE2) {
+                m_voices[t].m_modP3Offset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::LA1) {
+                m_voices[t].m_modAmtOffset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::LA2) {
+                m_voices[t].m_modAmtOffset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::LF1) {
+                m_voices[t].m_modP3Offset[0] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::LF2) {
+                m_voices[t].m_modP3Offset[1] += static_cast<int8_t>(fx.val);
+            }
         };
         parseFX(step.fx[0]); parseFX(step.fx[1]); parseFX(step.fx[2]);
         
@@ -654,7 +705,7 @@ void Engine::tickTrack(int t) {
             const Scale& sc = m_state.scales[scaleIdx & 0x0F];
             float pitch = transpOn ? quantizeToScale(midi, sc, key)
                                    : static_cast<float>(midi);
-            pitch = std::clamp(pitch, 0.0f, 127.0f);
+            pitch = std::clamp(pitch + m_state.pendingFinePitchOffset[t], 0.0f, 127.0f);
             freq = sc.tune * std::pow(2.0f, (pitch - 69.0f) / 12.0f);
 
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
@@ -672,6 +723,7 @@ void Engine::tickTrack(int t) {
             }
             m_state.pendingVolOffset[t] = 0.0f;
             m_state.pendingPitchOffset[t] = 0;
+            m_state.pendingFinePitchOffset[t] = 0.0f;
         } else if (step.note == NOTE_EMPTY && step.vol != VOL_EMPTY) {
             if (step.vol != VOL_EMPTY) v = (float)step.vol / 127.0f;
             v = std::clamp(v + m_state.pendingVolOffset[t], 0.0f, 1.0f);

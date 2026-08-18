@@ -71,6 +71,23 @@ inline std::string FxName(m8::engine::FxCmd cmd) {
         case m8::engine::FxCmd::NXT: return "NXT";
         case m8::engine::FxCmd::OFF: return "OFF";
         case m8::engine::FxCmd::MTT: return "MTT";
+        case m8::engine::FxCmd::FIN: return "FIN";
+        case m8::engine::FxCmd::EA1: return "EA1";
+        case m8::engine::FxCmd::EA2: return "EA2";
+        case m8::engine::FxCmd::AT1: return "AT1";
+        case m8::engine::FxCmd::AT2: return "AT2";
+        case m8::engine::FxCmd::HO1: return "HO1";
+        case m8::engine::FxCmd::HO2: return "HO2";
+        case m8::engine::FxCmd::DE1: return "DE1";
+        case m8::engine::FxCmd::DE2: return "DE2";
+        case m8::engine::FxCmd::ET1: return "ET1";
+        case m8::engine::FxCmd::ET2: return "ET2";
+        case m8::engine::FxCmd::LA1: return "LA1";
+        case m8::engine::FxCmd::LA2: return "LA2";
+        case m8::engine::FxCmd::LF1: return "LF1";
+        case m8::engine::FxCmd::LF2: return "LF2";
+        case m8::engine::FxCmd::LT1: return "LT1";
+        case m8::engine::FxCmd::LT2: return "LT2";
         case m8::engine::FxCmd::UNKNOWN: return "???"; // unmodeled command, preserved on save
         default: return "---";
     }
