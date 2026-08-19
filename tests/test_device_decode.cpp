@@ -1624,20 +1624,37 @@ TEST_CASE("layoutMatchRatio separates a decoded screen from a smeared one", "[hw
     // The same labels, every one shifted by a single character cell -- which is
     // what a one-byte field-boundary slip does to the whole screen.
     ScreenGrid smeared;
-    drawLabel(smeared, "TYPE",    0,  2, 8);
-    drawLabel(smeared, "NAME",    0,  3, 8);
-    drawLabel(smeared, "TRANSP.", 0,  4, 8);
-    drawLabel(smeared, "SAMPLE",  0,  6, 8);
-    drawLabel(smeared, "SLICE",   0,  8, 8);
-    drawLabel(smeared, "PLAY",    0,  9, 8);
-    drawLabel(smeared, "FILTER",  0, 15, 8);
-    drawLabel(smeared, "CUTOFF",  0, 16, 8);
-    drawLabel(smeared, "RES",     0, 17, 8);
+    drawLabel(smeared, "TYPE",    0,  2, 240);
+    drawLabel(smeared, "NAME",    0,  3, 240);
+    drawLabel(smeared, "TRANSP.", 0,  4, 240);
+    drawLabel(smeared, "SAMPLE",  0,  6, 240);
+    drawLabel(smeared, "SLICE",   0,  8, 240);
+    drawLabel(smeared, "PLAY",    0,  9, 240);
+    drawLabel(smeared, "FILTER",  0, 15, 240);
+    drawLabel(smeared, "CUTOFF",  0, 16, 240);
+    drawLabel(smeared, "RES",     0, 17, 240);
     const double m2 = layoutMatchRatio(smeared, Screen::INSTRUMENT, "SAMPLER");
 
     CHECK(m2 < m1);
     CHECK(m2 < 0.6);        // below the threshold m8_nav warns at
     CHECK(m1 > m2 + 0.3);   // and the gap is wide, not marginal
+
+    // A one- or two-column map error must NOT read as corruption. Two healthy
+    // screens (MIXER, EFFECTS) scored 0% before the window existed, because
+    // their maps sit 1-2 columns off what the device draws -- the same slack
+    // moveCursorTo has needed since bug #10.
+    ScreenGrid nudged;
+    drawLabel(nudged, "TYPE",    0,  2, 16);
+    drawLabel(nudged, "NAME",    0,  3, 16);
+    drawLabel(nudged, "TRANSP.", 0,  4, 16);
+    drawLabel(nudged, "SAMPLE",  0,  6, 16);
+    drawLabel(nudged, "SLICE",   0,  8, 16);
+    drawLabel(nudged, "PLAY",    0,  9, 16);
+    drawLabel(nudged, "FILTER",  0, 15, 16);
+    drawLabel(nudged, "CUTOFF",  0, 16, 16);
+    drawLabel(nudged, "RES",     0, 17, 16);
+    const double m3 = layoutMatchRatio(nudged, Screen::INSTRUMENT, "SAMPLER");
+    CHECK(m3 == m1);        // two columns over is still a match
 
     // Grid screens carry no field map and must report "cannot judge", not 0 --
     // scoring them zero would warn on every PHRASE read forever.

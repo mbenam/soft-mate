@@ -733,6 +733,22 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
     ScreenFieldMap map = typeHint.empty() ? getFieldMap(s) : getFieldMap(s, typeHint);
     if (map.isGrid || !map.fields || map.count < 5) return -1.0;
 
+    // Search a +/-2 column window, not the exact cell.
+    //
+    // The first version demanded an exact position and scored two perfectly
+    // healthy screens at 0%: the MIXER and EFFECTS maps place their labels one
+    // to two columns off (OUTPUT VOL is at device column 1, that map implies 2;
+    // INPUT EQ is at 7, that map implies 9). Every other part of the driver
+    // already tolerates that -- it is why moveCursorTo needed a >1-column
+    // tolerance in bug #10 -- and a check stricter than the navigation it is
+    // meant to protect just cries wolf.
+    //
+    // The window cannot mask the fault it exists to catch: a displaced
+    // framebuffer is 30 columns out, not 2. Measured across four screens, the
+    // window moves MIXER and EFFECTS from 0% to 100% and leaves a displaced
+    // INSTRUMENT at 22%, unchanged.
+    constexpr int kColTol = 2;
+
     int hits = 0;
     for (size_t i = 0; i < map.count; ++i) {
         const FieldInfo& f = map.fields[i];
@@ -740,15 +756,19 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
         // Map coordinates are (device col - 1, device row - 3); cells are keyed
         // by pixel, at the 8x10 character pitch.
         const int y = (f.row + 3) * 10;
-        bool all = true;
-        for (size_t k = 0; k < label.size() && all; ++k) {
-            const int x = (f.col + 1 + static_cast<int>(k)) * 8;
-            auto it = grid.cells.find({y, x});
-            const char got = (it != grid.cells.end())
-                           ? static_cast<char>(it->second.ch) : ' ';
-            if (got != label[k]) all = false;
+        bool found = false;
+        for (int dc = f.col + 1 - kColTol; dc <= f.col + 1 + kColTol && !found; ++dc) {
+            if (dc < 0) continue;
+            bool all = true;
+            for (size_t k = 0; k < label.size() && all; ++k) {
+                auto it = grid.cells.find({y, (dc + static_cast<int>(k)) * 8});
+                const char got = (it != grid.cells.end())
+                               ? static_cast<char>(it->second.ch) : ' ';
+                if (got != label[k]) all = false;
+            }
+            if (all) found = true;
         }
-        if (all) ++hits;
+        if (found) ++hits;
     }
     return static_cast<double>(hits) / static_cast<double>(map.count);
 }

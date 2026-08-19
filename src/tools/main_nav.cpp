@@ -708,10 +708,11 @@ int main(int argc, char** argv) {
         const double match = layoutMatchRatio(dev.grid(), shp, hint);
         if (match >= 0.0 && match < 0.6) {
             std::printf("decode: WARNING -- only %.0f%% of this screen's labels are where "
-                        "the map says. The frames are well-formed and our decode is faithful "
-                        "to them; the DEVICE is transmitting a displaced framebuffer. Field "
-                        "reads will fail in ways that read as navigation bugs. Try navigating "
-                        "away and back to force a full repaint. M8_DRIVER_BUGS.md #32.\n",
+                        "the map says. Two things cause that and they need different fixes: "
+                        "the device transmitting a displaced framebuffer (confirmed on "
+                        "INSTRUMENT, fw 6.5.2 -- our decode is faithful, the frames are "
+                        "well-formed), or this screen's field map being stale. Check the "
+                        "capture before assuming either. M8_DRIVER_BUGS.md #32.\n",
                         match * 100.0);
         }
     }
