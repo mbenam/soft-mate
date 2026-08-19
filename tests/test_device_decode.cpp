@@ -1049,6 +1049,171 @@ TEST_CASE("findFieldOnScreen: every field in kMixerFields is findable", "[hwdeco
     }
 }
 
+// ---- editValue's free-text refusal -----------------------------------------
+//
+// Bug #32's prevention. editValue works by reading a cell as hex and stepping
+// toward a hex target; on a NAME that walks the first character's byte code and
+// settles on garbage. Doing it to instrument 00 displaced the whole INSTRUMENT
+// and INST.POOL screen by 30 cells and cost two sessions to diagnose.
+//
+// Note what makes this testable at all: the refusal sits ABOVE the gestures
+// check and above every device call, so it needs no port and no fixture. That
+// is deliberate -- an incoherent request should not need pinned hardware to be
+// turned down, and "gestures not pinned" would have been a useless answer to
+// `set NAME foo`. It is also, as of 2026-08-19, the ONLY offline test of
+// anything in Primitives.cpp; the rest of that file is hardware-verified only.
+
+TEST_CASE("editValue refuses a free-text NAME field", "[hwdecode]") {
+    M8Device dev;   // never opened -- the refusal must precede any device use
+
+    for (const char* name : {"NAME", "name", "Name"}) {
+        auto res = editValue(dev, name, "40", 40);
+        INFO("field name as written: " << name);
+        CHECK_FALSE(res.ok);
+        // The message has to say why, not just no. The whole bug list is about
+        // tools that were confidently unhelpful at the moment they mattered.
+        CHECK(res.error.find("free-text") != std::string::npos);
+        CHECK(res.error.find("#32") != std::string::npos);
+    }
+}
+
+TEST_CASE("editValue's refusal does not swallow ordinary fields", "[hwdecode]") {
+    // The guard must not become a blanket refusal. A normal field gets past it
+    // and fails for its own reason -- here, no pinned gestures and no device.
+    M8Device dev;
+    auto res = editValue(dev, "TRANSPOSE", "40", 40);
+    CHECK_FALSE(res.ok);
+    CHECK(res.error.find("free-text") == std::string::npos);
+}
+
+// ---- Field-map column convention -------------------------------------------
+//
+// A FieldInfo's (col, row) is (device col - 1, device row - 3). Nothing enforced
+// that, and on 2026-08-19 both kMixerFields and kEffectsFields turned out to
+// have EVERY column exactly 1 too high -- 25 entries, one cause: the 2026-07-18
+// re-measurement recorded raw screen columns and never applied the -1.
+//
+// It went unnoticed for a month because every tolerance downstream absorbs one
+// column (moveCursorTo's >1-column slack from bug #10, layoutMatchRatio's +/-2
+// window), so nothing ever went red -- it just degraded every move on those two
+// screens to the slow path. Exactly the shape of bug #29.
+//
+// So these check placement with NO tolerance. The row text is transcribed from
+// real captures (artifacts/scope_*.json, fw 6.5.2) rather than retyped.
+
+static ScreenGrid makeGridFromRows(
+        std::initializer_list<std::pair<int, const char*>> rows) {
+    ScreenGrid grid;
+    for (const auto& [r, text] : rows)
+        for (int i = 0; text[i]; ++i)
+            grid.handleFrame(makeCharFrame(text[i], i * 8, r * 10,
+                                           200, 200, 200, 0, 0, 0));
+    return grid;
+}
+
+// Each field's label must sit at exactly (row + 3, col + 1). `skip` names a
+// field to exempt, for one that is not on the device at all.
+static void checkMapPlacement(const ScreenGrid& grid, const FieldInfo* fields,
+                              size_t n, const char* skip = nullptr) {
+    for (size_t i = 0; i < n; ++i) {
+        const FieldInfo& f = fields[i];
+        if (skip && std::string(f.name) == skip) continue;
+        const std::string label = f.label;
+        const int y = (f.row + 3) * 10;
+        std::string got;
+        for (size_t k = 0; k < label.size(); ++k) {
+            auto it = grid.cells.find({y, (f.col + 1 + static_cast<int>(k)) * 8});
+            got += (it != grid.cells.end())
+                 ? static_cast<char>(it->second.ch) : ' ';
+        }
+        INFO(f.name << ": map (col " << f.col << ", row " << f.row
+             << ") means screen row " << (f.row + 3) << ", col " << (f.col + 1));
+        CHECK(got == label);
+    }
+}
+
+static ScreenGrid makeEffectsGrid() {
+    return makeGridFromRows({
+        { 5, " MODFX  MOD TYPE      00CHORUS    T>120"},
+        { 6, "        INPUT EQ      EQ"},
+        { 7, "        MOD DEPTH:FRQ 40:80       1 ---"},
+        { 8, "        STEREO WIDTH  FF          2 ---"},
+        { 9, "        REVERB SEND   00          3 ---"},
+        {11, " DELAY  INPUT EQ      EQ          5 ---"},
+        {12, "        TIME L:R      30:30       6 ---"},
+        {13, "        FEEDBACK      80          7 ---"},
+        {14, "        STEREO WIDTH  FF          8 ---"},
+        {15, "        REVERB SEND   00"},
+        {17, " REVERB INPUT EQ      EQ"},
+        {18, "        ROOM SIZE     FF"},
+        {19, "        DECAY:SHIMMER C0:00       P"},
+        {20, "        MOD DEPTH:FRQ 10:FF       SCPIT"},
+        {21, "        STEREO WIDTH  FF          V"},
+    });
+}
+
+static ScreenGrid makeMixerGrid() {
+    return makeGridFromRows({
+        { 5, " OUTPUT VOL  F0                   T>120"},
+        {17, " E0 E0 E0    00 -- 00   MIX E0"},
+        {18, " MX DE RE    INPUT USB  LIM 00"},
+        {19, "          MX 00    00   DJF 80    P"},
+        {20, "          DE 00    00   OTT 00    SCPIT"},
+        {21, "          RE 00    00             V"},
+    });
+}
+
+static ScreenGrid makeProjectLayoutGrid() {
+    return makeGridFromRows({
+        { 5, " TEMPO        120.00 <>           T>120"},
+        { 6, " TRANSPOSE    00"},
+        { 7, " GROOVE       00DEFAULT           1 ---"},
+        { 8, " SCALE        00C CHROMATIC       2 ---"},
+        { 9, " LIVE QUANTIZ 00CHAIN LEN         3 ---"},
+        {11, " MIDI         SETTINGS MAPPINGS   5 ---"},
+        {13, " NAME         SCALEPROBE--        7 ---"},
+        {14, " PROJECT      LOAD SAVE NEW       8 ---"},
+        {15, " EXPORT/SHARE RENDER BUNDLE"},
+        {16, " CLEAR UNUSED PHRASES INST/TBL"},
+        {17, " INST. POOL   VIEW INST.POOL"},
+        {19, " TIME STATS   VIEW TIME STATS     P"},
+        {20, " SYSTEM       SETTINGS            SCPIT"},
+    });
+}
+
+TEST_CASE("kEffectsFields columns follow the map convention", "[hwdecode]") {
+    checkMapPlacement(makeEffectsGrid(), kEffectsFields, std::size(kEffectsFields));
+}
+
+TEST_CASE("kMixerFields columns follow the map convention", "[hwdecode]") {
+    // DJF_TYP is exempt: it has never been located on the device, so its
+    // coordinates are a guess. It was deliberately left un-shifted by the
+    // 2026-08-19 correction rather than moved by an amount derived from
+    // fields that were actually measured -- that would only make a guess
+    // look measured.
+    checkMapPlacement(makeMixerGrid(), kMixerFields, std::size(kMixerFields), "DJF_TYP");
+}
+
+TEST_CASE("kProjectFields columns follow the map convention", "[hwdecode]") {
+    // Included as the control: PROJECT was already correct, and is what the
+    // convention was re-derived from. It also catches the label this run
+    // fixed -- the device truncates "LIVE QUANTIZE" to "LIVE QUANTIZ".
+    checkMapPlacement(makeProjectLayoutGrid(), kProjectFields, std::size(kProjectFields));
+}
+
+TEST_CASE("layoutMatchRatio scores corrected maps at full marks", "[hwdecode]") {
+    // With the columns right, the +/-2 window is slack rather than
+    // compensation: measured 2026-08-19, these score identically at tolerance
+    // 0, 1 and 2. That is the property worth pinning -- if a map drifts again,
+    // this drops below 1.0 whatever the window is.
+    CHECK(layoutMatchRatio(makeEffectsGrid(), Screen::EFFECTS) == 1.0);
+    CHECK(layoutMatchRatio(makeProjectLayoutGrid(), Screen::PROJECT) == 1.0);
+    // MIXER carries the one unverified entry, so it cannot reach 1.0.
+    const double mixer = layoutMatchRatio(makeMixerGrid(), Screen::MIXER);
+    CHECK(mixer > 0.9);
+    CHECK(mixer < 1.0);
+}
+
 TEST_CASE("findFieldOnScreen: every field in kScaleFields is findable", "[hwdecode]") {
     for (size_t i = 0; i < std::size(kScaleFields); ++i) {
         auto f = findFieldOnScreen(Screen::SCALE, kScaleFields[i].name);
@@ -1075,6 +1240,8 @@ TEST_CASE("findFieldOnScreen: every MacroSynth field is findable with MACROSYN t
 
 TEST_CASE("identifyScreen: overload disambiguates PROJECT vs LOAD_PROJECT_MODAL", "[hwdecode]") {
     // 1. PROJECT header settings screen with no LOAD highlighted.
+    // Uses the header-only fixture on purpose: this asserts on identifyScreen,
+    // which reads topHeader(), and makeProjectLayoutGrid draws body rows only.
     ScreenGrid gridProj = makeProjectGrid();
     CHECK(identifyScreen(gridProj) == Screen::PROJECT);
 

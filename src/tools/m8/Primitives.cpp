@@ -1069,6 +1069,38 @@ static bool isNumeric(const std::string& s) {
 
 JsonResult editValue(M8Device& dev, const std::string& fieldName,
                      const std::string& targetValue, int holdMs) {
+    // Refuse free-text fields outright.
+    //
+    // This is not caution, it is coherence: editValue's whole method is to read
+    // the cell as a hex number and step it toward a hex target. A NAME is text.
+    // Running that on one walks the first character's byte code, converges on
+    // nothing, and leaves the field holding whatever byte it stopped at. There
+    // is no "careful" way to do it -- the M8 edits names through a character
+    // picker, which this function does not drive.
+    //
+    // It is also not hypothetical. Bug #32 cost two sessions: instrument 00's
+    // name byte was walked to a value the M8's renderer treats as a line break,
+    // so the device drew the whole INSTRUMENT and INST.POOL screen 30 cells
+    // displaced, and every downstream symptom (`field not found`, `could not
+    // find enum`) read as a navigation bug. It survived a power cycle, a forced
+    // repaint and a firmware reflash, because it was in the project, not the
+    // display. NAME is one DOWN from TYPE -- the field the instrument map
+    // campaign was driving -- and nothing here said no.
+    //
+    // Deliberately unconditional: there is no --allow-mutation escape, because
+    // unlike keyjazz-on-PHRASE (a real operation in the wrong place) this one
+    // has no correct outcome to opt into.
+    if (toUpper(fieldName) == "NAME") {
+        return JsonResult::fail(
+            "editValue: refusing to edit '" + fieldName + "'. It is a free-text field, and "
+            "this function edits by stepping a hex value -- on text that walks the first "
+            "character's byte code and settles on garbage. Corrupting an instrument NAME "
+            "this way is M8_DRIVER_BUGS.md #32, which displaced the whole INSTRUMENT screen "
+            "and survived a power cycle and a firmware reflash. Names are edited on the "
+            "device through its character picker, which this driver does not implement.",
+            dev.grid());
+    }
+
     auto& g = getGestures();
     if (!g.isReady()) {
         return JsonResult::fail(

@@ -291,7 +291,12 @@ inline const FieldInfo kProjectFields[] = {
     {"TRANSPOSE", "TRANSPOSE",   0, 3},
     {"GROOVE",    "GROOVE",      0, 4},
     {"SCALE",     "SCALE",       0, 5},
-    {"QUANTIZE",  "LIVE QUANTIZE", 0, 6},
+    // The device truncates this label to the 12-column label field and draws
+    // "LIVE QUANTIZ". Measured 2026-08-19 from artifacts/scope_PROJECT.json.
+    // The trailing "E" made readCursorValue's label strip miss (bug #13's
+    // class), so the value came back with the label still glued to it, and
+    // layoutMatchRatio scored PROJECT 12/13 on a healthy screen.
+    {"QUANTIZE",  "LIVE QUANTIZ", 0, 6},
     {"MIDI",      "MIDI",        0, 8},
     {"NAME",      "NAME",        0, 10},
     {"PROJECT",   "PROJECT",     0, 11},  // LOAD/SAVE/NEW row
@@ -541,20 +546,20 @@ inline const FieldInfo kInstrumentHypersynFields[] = {
 // DELAY's real INPUT EQ row and moveCursorTo could never reach it. Rows/cols
 // below are re-measured directly from pixel data.
 inline const FieldInfo kEffectsFields[] = {
-    {"CHO_EQ",       "INPUT EQ",    8, 3},
-    {"CHO_MOD_DEP",  "MOD DEPTH",   8, 4},
-    {"CHO_WID",      "STEREO WIDTH", 8, 5},
-    {"CHO_REV",      "REVERB SEND", 8, 6},
-    {"DEL_EQ",       "INPUT EQ",    8, 8},
-    {"DEL_TIME_L",   "TIME L",      8, 9},
-    {"DEL_FBK",      "FEEDBACK",    8, 10},
-    {"DEL_WID",      "STEREO WIDTH", 8, 11},
-    {"DEL_REV",      "REVERB SEND", 8, 12},
-    {"REV_EQ",       "INPUT EQ",    8, 14},
-    {"REV_SIZE",     "ROOM SIZE",   8, 15},
-    {"REV_DEC",      "DECAY",       8, 16},
-    {"REV_MOD_DEP",  "MOD DEPTH",   8, 17},
-    {"REV_WID",      "STEREO WIDTH", 8, 18},
+    {"CHO_EQ",       "INPUT EQ",    7, 3},
+    {"CHO_MOD_DEP",  "MOD DEPTH",   7, 4},
+    {"CHO_WID",      "STEREO WIDTH", 7, 5},
+    {"CHO_REV",      "REVERB SEND", 7, 6},
+    {"DEL_EQ",       "INPUT EQ",    7, 8},
+    {"DEL_TIME_L",   "TIME L",      7, 9},
+    {"DEL_FBK",      "FEEDBACK",    7, 10},
+    {"DEL_WID",      "STEREO WIDTH", 7, 11},
+    {"DEL_REV",      "REVERB SEND", 7, 12},
+    {"REV_EQ",       "INPUT EQ",    7, 14},
+    {"REV_SIZE",     "ROOM SIZE",   7, 15},
+    {"REV_DEC",      "DECAY",       7, 16},
+    {"REV_MOD_DEP",  "MOD DEPTH",   7, 17},
+    {"REV_WID",      "STEREO WIDTH", 7, 18},
 };
 
 // Mixer screen fields (from MixerScreenLayout.h).
@@ -572,17 +577,34 @@ inline const FieldInfo kEffectsFields[] = {
 // area (x < MAIN_X_MAX) in this investigation -- its coordinates are left
 // unchanged from the original (unverified) guess. See
 // M8_DEVICE_CONTROL_SPEC.md §6.5 for the full writeup.
+//
+// CORRECTED 2026-08-19: every column here, and every column in kEffectsFields,
+// was exactly 1 too high. Not 25 independent errors -- one systematic one. The
+// 2026-07-18 re-measurement above recorded the label's RAW SCREEN COLUMN, but
+// the map convention is `map col = screen col - 1` (a FieldInfo's row/col are
+// (device col - 1, device row - 3), as layoutMatchRatio documents). Verified
+// against maps known to obey it -- kProjectFields' TEMPO and the instrument
+// maps re-measured for bug #29 -- then re-derived every entry from
+// artifacts/scope_MIXER.json and scope_EFFECTS.json. Rows were all correct.
+// It hid because every tolerance downstream absorbs 1 column: moveCursorTo's
+// >1-column slack (bug #10) and layoutMatchRatio's +/-2 window. Same shape as
+// bug #29 -- an error no hardware run reports, because nothing goes red; it
+// just quietly degrades every move to the slow path.
+//
+// DJF_TYP is deliberately NOT shifted. It was never located on the device, so
+// it is a guess either way, and moving a guess by a correction derived from
+// verified fields would only make it look measured.
 inline const FieldInfo kMixerFields[] = {
-    {"OUT_VOL",  "OUTPUT VOL", 1, 2},
-    {"MST_CHO",  "MX",         10, 16},
-    {"MST_DEL",  "DE",         10, 17},
-    {"MST_REV",  "RE",         10, 18},
-    {"IN_VOL",   "INPUT",      13, 15},
-    {"USB_VOL",  "USB",        19, 15},
-    {"MIX_VOL",  "MIX",        24, 14},
-    {"LIM_VAL",  "LIM",        24, 15},
-    {"DJF_FREQ", "DJF",        24, 16},
-    {"DJF_RES",  "OTT",        24, 17},
+    {"OUT_VOL",  "OUTPUT VOL", 0, 2},
+    {"MST_CHO",  "MX",         9, 16},
+    {"MST_DEL",  "DE",         9, 17},
+    {"MST_REV",  "RE",         9, 18},
+    {"IN_VOL",   "INPUT",      12, 15},
+    {"USB_VOL",  "USB",        18, 15},
+    {"MIX_VOL",  "MIX",        23, 14},
+    {"LIM_VAL",  "LIM",        23, 15},
+    {"DJF_FREQ", "DJF",        23, 16},
+    {"DJF_RES",  "OTT",        23, 17},
     {"DJF_TYP",  "TYP",        34, 12},  // UNVERIFIED — not found on-device, see comment above
 };
 
@@ -755,12 +777,16 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
     // Search a +/-2 column window, not the exact cell.
     //
     // The first version demanded an exact position and scored two perfectly
-    // healthy screens at 0%: the MIXER and EFFECTS maps place their labels one
-    // to two columns off (OUTPUT VOL is at device column 1, that map implies 2;
-    // INPUT EQ is at 7, that map implies 9). Every other part of the driver
-    // already tolerates that -- it is why moveCursorTo needed a >1-column
-    // tolerance in bug #10 -- and a check stricter than the navigation it is
-    // meant to protect just cries wolf.
+    // healthy screens at 0%, because the MIXER and EFFECTS maps had every
+    // column one too high. The window was added to tolerate that.
+    //
+    // Those maps were CORRECTED on 2026-08-19 (see the note above
+    // kMixerFields), so the window no longer compensates for anything: measured
+    // against the captures, PROJECT, EFFECTS and MIXER score identically at
+    // tolerance 0, 1 and 2. It is kept as slack for genuine 1px measurement
+    // noise -- the kind that made moveCursorTo need a >1-column tolerance in
+    // bug #10 -- and not because any map is known to be wrong. If that stops
+    // being true, fix the map, not this number.
     //
     // The window cannot mask the fault it exists to catch: a displaced
     // framebuffer is 30 columns out, not 2. Measured across four screens, the
