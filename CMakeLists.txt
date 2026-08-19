@@ -284,6 +284,20 @@ add_executable(m8_tests
 )
 
 target_link_libraries(m8_tests PRIVATE Catch2::Catch2WithMain m8_engine m8_device SDL3::SDL3)
+
+# The [ui] suite shells out to three executables by hardcoded path
+# (tests/test_ui_scripts.cpp:33-35) and CMake knew nothing about it, so
+# `--target m8_tests` could run a freshly built suite against binaries nobody
+# had rebuilt -- and then report a confident verdict about the wrong thing.
+# That is not hypothetical: on 2026-08-18 a stale m8_clone failed three golden
+# assertions that were not broken, and once it was rebuilt, live_vs_offline
+# compared the new clone against a day-old m8_render and reported the engine
+# and the offline renderer disagreeing by 1/4096 when they do not.
+# Shelling out is fine; doing it without a build-order edge is not.
+add_dependencies(m8_tests m8_render m8_analyze)
+if(BUILD_CLONE)
+    add_dependencies(m8_tests m8_clone)
+endif()
 target_include_directories(m8_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(m8_tests PRIVATE THIRD_PARTY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
