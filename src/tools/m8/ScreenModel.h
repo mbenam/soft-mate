@@ -628,6 +628,8 @@ inline std::string readInstrumentType(const ScreenGrid& grid) {
             if (upper.find("FM") != std::string::npos) return "FM";
             if (upper.find("WAV") != std::string::npos) return "WAV";
             if (upper.find("HYPER") != std::string::npos) return "HYPER";
+            // Checked last so a real type always wins the row.
+            if (upper.find("NONE") != std::string::npos) return "NONE";
             break;
         }
     }
@@ -652,6 +654,13 @@ inline std::string readInstrumentType(const ScreenGrid& grid) {
             if (upper.find("FM") != std::string::npos) return "FM";
             if (upper.find("WAV") != std::string::npos) return "WAV";
             if (upper.find("HYPER") != std::string::npos) return "HYPER";
+            // An empty instrument slot draws "TYPE  NONE" and then almost
+            // nothing else. Reported positively rather than by falling through
+            // to the default below, because "the slot is empty" and "the TYPE
+            // row could not be read" are different facts and one of them used
+            // to be silently reported as the other. Checked last so a real type
+            // always wins the row.
+            if (upper.find("NONE") != std::string::npos) return "NONE";
         }
     }
     return "SAMPLER";  // default assumption if TYPE is unreadable
@@ -691,6 +700,16 @@ inline ScreenFieldMap getFieldMap(Screen s, const std::string& typeHint) {
         std::string upper = typeHint;
         for (auto& c : upper)
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        // An empty slot has no fields, which is not the same as "we don't know
+        // this type, use Sampler". Falling through to Sampler scored a
+        // perfectly healthy empty-instrument screen at 16% of labels in place
+        // and made layoutMatchRatio report the bug #32 displacement on a screen
+        // that was fine -- the one check that detects #32, crying wolf. Every
+        // consumer already handles a null field array (findFieldOnScreen and
+        // identifyCursorField return nullopt; layoutMatchRatio returns -1,
+        // "cannot judge"), so saying so plainly is both correct and safe.
+        if (upper.find("NONE") != std::string::npos)
+            return {nullptr, 0, false};
         if (upper.find("MACROSYN") != std::string::npos)
             return {kInstrumentMacrosynFields, std::size(kInstrumentMacrosynFields), false};
         // readInstrumentType() has returned "WAV", "FM" and "HYPER" since it was

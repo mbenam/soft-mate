@@ -934,10 +934,17 @@ class M8Driver:
         out["decode_sane"] = self.decode_sane
         if self.decode_sane is False:
             out["decode_advice"] = (
-                "the serial stream desynced, so this screen is not trustworthy. "
-                "Field reads will fail in ways that look like navigation bugs. "
-                "Re-read; if it persists, capture frames with "
-                f"m8_nav --port {self.port} --record-frames. M8_DRIVER_BUGS #32.")
+                "this screen is not trustworthy -- field reads will fail in ways "
+                "that look like navigation bugs. NOT a desync: the stream is "
+                "well-formed and our decode is faithful. The cause found on "
+                "2026-08-19 was a corrupt instrument NAME byte in the device's "
+                "RAM, which makes the M8 break the line where the name should "
+                "be and paint everything after it 30 cells late. Reloading the "
+                "project from the SD card cleared it. Look at the screen before "
+                "theorising: m8_nav --port "
+                f"{self.port} --ui-capture cap.json, then "
+                "python tools/m8drv/render_capture.py cap.json -o cap.html. "
+                "M8_DRIVER_BUGS #32.")
         if self.theme_blind:
             out["theme_advice"] = (
                 "the pinned accent is on no cell of this screen -- cursor reads "

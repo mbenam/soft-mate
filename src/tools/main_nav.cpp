@@ -709,9 +709,11 @@ int main(int argc, char** argv) {
         if (match >= 0.0 && match < 0.6) {
             std::printf("decode: WARNING -- only %.0f%% of this screen's labels are where "
                         "the map says. Two things cause that and they need different fixes: "
-                        "the device transmitting a displaced framebuffer (confirmed on "
-                        "INSTRUMENT, fw 6.5.2 -- our decode is faithful, the frames are "
-                        "well-formed), or this screen's field map being stale. Check the "
+                        "the device transmitting a displaced framebuffer, or this screen's "
+                        "field map being stale. The displacement was diagnosed 2026-08-19 "
+                        "(#32): a corrupt instrument NAME byte in device RAM makes the M8 "
+                        "break the line at the name and paint the rest 30 cells late -- "
+                        "reloading the project from the SD card clears it. Look at the "
                         "capture before assuming either. M8_DRIVER_BUGS.md #32.\n",
                         match * 100.0);
         }
@@ -883,7 +885,9 @@ int main(int argc, char** argv) {
             if (si.id == rawScreen) { rawName = si.canonHeader; break; }
         const double rawMatch = layoutMatchRatio(dev.grid(), rawScreen, rawHint);
         char matchTxt[32];
-        if (rawMatch < 0.0) std::snprintf(matchTxt, sizeof(matchTxt), "n/a (grid screen)");
+        // -1 means "cannot judge", which is a grid screen OR any screen with no
+        // field map -- an empty instrument slot is the second kind.
+        if (rawMatch < 0.0) std::snprintf(matchTxt, sizeof(matchTxt), "n/a (no field map)");
         else std::snprintf(matchTxt, sizeof(matchTxt), "%.0f%% of labels in place",
                            rawMatch * 100.0);
         std::printf("wrote %zu raw bytes to %s (screen=%s, %s)\n",

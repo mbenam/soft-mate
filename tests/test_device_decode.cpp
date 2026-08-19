@@ -841,6 +841,60 @@ TEST_CASE("readInstrumentType on MacroSynth grid", "[hwdecode]") {
     CHECK(upper.find("MACROSYN") != std::string::npos);
 }
 
+// An empty instrument slot. The device draws "TYPE  NONE" and the NAME
+// placeholder, and essentially nothing else -- there are no SAMPLE/SLICE/START
+// rows to find, because there is no instrument.
+//
+// Measured 2026-08-19 (fw 6.5.2, COM3, artifacts/bug32/d2_instrument.json)
+// after reloading a project whose instruments are all empty.
+static ScreenGrid makeEmptyInstrumentGrid() {
+    ScreenGrid grid;
+    const char* hdr = "INST. 00";
+    for (int i = 0; hdr[i]; ++i)
+        grid.handleFrame(makeCharFrame(hdr[i], (i + 1) * 8, 30, 255, 60, 60, 0, 0, 0));
+    const char* label = "TYPE";
+    for (int i = 0; label[i]; ++i)
+        grid.handleFrame(makeCharFrame(label[i], (i + 1) * 8, 50, 100, 100, 100, 0, 0, 0));
+    const char* val = "NONE";
+    for (int i = 0; val[i]; ++i)
+        grid.handleFrame(makeCharFrame(val[i], (i + 9) * 8, 50, 200, 200, 200, 0, 0, 0));
+    const char* name = "NAME";
+    for (int i = 0; name[i]; ++i)
+        grid.handleFrame(makeCharFrame(name[i], (i + 1) * 8, 60, 100, 100, 100, 0, 0, 0));
+    for (int i = 0; i < 12; ++i)   // the 12-dash empty-name placeholder
+        grid.handleFrame(makeCharFrame('-', (i + 9) * 8, 60, 100, 100, 100, 0, 0, 0));
+    return grid;
+}
+
+TEST_CASE("readInstrumentType reports an empty slot as NONE", "[hwdecode]") {
+    // Not "SAMPLER". The default-when-unreadable fallback used to swallow this,
+    // so "the slot is empty" and "the TYPE row could not be read" arrived as
+    // the same answer.
+    CHECK(readInstrumentType(makeEmptyInstrumentGrid()) == "NONE");
+}
+
+TEST_CASE("layoutMatchRatio refuses to judge an empty instrument", "[hwdecode]") {
+    auto grid = makeEmptyInstrumentGrid();
+    const std::string hint = readInstrumentType(grid);
+
+    // An empty slot has no field map, so there is nothing to score and the
+    // honest answer is -1 ("cannot judge") -- the same contract grid screens
+    // get. Scoring it against the Sampler map instead put a healthy screen at
+    // 16% and printed the bug #32 displacement warning over it, which is the
+    // detector for #32 firing on a screen with nothing wrong with it.
+    CHECK(layoutMatchRatio(grid, Screen::INSTRUMENT, hint) < 0.0);
+
+    // The map lookup itself must say "no fields" rather than handing back
+    // Sampler's, because every caller keys off that.
+    auto map = getFieldMap(Screen::INSTRUMENT, hint);
+    CHECK(map.fields == nullptr);
+    CHECK(map.count == 0);
+    CHECK_FALSE(map.isGrid);
+
+    // And a real type must still resolve, so this is not a blanket weakening.
+    CHECK(layoutMatchRatio(makeSamplerGrid(), Screen::INSTRUMENT, "SAMPLER") >= 0.0);
+}
+
 // ---- Tier 5 script parsing tests ------------------------------------------
 
 TEST_CASE("set_param.m8script parses without error", "[hwdecode]") {
