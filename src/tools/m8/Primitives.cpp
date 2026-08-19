@@ -1193,39 +1193,69 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
                                 dev.grid());
     }
 
-    // For enum targets: step through until the cursor text contains the target.
+    // Enum targets: step until the cursor text contains the target.
+    //
+    // Two rules here, both learned the hard way (WAVSYNTH_PHASE2_SPEC.md A.5).
+    //
+    // The M8 enums do not wrap, and this only ever walked forward, so any
+    // target sitting *before* the current value was unreachable: `set TYPE
+    // WAVSYNTH` from HYPERSYN walked up to EXTERNAL, hit the end stop, and
+    // failed. So search forward, then back past the start toward the other end.
+    //
+    // And a command that fails must not leave the field somewhere new. That run
+    // did: it reported failure with TYPE parked on EXTERNAL, so the caller had
+    // both no result and a changed device -- worse than refusing outright,
+    // because nothing in the failure says the instrument type was rewritten.
+    // The starting value is recorded up front and restored before returning.
     std::string targetUpper = targetValue;
     for (auto& c : targetUpper)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    int maxSteps = 30;  // enums have at most ~15 values
-    for (int i = 0; i < maxSteps; ++i) {
+    auto readUpper = [&]() -> std::string {
         dev.readSettled(120, 200, 1200);
-
-        // Handle modals if triggered (e.g. destructive edits or confirms)
         if (isModal(dev.grid())) {
             auto mr = dismissModal(dev, true, holdMs);
-            if (!mr.ok) return mr;
-            dev.readSettled(120, 200, 1200);
+            if (mr.ok) dev.readSettled(120, 200, 1200);
         }
-
-        std::string val = readCursorValue(dev, fieldLabel);
-        std::string valUpper = val;
-        for (auto& c : valUpper)
+        std::string v = readCursorValue(dev, fieldLabel);
+        for (auto& c : v)
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return v;
+    };
 
-        if (valUpper.find(targetUpper) != std::string::npos) {
-            return JsonResult::success();
+    const int maxSteps = 30;   // enums have at most ~15 values
+    const std::string startValue = readUpper();
+    if (startValue.find(targetUpper) != std::string::npos)
+        return JsonResult::success();
+
+    // Walk one direction until the target appears, or the value stops changing
+    // -- which is how an end stop announces itself, there being no other signal.
+    auto walk = [&](uint8_t gesture, int limit, const std::string& stopAt) -> bool {
+        std::string prev = readUpper();
+        for (int i = 0; i < limit; ++i) {
+            dev.press(gesture, holdMs);
+            dev.step();
+            const std::string cur = readUpper();
+            if (!stopAt.empty() && cur == stopAt) return true;
+            if (stopAt.empty() && cur.find(targetUpper) != std::string::npos) return true;
+            if (cur == prev) return false;      // end stop
+            prev = cur;
         }
+        return false;
+    };
 
-        // Step to next enum value.
-        dev.press(g.enumNext, holdMs);
-        dev.step();
-    }
+    if (walk(g.enumNext, maxSteps, "")) return JsonResult::success();
+    // Twice the budget going back: the walk has to undo the forward leg before
+    // it starts covering ground the forward leg never saw.
+    if (walk(g.enumPrev, maxSteps * 2, "")) return JsonResult::success();
 
-    dev.readSettled(120, 200, 1200);
-    return JsonResult::fail("editValue: could not find enum '" + targetValue + "'",
-                            dev.grid());
+    const bool restored = walk(g.enumNext, maxSteps * 2, startValue);
+    std::string msg = "editValue: could not find enum " + targetValue +
+                      " in either direction from " + startValue;
+    msg += restored
+         ? " (field restored)"
+         : " -- AND THE FIELD COULD NOT BE RESTORED; it is left at " + readUpper();
+    return JsonResult::fail(msg, dev.grid());
 }
 
 JsonResult enterNote(M8Device& dev, const std::string& noteName,
