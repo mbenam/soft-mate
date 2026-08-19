@@ -46,6 +46,10 @@ capture it with [`m8_capture`](m8_capture.md), then compare the two with
 | `--shape <n>` | `0` | MacroSynth shape / WavSynth shape enum value. Accepts `0x`-prefixed hex. |
 | `--timbre <n>` | `0x40` | MacroSynth timbre. |
 | `--color <n>` | `0x80` | MacroSynth color. |
+| `--size <n>` | `0x80` | **WavSynth-only.** Sets the instrument's `SIZE` field — the same field the device draws on the WavSynth INSTRUMENT screen. Accepts `0x`-prefixed hex. |
+| `--mult <n>` | `0x80` | **WavSynth-only.** Sets `MULT`. |
+| `--warp <n>` | `0x00` | **WavSynth-only.** Sets `WARP`. |
+| `--scan <n>` | `0x00` | **WavSynth-only.** Sets `SCAN`. |
 | `--volume <n>` | `0xE0` | `synth_params.volume` (the mixer/channel-strip level, distinct from the on-screen "AMP" instrument-type field — see Gotchas). |
 | `--mod-amt <n>` | `0xFF` | Volume modulation envelope amount (`0x00`..`0xFF`, `0x80` = neutral/half for headroom captures). |
 | `--mod-hold <n>` | `0xFF` | Volume modulation envelope hold duration (`0x00`..`0xFF`). |

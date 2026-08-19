@@ -140,6 +140,19 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   version. Compare the cursor, or compare row text — not the blob.
 - **A cursor move changes colour, not text.** `probe`'s `rows_changed` is 0 for a
   pure cursor move, which is expected and not a failure.
+- **A garbled screen may be the device's RAM, not your decode or your map.**
+  The M8's working copy of a project can diverge from the file on the SD card —
+  opening the LOAD PROJECT browser raises `LOSE CHANGES TO CURRENT SONG?` when it
+  has. On 2026-08-19 a corrupt instrument NAME byte in that RAM copy made the
+  device break the line where the name should be drawn and paint the whole rest
+  of the screen 30 cells late, on INSTRUMENT and INST.POOL both. Every downstream
+  symptom read as a navigation bug (`field not found`, `could not find enum`), and
+  it survived a power cycle, a forced repaint and a firmware reflash — because it
+  was in the project, not the display. **Reloading the project from the card
+  cleared it completely.** Try that before building instrumentation: it is one
+  command and it eliminates the whole class. `m8_nav --record-raw` is how to tell
+  the two apart for certain — if the device's own raster walk has a step that is
+  not `+1`, the fault is upstream of us. See `M8_DRIVER_BUGS.md` #32.
 - **The M8 does not auto-home.** It keeps whatever screen it was left on, so a
   `probe` with no preceding `goto` runs against the previous session's screen.
 - **COM3 is exclusive.** While this holds the port, `m8_nav`, `m8_capture` and any
