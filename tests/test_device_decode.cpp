@@ -1439,3 +1439,104 @@ TEST_CASE("cursorRowY falls back to the marker when no accent is present", "[hwd
 
     CHECK(grid.cursorRowY() == 60);
 }
+
+// The three instrument variants were unaddressable by name: readInstrumentType
+// has returned "WAV"/"FM"/"HYPER" all along, but getFieldMap had no maps for
+// them, so each fell through to the Sampler layout and pointed the cursor at
+// rows holding something else entirely. Coordinates measured on fw 6.5.2.
+TEST_CASE("instrument field maps exist for every synth type", "[hwdecode]") {
+    using namespace m8::dev;
+
+    auto fieldOf = [](const ScreenFieldMap& m, const char* want) -> const FieldInfo* {
+        for (size_t i = 0; i < m.count; ++i)
+            if (std::string(m.fields[i].name) == want) return &m.fields[i];
+        return nullptr;
+    };
+
+    const auto wav = getFieldMap(Screen::INSTRUMENT, "WAV");
+    const auto fm  = getFieldMap(Screen::INSTRUMENT, "FM");
+    const auto hyp = getFieldMap(Screen::INSTRUMENT, "HYPER");
+    const auto smp = getFieldMap(Screen::INSTRUMENT, "SAMPLER");
+
+    // Each map must carry the field that only that instrument type has --
+    // which is also what proves the dispatch is not quietly returning Sampler.
+    REQUIRE(fieldOf(wav, "SCAN")  != nullptr);
+    REQUIRE(fieldOf(fm,  "ALGO")  != nullptr);
+    REQUIRE(fieldOf(hyp, "SWARM") != nullptr);
+    CHECK(fieldOf(smp, "SCAN")  == nullptr);
+    CHECK(fieldOf(smp, "ALGO")  == nullptr);
+    CHECK(fieldOf(wav, "ALGO")  == nullptr);
+
+    // Measured positions, so a silent regression to the Sampler map fails here
+    // rather than on the device three steps later.
+    CHECK(fieldOf(wav, "SCAN")->row == 11);
+    CHECK(fieldOf(fm,  "ALGO")->row == 6);
+    CHECK(fieldOf(hyp, "SWARM")->row == 11);
+
+    // HyperSynth has no AMP on the device; every other type does. Pinning the
+    // absence keeps a future "surely this was an oversight" edit honest.
+    CHECK(fieldOf(hyp, "AMP") == nullptr);
+    CHECK(fieldOf(wav, "AMP") != nullptr);
+    CHECK(fieldOf(fm,  "AMP") != nullptr);
+}
+
+// All five instrument types share one right-hand column, and every map had it
+// at 17 while the device draws it at 18 (measured on fw 6.5.2 across all five,
+// M8_DRIVER_BUGS.md #29). The error was exactly 1, which sits inside
+// moveCursorTo's >1-column tolerance from bug #10 -- so it never failed, it
+// just took the slow path forever. That is precisely the kind of wrongness no
+// hardware run reports, so it needs pinning here.
+TEST_CASE("instrument maps agree on the right-hand column", "[hwdecode]") {
+    using namespace m8::dev;
+    const char* kTypes[] = {"SAMPLER", "MACROSYN", "WAV", "FM", "HYPER"};
+    // Fields that live in the right column on every type that has them.
+    const char* kRight[] = {"LIM", "PAN", "DRY", "CHO", "DEL", "REV"};
+
+    bool wrongColumn = false;
+    int checked = 0;
+    for (const char* t : kTypes) {
+        const auto m = getFieldMap(Screen::INSTRUMENT, t);
+        for (size_t i = 0; i < m.count; ++i) {
+            for (const char* want : kRight) {
+                if (std::string(m.fields[i].name) != want) continue;
+                ++checked;
+                if (m.fields[i].col != 18) wrongColumn = true;
+            }
+        }
+    }
+    CHECK_FALSE(wrongColumn);
+    CHECK(checked >= 25);   // 5 types x ~5-6 right-column fields
+
+    // And the mixer-send row is labelled MFX on the device, whatever we call it.
+    for (const char* t : kTypes) {
+        const auto m = getFieldMap(Screen::INSTRUMENT, t);
+        for (size_t i = 0; i < m.count; ++i) {
+            if (std::string(m.fields[i].name) == "CHO")
+                CHECK(std::string(m.fields[i].label) == "MFX");
+        }
+    }
+}
+
+// LOAD and SAVE are cursor stops on the instrument TYPE row. Until they were
+// mapped, a cursor on either was named TYPE by identifyCursorField -- so
+// moveCursorTo reported arriving at TYPE while parked on a button, and the
+// edit that followed read the button. M8_DRIVER_BUGS.md #31.
+TEST_CASE("instrument maps include the TYPE row buttons", "[hwdecode]") {
+    using namespace m8::dev;
+    const char* kTypes[] = {"SAMPLER", "MACROSYN", "WAV", "FM", "HYPER"};
+    for (const char* t : kTypes) {
+        const auto m = getFieldMap(Screen::INSTRUMENT, t);
+        const FieldInfo* load = nullptr;
+        const FieldInfo* save = nullptr;
+        for (size_t i = 0; i < m.count; ++i) {
+            if (std::string(m.fields[i].name) == "LOAD") load = &m.fields[i];
+            if (std::string(m.fields[i].name) == "SAVE") save = &m.fields[i];
+        }
+        REQUIRE(load != nullptr);
+        REQUIRE(save != nullptr);
+        CHECK(load->col == 22);
+        CHECK(save->col == 27);
+        CHECK(load->row == 2);
+        CHECK(save->row == 2);
+    }
+}

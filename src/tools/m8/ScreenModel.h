@@ -334,27 +334,38 @@ inline const FieldInfo kProjectFields[] = {
 
 // Instrument screen fields — Sampler layout (from InstrumentSamplerLayout.h).
 // Two-column form: left column (type/sample/params) and right column (amp/pan/sends).
+// Right-hand column measured at col 18 on fw 6.5.2 (2026-08-18, COM3): every
+// entry here said 17. The error was exactly 1, which is inside moveCursorTo's
+// >1-column tolerance from driver bug #10, so it never failed outright -- it
+// just made every right-column move take the slow path. Confirmed identical on
+// all five instrument types. See M8_DRIVER_BUGS.md #29.
 inline const FieldInfo kInstrumentSamplerFields[] = {
     {"TYPE",      "TYPE",       0, 2},
+    // Real cursor stops on the TYPE row, measured 2026-08-18. Absent from
+    // these maps until then, which made identifyCursorField hand the cursor
+    // to TYPE whenever it sat on either -- so moveCursorTo reported success
+    // on LOAD and the edit that followed read the button. M8_DRIVER_BUGS #31.
+    {"LOAD",      "LOAD",      22, 2},
+    {"SAVE",      "SAVE",      27, 2},
     {"NAME",      "NAME",       0, 3},
     {"TRANSP",    "TRANSP.",    0, 4},
     {"TBL_TIC",   "TBL.TIC",   13, 4},
     {"EQ",        "EQ",         26, 4},
     {"SAMPLE",    "SAMPLE",     0, 6},
     {"SLICE",     "SLICE",      0, 8},
-    {"AMP",       "AMP",        17, 8},
+    {"AMP",       "AMP",        18, 8},
     {"PLAY",      "PLAY",       0, 9},
-    {"LIM",       "LIM",        17, 9},
+    {"LIM",       "LIM",        18, 9},
     {"START",     "START",      0, 10},
-    {"PAN",       "PAN",        17, 10},
+    {"PAN",       "PAN",        18, 10},
     {"LOOP_ST",   "LOOP ST",    0, 11},
-    {"DRY",       "DRY",        17, 11},
+    {"DRY",       "DRY",        18, 11},
     {"LENGTH",    "LENGTH",     0, 12},
-    {"CHO",       "MFX",        17, 12},
+    {"CHO",       "MFX",        18, 12},
     {"DETUNE",    "DETUNE",     0, 13},
-    {"DEL",       "DEL",        17, 13},
+    {"DEL",       "DEL",        18, 13},
     {"DEGRADE",   "DEGRADE",    0, 14},
-    {"REV",       "REV",        17, 14},
+    {"REV",       "REV",        18, 14},
     {"FILTER",    "FILTER",     0, 15},
     {"CUTOFF",    "CUTOFF",     0, 16},
     {"RES",       "RES",        0, 17},
@@ -363,6 +374,12 @@ inline const FieldInfo kInstrumentSamplerFields[] = {
 // Instrument screen fields — Macrosyn layout (from InstrumentMacrosynLayout.h).
 inline const FieldInfo kInstrumentMacrosynFields[] = {
     {"TYPE",      "TYPE",       0, 2},
+    // Real cursor stops on the TYPE row, measured 2026-08-18. Absent from
+    // these maps until then, which made identifyCursorField hand the cursor
+    // to TYPE whenever it sat on either -- so moveCursorTo reported success
+    // on LOAD and the edit that followed read the button. M8_DRIVER_BUGS #31.
+    {"LOAD",      "LOAD",      22, 2},
+    {"SAVE",      "SAVE",      27, 2},
     {"NAME",      "NAME",       0, 3},
     {"TRANSP",    "TRANSP.",    0, 4},
     {"TBL_TIC",   "TBL.TIC",   13, 4},
@@ -375,13 +392,140 @@ inline const FieldInfo kInstrumentMacrosynFields[] = {
     {"FILTER",    "FILTER",     0, 12},
     {"CUTOFF",    "CUTOFF",     0, 13},
     {"RES",       "RES",        0, 14},
-    {"AMP",       "AMP",        17, 8},
-    {"LIM",       "LIM",        17, 9},
-    {"PAN",       "PAN",        17, 10},
-    {"DRY",       "DRY",        17, 11},
-    {"CHO",       "CHO",        17, 12},
-    {"DEL",       "DEL",        17, 13},
-    {"REV",       "REV",        17, 14},
+    {"AMP",       "AMP",        18, 8},
+    {"LIM",       "LIM",        18, 9},
+    {"PAN",       "PAN",        18, 10},
+    {"DRY",       "DRY",        18, 11},
+    // Label is MFX on the device, not CHO -- the canonical NAME stays CHO so
+    // existing scripts and the Sampler map agree. Measured 2026-08-18; the
+    // Sampler map already had this right. M8_DRIVER_BUGS.md #29.
+    {"CHO",       "MFX",        18, 12},
+    {"DEL",       "DEL",        18, 13},
+    {"REV",       "REV",        18, 14},
+};
+
+// ---- WavSynth / FMSynth / HyperSynth instrument variants -------------------
+//
+// Measured on a real M8, fw 6.5.2, COM3, 2026-08-18, by setting instrument 00
+// to each type in turn and taking `m8_nav --ui-capture`. Device rows/cols minus
+// (3, 1) for this codebase's coordinates -- the same transform the maps above
+// use.
+//
+// All three were missing, so `cursor <FIELD>` fell back to the Sampler map on
+// every one of them and aimed at rows that hold something else. That is what
+// forced the whole of the WavSynth Phase 2/3 hardware work to be driven with
+// raw key presses (WAVSYNTH_PHASE3_SPEC.md 7.4) -- counting presses by hand
+// against a screen the driver could not address by name.
+//
+// Derived from captures rather than from the clone's own *ScreenLayout.h files
+// on purpose: docs/ui_screen_spec.md is explicit that the clone's geometry
+// deliberately differs from the device's, so those files are the wrong answer
+// key for driving hardware, however convenient they look.
+
+inline const FieldInfo kInstrumentWavsynthFields[] = {
+    {"TYPE",      "TYPE",       0, 2},
+    // Real cursor stops on the TYPE row, measured 2026-08-18. Absent from
+    // these maps until then, which made identifyCursorField hand the cursor
+    // to TYPE whenever it sat on either -- so moveCursorTo reported success
+    // on LOAD and the edit that followed read the button. M8_DRIVER_BUGS #31.
+    {"LOAD",      "LOAD",      22, 2},
+    {"SAVE",      "SAVE",      27, 2},
+    {"NAME",      "NAME",       0, 3},
+    {"TRANSP",    "TRANSP.",    0, 4},
+    {"TBL_TIC",   "TBL.TIC",   13, 4},
+    {"EQ",        "EQ",        26, 4},
+    {"SHAPE",     "SHAPE",      0, 6},
+    {"SIZE",      "SIZE",       0, 8},
+    {"MULT",      "MULT",       0, 9},
+    {"WARP",      "WARP",       0, 10},
+    {"SCAN",      "SCAN",       0, 11},
+    {"FILTER",    "FILTER",     0, 12},
+    {"CUTOFF",    "CUTOFF",     0, 13},
+    {"RES",       "RES",        0, 14},
+    {"AMP",       "AMP",       18, 8},
+    {"LIM",       "LIM",       18, 9},
+    {"PAN",       "PAN",       18, 10},
+    {"DRY",       "DRY",       18, 11},
+    {"MFX",       "MFX",       18, 12},
+    {"DEL",       "DEL",       18, 13},
+    {"REV",       "REV",       18, 14},
+};
+
+// FMSynth. RATIO, LEV/FB and MOD are four-operator ROWS on the device --
+// "01.00 01.00 01.00 01.00" -- so a name lookup reaches the row, not one
+// operator's column. Selecting an individual operator needs a column step after
+// arriving, which this table cannot express. Recorded so the limit is known
+// rather than discovered mid-edit.
+inline const FieldInfo kInstrumentFmsynthFields[] = {
+    {"TYPE",      "TYPE",       0, 2},
+    // Real cursor stops on the TYPE row, measured 2026-08-18. Absent from
+    // these maps until then, which made identifyCursorField hand the cursor
+    // to TYPE whenever it sat on either -- so moveCursorTo reported success
+    // on LOAD and the edit that followed read the button. M8_DRIVER_BUGS #31.
+    {"LOAD",      "LOAD",      22, 2},
+    {"SAVE",      "SAVE",      27, 2},
+    {"NAME",      "NAME",       0, 3},
+    {"TRANSP",    "TRANSP.",    0, 4},
+    {"TBL_TIC",   "TBL.TIC",   13, 4},
+    {"EQ",        "EQ",        26, 4},
+    {"ALGO",      "ALGO",       0, 6},
+    {"RATIO",     "RATIO",      0, 8},
+    {"LEV_FB",    "LEV/FB",     0, 9},
+    {"MOD",       "MOD",        0, 10},
+    {"MOD1",      "MOD1",       0, 12},
+    {"MOD2",      "MOD2",       0, 13},
+    {"MOD3",      "MOD3",       0, 14},
+    {"MOD4",      "MOD4",       0, 15},
+    {"FILTER",    "FILTER",     0, 16},
+    {"CUTOFF",    "CUTOFF",     0, 17},
+    {"RES",       "RES",        0, 18},
+    {"AMP",       "AMP",       18, 12},
+    {"LIM",       "LIM",       18, 13},
+    {"PAN",       "PAN",       18, 14},
+    {"DRY",       "DRY",       18, 15},
+    {"MFX",       "MFX",       18, 16},
+    {"DEL",       "DEL",       18, 17},
+    {"REV",       "REV",       18, 18},
+};
+
+// HyperSynth. The device draws NO AMP row for this type -- its right column
+// starts at LIM. Measured, not assumed: the capture's row 13 carries SHIFT on
+// the left and nothing at column 18, where every other instrument type has AMP.
+// The clone does draw one (InstrumentHypersynLayout.h binds C::AMP at row 10),
+// so the two disagree about content, which docs/ui_screen_spec.md says the
+// device settles. Flagged rather than silently reconciled: HyperState::amp is
+// real in the engine and applied in SynthVoice, so removing the clone's control
+// is a separate decision with audible consequences.
+//
+// CHORD is a row of seven note slots, with the same column caveat as FMSynth's
+// operator rows.
+inline const FieldInfo kInstrumentHypersynFields[] = {
+    {"TYPE",      "TYPE",       0, 2},
+    // Real cursor stops on the TYPE row, measured 2026-08-18. Absent from
+    // these maps until then, which made identifyCursorField hand the cursor
+    // to TYPE whenever it sat on either -- so moveCursorTo reported success
+    // on LOAD and the edit that followed read the button. M8_DRIVER_BUGS #31.
+    {"LOAD",      "LOAD",      22, 2},
+    {"SAVE",      "SAVE",      27, 2},
+    {"NAME",      "NAME",       0, 3},
+    {"TRANSP",    "TRANSP.",    0, 4},
+    {"TBL_TIC",   "TBL.TIC",   13, 4},
+    {"EQ",        "EQ",        26, 4},
+    {"SCALE",     "SCALE",      0, 6},
+    {"CHORD",     "CHORD",      0, 7},
+    {"SHIFT",     "SHIFT",      0, 10},
+    {"SWARM",     "SWARM",      0, 11},
+    {"WIDTH",     "WIDTH",      0, 12},
+    {"SUBOSC",    "SUBOSC",     0, 13},
+    {"FILTER",    "FILTER",     0, 14},
+    {"CUTOFF",    "CUTOFF",     0, 15},
+    {"RES",       "RES",        0, 16},
+    {"LIM",       "LIM",       18, 11},
+    {"PAN",       "PAN",       18, 12},
+    {"DRY",       "DRY",       18, 13},
+    {"MFX",       "MFX",       18, 14},
+    {"DEL",       "DEL",       18, 15},
+    {"REV",       "REV",       18, 16},
 };
 
 // Effects screen fields (from EffectsScreenLayout.h).
@@ -549,6 +693,15 @@ inline ScreenFieldMap getFieldMap(Screen s, const std::string& typeHint) {
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (upper.find("MACROSYN") != std::string::npos)
             return {kInstrumentMacrosynFields, std::size(kInstrumentMacrosynFields), false};
+        // readInstrumentType() has returned "WAV", "FM" and "HYPER" since it was
+        // written; only the maps were missing, so all three silently resolved to
+        // the Sampler layout and aimed the cursor at the wrong rows.
+        if (upper.find("WAV") != std::string::npos)
+            return {kInstrumentWavsynthFields, std::size(kInstrumentWavsynthFields), false};
+        if (upper.find("FM") != std::string::npos)
+            return {kInstrumentFmsynthFields, std::size(kInstrumentFmsynthFields), false};
+        if (upper.find("HYPER") != std::string::npos)
+            return {kInstrumentHypersynFields, std::size(kInstrumentHypersynFields), false};
         return {kInstrumentSamplerFields, std::size(kInstrumentSamplerFields), false};
     }
     return getFieldMap(s);
@@ -660,7 +813,9 @@ inline Screen findScreenForField(const std::string& name) {
     for (auto& si : kScreenTable) {
         if (si.id == Screen::LOAD_PROJECT_MODAL || si.id == Screen::FILE_BROWSER) continue;
         if (si.id == Screen::INSTRUMENT) {
-            if (hasExactField(si.id, upper, "SAMPLER") || hasExactField(si.id, upper, "MACROSYN"))
+            if (hasExactField(si.id, upper, "SAMPLER") || hasExactField(si.id, upper, "MACROSYN")
+                || hasExactField(si.id, upper, "WAV") || hasExactField(si.id, upper, "FM")
+                || hasExactField(si.id, upper, "HYPER"))
                 return si.id;
             continue;
         }
@@ -671,7 +826,10 @@ inline Screen findScreenForField(const std::string& name) {
         if (si.id == Screen::LOAD_PROJECT_MODAL || si.id == Screen::FILE_BROWSER) continue;
         if (si.id == Screen::INSTRUMENT) {
             if (findFieldOnScreen(si.id, name, "SAMPLER").has_value() ||
-                findFieldOnScreen(si.id, name, "MACROSYN").has_value())
+                findFieldOnScreen(si.id, name, "MACROSYN").has_value() ||
+                findFieldOnScreen(si.id, name, "WAV").has_value() ||
+                findFieldOnScreen(si.id, name, "FM").has_value() ||
+                findFieldOnScreen(si.id, name, "HYPER").has_value())
                 return si.id;
             continue;
         }

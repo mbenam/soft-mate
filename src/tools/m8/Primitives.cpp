@@ -43,6 +43,24 @@ static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur)
     auto map = instType.empty() ? getFieldMap(cur) : getFieldMap(cur, instType);
     if (map.isGrid || !map.fields) return std::nullopt;
 
+    // A field claims the cursor if it is the rightmost mapped field at or left
+    // of it -- BOUNDED. Without the bound, any unmapped cursor stop on a mapped
+    // row gets handed to whatever field is furthest left on that row, and the
+    // caller is told it arrived somewhere it did not.
+    //
+    // That is not theoretical: LOAD and SAVE sit at columns 22 and 27 of the
+    // instrument TYPE row and were in no map, so a cursor on LOAD came back
+    // named "TYPE". moveCursorTo then reported success, and the edit that
+    // followed read the button -- "could not find enum MACROSYN in either
+    // direction from LOAD". Both were fixed: the stops are mapped now, and this
+    // bound turns any remaining unmapped stop into "I do not know" instead of a
+    // confident wrong name. M8_DRIVER_BUGS.md #31.
+    //
+    // 16 columns is comfortably wider than any real label-to-value span on
+    // these screens (the widest measured is NAME's, at 8) and comfortably
+    // narrower than the 22 that caused the misidentification.
+    constexpr int kMaxFieldSpan = 16;
+
     const FieldInfo* best = nullptr;
     for (size_t i = 0; i < map.count; ++i) {
         if (map.fields[i].row == gridRow && map.fields[i].col <= gridCol) {
@@ -52,7 +70,7 @@ static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur)
         }
     }
 
-    if (best) return best->name;
+    if (best && (gridCol - best->col) <= kMaxFieldSpan) return best->name;
     return std::nullopt;
 }
 

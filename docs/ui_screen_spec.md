@@ -96,17 +96,37 @@ the mechanism.
 
 ## Known gaps — real work
 
-- No layout exists for FMSYNTH, WAVSYNTH or HYPERSYN. Only
-  `InstrumentSamplerLayout.h` and `InstrumentMacrosynLayout.h` exist.
-- HYPERSYN has no edit path at all — not just no layout. `HyperState` *does*
-  exist (`src/engine/Engine.h`), loads and saves through `SongIO`, and renders
-  in `SynthVoice.cpp`; what is missing is any `HYPER_*` entry in `ParamID`
-  (`src/engine/CommandRing.h`), so there is no command for the UI to push even
-  once a layout exists. FMSYNTH and WAVSYNTH are one step further along: their
-  `FM_*` / `WAV_*` ParamIDs exist and only the layout is missing.
-  *(Corrected 2026-08-12: this entry previously claimed `Engine.h` had no
-  HyperSynth parameter struct. It does — `HyperState`. The real gap is the
-  ParamID/edit path.)*
+- ~~No layout exists for FMSYNTH, WAVSYNTH or HYPERSYN.~~ **CLOSED
+  (verified 2026-08-18).** All three exist —
+  `InstrumentFmsynthLayout.h`, `InstrumentWavsynthLayout.h`,
+  `InstrumentHypersynLayout.h`.
+- ~~HYPERSYN has no edit path at all.~~ **CLOSED (verified 2026-08-18).** The
+  `HYP_*` cursor ids and their layout bindings are in
+  `InstrumentHypersynLayout.h` and dispatched from `InstrumentScreen.cpp`.
+  *(This entry twice described a gap that had already been filled — first
+  claiming `Engine.h` had no `HyperState`, corrected 2026-08-12 to claim the
+  ParamID/edit path was missing, which by then it was not either. Both readings
+  were checked against the tree before closing it.)*
+- **HYPERSYN draws an AMP control the device does not have.** Measured
+  2026-08-18 (fw 6.5.2, COM3, `m8_nav --ui-capture`, `artifacts/inst_HYPERSYN.json`):
+  on hardware the HyperSynth instrument screen's right-hand column starts at
+  `LIM`. Row 13 carries `SHIFT` on the left and **nothing** at column 18, where
+  every other instrument type puts `AMP`. The clone binds `C::AMP` at row 10
+  (`InstrumentHypersynLayout.h:36`).
+
+  This is a content difference, which per "How to use device captures" above is
+  the thing the hardware *is* the answer key for — unlike geometry or colour. But
+  it is not a one-line deletion: `HyperState::amp` is real, loads and saves
+  through `SongIO`, and is applied in `SynthVoice`'s HyperSynth branch, so
+  removing the control leaves a field that is set by files and unreachable in the
+  UI. Two readings and they need different fixes: either the M8 applies amp to
+  HyperSynth without exposing it (keep our control, note the divergence), or
+  HyperSynth genuinely has no amp stage (our engine has an extra gain the device
+  lacks, and every HyperSynth patch renders differently). Settle by capturing
+  hardware audio with the file's amp byte at two values and comparing. Do not
+  delete the control until that is measured — silence and a 6 dB level error look
+  the same in a diff.
+
 - `HandleTableInput` takes no data reference — TABLE moves a cursor but cannot
   edit anything.
 
