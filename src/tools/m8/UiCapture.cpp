@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cstdio>
+#include <cstdlib>
 
 namespace m8 {
 namespace dev {
@@ -121,10 +122,20 @@ std::string toJson(const UiCapture& c) {
     ss << "  \"cells\": [\n";
     for (size_t i = 0; i < c.cells.size(); ++i) {
         const auto& cl = c.cells[i];
-        char escaped[8];
-        if (cl.ch == '"') std::snprintf(escaped, sizeof(escaped), "\\\"");
-        else if (cl.ch == '\\') std::snprintf(escaped, sizeof(escaped), "\\\\");
-        else std::snprintf(escaped, sizeof(escaped), "%c", cl.ch);
+        // The M8 font carries custom glyphs outside printable ASCII (the meter
+        // and slider fills, for two), and writing those raw produced a file that
+        // is not valid JSON -- every strict parser rejects it, which is how
+        // `m8drv inspect` came to die on a control character while the
+        // hand-rolled parser below read the same file happily.
+        std::string escaped;
+        const unsigned char uch = static_cast<unsigned char>(cl.ch);
+        if (cl.ch == '"')       escaped = "\\\"";
+        else if (cl.ch == '\\') escaped = "\\\\";
+        else if (uch < 0x20 || uch >= 0x7F) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04X", uch);
+            escaped = buf;
+        } else escaped = std::string(1, cl.ch);
 
         ss << "    {\"col\":" << cl.col << ",\"row\":" << cl.row
            << ",\"ch\":\"" << escaped << "\",\"fg\":" << cl.fgStyle << ",\"bg\":" << cl.bgStyle << "}"
@@ -247,8 +258,16 @@ bool fromJson(const std::string& text, UiCapture& out, std::string& err) {
                             size_t v = p + key.size() + 3;
                             if (v >= obj.size()) return "";
                             if (obj[v] == '"') {
-                                size_t e = obj.find('"', v + 1);
-                                return (e != std::string::npos) ? obj.substr(v + 1, e - v - 1) : "";
+                                // Scan for the closing quote, skipping escapes, so a
+                                // cell whose glyph is a quote does not end the value
+                                // one character early.
+                                size_t e = v + 1;
+                                while (e < obj.size()) {
+                                    if (obj[e] == '\\') { e += 2; continue; }
+                                    if (obj[e] == '"') break;
+                                    ++e;
+                                }
+                                return (e < obj.size()) ? obj.substr(v + 1, e - v - 1) : "";
                             }
                             size_t e = obj.find_first_of(",}", v);
                             return (e != std::string::npos) ? obj.substr(v, e - v) : obj.substr(v);
@@ -261,7 +280,21 @@ bool fromJson(const std::string& text, UiCapture& out, std::string& err) {
 
                         cell.col = toInt(getField("col"));
                         cell.row = toInt(getField("row"));
-                        cell.ch = chStr.empty() ? ' ' : chStr[0];
+                        // Undo the writer escaping. Files written before 2026-08-18
+                        // carry the raw byte and still take the first branch, so the
+                        // existing golden corpus keeps parsing unchanged.
+                        auto decodeChar = [](const std::string& t) -> char {
+                            if (t.empty()) return ' ';
+                            if (t[0] != '\\') return t[0];
+                            if (t.size() >= 2 && t[1] == '"')  return '"';
+                            if (t.size() >= 2 && t[1] == '\\') return '\\';
+                            if (t.size() >= 6 && (t[1] == 'u' || t[1] == 'U')) {
+                                const long v = std::strtol(t.substr(2, 4).c_str(), nullptr, 16);
+                                return static_cast<char>(v);
+                            }
+                            return t[0];
+                        };
+                        cell.ch = decodeChar(chStr);
                         cell.fgStyle = toInt(getField("fg"), -1);
                         cell.bgStyle = toInt(getField("bg"), -1);
                         out.cells.push_back(cell);

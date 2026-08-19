@@ -95,9 +95,43 @@ public:
     std::vector<Rect> highlights;
     int hwType = -1, fwMajor = 0, fwMinor = 0, fwPatch = 0, fontMode = -1;
     uint8_t lastColor[3] = {0, 0, 0};
-    uint8_t cursorColor[3] = {0, 252, 248};  // M8 default theme accent (cyan)
+    // M8 default theme accent (cyan). Measured off a real headless on fw 6.5.2
+    // reporting theme_id "m8-default-6.5.2": the accent is [0,240,248], not the
+    // [0,252,248] this defaulted to until 2026-08-18. The old value matched no
+    // palette entry, so isCursor() returned false for every cell and every
+    // cursor read came back -1 -- which presents as "the device is ignoring
+    // keys" when the presses are landing fine. Evidence: `m8_nav --ui-capture`,
+    // hw_findings.md "UI-13".
+    //
+    // The tolerance exists because this is a *theme* colour: a user-selected
+    // theme moves it, and an exact equality test turns any such theme into a
+    // driver that silently sees no cursor at all. 16 is far below the spacing
+    // between the eight palette entries of the stock theme, so it cannot latch
+    // onto a neighbouring colour. For a theme further from stock, override it
+    // with `m8_nav --cursor-color R,G,B` rather than widening this.
+    uint8_t cursorColor[3] = {0, 240, 248};
+    int cursorColorTol = 16;
 
+    // True if the cell carries the theme accent, as foreground OR background.
+    //
+    // Both channels matter. A form screen recolours the cursor's text, but a
+    // tracker grid draws its cursor as inverse video -- accent as background
+    // behind a dark glyph. This tested the foreground alone until 2026-08-18,
+    // so the grid cursor was structurally invisible to it and to everything
+    // built on it (cursorRowY, cursorField, moveCursorToGrid).
     bool isCursor(const Cell& c) const;
+    bool isCursorFg(const Cell& c) const;
+    bool isCursorBg(const Cell& c) const;
+
+    // Does the accent appear anywhere on the screen as currently decoded?
+    //
+    // This is the "am I blind?" question, and it exists because the failure it
+    // detects is otherwise indistinguishable from a device that is ignoring
+    // keys: if the accent is wrong, isCursor() is false everywhere, every
+    // cursor query returns -1, and the driver blames the hardware. A screen
+    // with cells but no accent means the accent is wrong, not that the M8 has
+    // stopped drawing a cursor. See hw_findings.md UI-14.
+    bool accentPresent() const;
     bool isInHighlight(int pixelX, int pixelY) const;
     std::string topHeader() const;
     std::string cursorMainText() const;
@@ -215,6 +249,16 @@ public:
 
     // Access the underlying grid.
     const ScreenGrid& grid() const { return m_grid; }
+
+    // Override the theme accent used to locate the cursor. See the note on
+    // ScreenGrid::cursorColor -- a device on a non-stock theme needs this, and
+    // without it every cursor read silently returns -1.
+    void setCursorColor(uint8_t r, uint8_t g, uint8_t b) {
+        m_grid.cursorColor[0] = r;
+        m_grid.cursorColor[1] = g;
+        m_grid.cursorColor[2] = b;
+    }
+    void setCursorTolerance(int tol) { m_grid.cursorColorTol = tol; }
     const ReadStats& lastRead() const { return m_lastRead; }
 
 private:

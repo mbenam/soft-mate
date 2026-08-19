@@ -84,6 +84,31 @@ DEFAULT_EXE = os.path.join("build", "Release", "m8_nav.exe")
 # (src/tools/main_nav.cpp:436) and has no flag to override it. Without them,
 # editValue refuses every SET with "gestures not pinned".
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+def _load_pinned_accent(path: str = "hw_theme.json") -> tuple:
+    """The accent pinned by `m8_nav --pin-theme`, or the stock fallback.
+
+    Only a file that says `pinned: true` is trusted. An unpinned file is a
+    draft, and adopting one would put us back to assuming a colour with an
+    extra step in between -- the C++ ThemeTable::loadFromFile refuses it for
+    the same reason.
+    """
+    fallback = ([0, 240, 248], 16)
+    try:
+        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return fallback
+    if not d.get("pinned"):
+        return fallback
+    accent = d.get("accent")
+    if not (isinstance(accent, list) and len(accent) == 3
+            and all(isinstance(v, int) and 0 <= v <= 255 for v in accent)):
+        return fallback
+    tol = d.get("tolerance", 16)
+    if not (isinstance(tol, int) and 0 <= tol <= 128):
+        tol = 16
+    return (accent, tol)
 GESTURE_FILE = "hw_buttons.json"
 
 # ---- Daemon lifetime --------------------------------------------------------
@@ -243,6 +268,8 @@ class M8Driver:
         self.restarts = 0
         self.banner: Dict[str, str] = {}
         self.gestures_ready: Optional[bool] = None
+        self.theme_pinned: Optional[bool] = None
+        self.theme_blind: Optional[bool] = None
         self.firmware: Optional[str] = None
         self._startup_error: Optional[str] = None
         self._ready = threading.Event()
@@ -277,6 +304,8 @@ class M8Driver:
         self._log(f"starting: {' '.join(cmd)} (cwd={REPO_ROOT})")
         self.banner = {}
         self.gestures_ready: Optional[bool] = None
+        self.theme_pinned: Optional[bool] = None
+        self.theme_blind: Optional[bool] = None
         self.firmware: Optional[str] = None
         self._startup_error: Optional[str] = None
         self._ready = threading.Event()
@@ -401,6 +430,22 @@ class M8Driver:
                 self.gestures_ready = False
             elif "populated=" in line:
                 self.gestures_ready = "populated=true" in line
+        elif line.startswith("theme:"):
+            # Two distinct failures, and they are not the same thing. "NOT
+            # confirmed" means nobody has pinned the accent for this device, so
+            # we are running on a guess. "WARNING" means the guess is provably
+            # wrong -- the accent is on no cell of the current screen -- and
+            # every cursor read is about to come back -1 and be misread as the
+            # device ignoring keys. Both must reach the caller; the second is
+            # the one that wasted a session.
+            self.banner["theme"] = line
+            if "WARNING" in line:
+                self.theme_blind = True
+            elif "NOT confirmed" in line:
+                self.theme_pinned = False
+            else:
+                self.theme_pinned = True
+                self.theme_blind = False
         elif line.startswith("device:"):
             self.banner["device"] = line
             for tok in line.split():
@@ -631,7 +676,16 @@ class M8Driver:
             "settled": st.get("settled"),
         }
 
-    ACCENT = [0, 252, 248]   # M8 default theme accent, == ScreenGrid::cursorColor
+    # The cursor accent. Prefers hw_theme.json -- pinned against the real device
+    # by `m8_nav --pin-theme` -- and falls back to the stock fw 6.5.2 value
+    # (theme_id "m8-default-6.5.2", measured [0,240,248]).
+    #
+    # This read [0,252,248] until 2026-08-18. It matched no palette entry, so
+    # every screen looked like it had no cursor, and the driver reported keys
+    # that were not landing when they were landing perfectly. Keeping the
+    # fallback in step with the C++ side is not enough on its own -- that is
+    # what pinning is for -- but a wrong fallback is worse than a stale one.
+    ACCENT, ACCENT_TOL = _load_pinned_accent()
 
     def _capture(self) -> Dict[str, Any]:
         import tempfile
@@ -640,12 +694,29 @@ class M8Driver:
         try:
             self.send("CAPTURE", path=path)
             with open(path, encoding="utf-8") as f:
-                return json.load(f)
+                # strict=False tolerates raw control characters in cell text.
+                # The writer escapes them as of 2026-08-18, but captures taken
+                # with an older m8_nav are still out there and used to make
+                # inspect die on a JSONDecodeError rather than report anything.
+                return json.load(f, strict=False)
         finally:
             try:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def _accent_index(self, cap: Dict[str, Any]) -> Optional[int]:
+        """Index of the palette entry that is the cursor accent, or None.
+
+        None is the blindness signal: the accent we are looking for is on no
+        cell of this screen, so every cursor query is about to fail and the
+        failure will present as a device that is ignoring keys.
+        """
+        for i, col in enumerate(cap.get("palette") or []):
+            if len(col) == 3 and all(abs(col[ch] - self.ACCENT[ch]) <= self.ACCENT_TOL
+                                     for ch in range(3)):
+                return i
+        return None
 
     def inspect(self, key: Optional[str | int] = None) -> Dict[str, Any]:
         """Show where the accent colour actually is, as foreground AND background.
@@ -664,11 +735,7 @@ class M8Driver:
         key is the real cursor.
         """
         def read(cap: Dict[str, Any]) -> Dict[str, Any]:
-            pal = cap.get("palette") or []
-            try:
-                idx = pal.index(self.ACCENT)
-            except ValueError:
-                idx = None
+            idx = self._accent_index(cap)
             cells = cap.get("cells") or []
             return {
                 "accent_index": idx,
@@ -692,8 +759,12 @@ class M8Driver:
             "rects": a["rects"],
         }
         if a["accent_index"] is None:
-            out["warning"] = (f"accent {self.ACCENT} is not in this screen's palette; "
-                              f"the device theme may differ from cursorColor.")
+            out["warning"] = (
+                f"no palette entry within {self.ACCENT_TOL} of accent {self.ACCENT}; "
+                f"palette is {cap_a.get('palette')}, theme_id "
+                f"{cap_a.get('theme_id')!r}. Cursor reads will all return -1, and "
+                f"probe/inspect will report presses as 'not landing' when they are. "
+                f"Pass the real accent through: m8_nav --cursor-color R,G,B.")
         if key is None:
             return out
 
@@ -781,6 +852,17 @@ class M8Driver:
         # But grid coordinates only exist on grid screens. On a form screen like
         # MIXER they are -1 throughout, and treating that as "the grid did not
         # follow" reported a stale-read bug that was not there.
+        # Before judging the press, ask whether we can see a cursor at all. A
+        # wrong accent produces the same evidence as a dead key -- nothing in
+        # `cursor` ever changes -- and the two verdicts point at opposite
+        # things: one at the device, one at one line of our own configuration.
+        # Getting this backwards is what made a working M8 look broken.
+        try:
+            blind = self._accent_index(self._capture()) is None
+        except Exception:
+            blind = None
+        out["accent_found"] = None if blind is None else (not blind)
+
         grid_screen = any(s["grid"][0] >= 0 for s in out["steps"])
         out["grid_screen"] = grid_screen
         moved_grid = grid_screen and any(s["grid_moved"] for s in out["steps"])
@@ -801,10 +883,20 @@ class M8Driver:
                               "cursor_row moved while grid_step/grid_col stood "
                               "still, so the grid position read is stale -- suspect "
                               "a ghost accent cell pinning it (M8_DRIVER_BUGS #24).")
+        elif moved_rows and blind:
+            out["verdict"] = ("PRESS LANDS and the screen changed, but the accent "
+                              f"{self.ACCENT} is on no cell here, so cursor "
+                              "tracking cannot work. This is a theme mismatch, not "
+                              "a device fault. Fix: m8_nav --pin-theme.")
         elif moved_rows:
             out["verdict"] = ("PRESS LANDS but cursor tracking is broken on this "
                               "screen -- the screen changed and cursor_row did "
                               "not. Cursor detection is reading something static.")
+        elif blind:
+            out["verdict"] = (f"CANNOT TELL -- the accent {self.ACCENT} is on no "
+                              "cell of this screen, so the cursor is invisible to "
+                              "us whether or not the press landed. Pin the accent "
+                              "first: m8_nav --pin-theme.")
         else:
             out["verdict"] = ("NOTHING CHANGED -- the press is not landing, or "
                               "this key does nothing on this screen. Retry with "
@@ -823,6 +915,17 @@ class M8Driver:
         out["firmware"] = self.firmware          # from the banner, not SemanticState
         out["gestures_ready"] = self.gestures_ready
         out["set_usable"] = self.gestures_ready is not False
+        out["theme_pinned"] = self.theme_pinned
+        out["theme_blind"] = self.theme_blind
+        if self.theme_blind:
+            out["theme_advice"] = (
+                "the pinned accent is on no cell of this screen -- cursor reads "
+                "will all return -1 and will look like the device ignoring keys. "
+                f"Run: m8_nav --port {self.port} --pin-theme")
+        elif self.theme_pinned is False:
+            out["theme_advice"] = (
+                "running on the built-in default accent, never confirmed for this "
+                f"device. Run: m8_nav --port {self.port} --pin-theme")
         st = self.state()
         out["screen"] = st.get("screen")
         out["is_modal"] = st.get("is_modal")

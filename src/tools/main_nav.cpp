@@ -22,6 +22,10 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <map>
+#include <set>
+#include <array>
+#include <algorithm>
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -36,10 +40,12 @@
 #include "m8/Semantic.h"
 #include "m8/Daemon.h"
 #include "m8/UiCapture.h"
+#include "m8/DeviceTheme.h"
 
 using namespace m8::dev;
 
 static const char* kDefaultGesturePath = "hw_buttons.json";
+static const char* kDefaultThemePath   = "hw_theme.json";
 
 
 static std::string alnumUpper(const std::string& s) {
@@ -334,9 +340,142 @@ static int emitExit(M8Device& dev, Envelope env, const std::string& jsonPath = "
 
 // ---- main -----------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// --pin-theme: learn the cursor accent by watching a key press.
+//
+// Pinning by observation rather than assumption. The M8 draws its cursor in the
+// theme accent and the display protocol never says which cells those are, so
+// every cursor query in the driver is ultimately a colour comparison against a
+// value we had to *know* in advance -- and when that value was wrong, the whole
+// driver reported a device that ignores keys (hw_findings.md UI-14). Asking the
+// device instead removes the class: press a direction key, and the colour whose
+// cells move is the cursor, whatever the user has themed it to.
+//
+// Two colours move, not one: the row the cursor leaves reverts to normal text,
+// and the row it arrives at becomes accent. They are told apart by extent -- a
+// cursor marks one field or row, while the normal text colour covers most of the
+// screen -- so the smallest changed colour is the accent. Candidates are printed
+// with their cell counts so the choice is auditable rather than trusted.
+// ---------------------------------------------------------------------------
+namespace {
+
+using CellKey = std::pair<int, int>;                 // (row, col)
+using ColorKey = std::array<uint8_t, 3>;
+
+std::map<ColorKey, std::set<CellKey>> colorCellSets(const m8::dev::UiCapture& cap) {
+    std::map<ColorKey, std::set<CellKey>> out;
+    for (const auto& c : cap.cells) {
+        if (c.fgStyle >= 0 && c.fgStyle < (int)cap.palette.size())
+            out[cap.palette[c.fgStyle]].insert({c.row, c.col});
+        if (c.bgStyle >= 0 && c.bgStyle < (int)cap.palette.size())
+            out[cap.palette[c.bgStyle]].insert({c.row, c.col});
+    }
+    return out;
+}
+
+} // namespace
+
+static int pinTheme(m8::dev::M8Device& dev, m8::dev::Envelope& env,
+                    const std::string& path, int minMs, int settleMs, int maxMs) {
+    using namespace m8::dev;
+
+    // Direction pairs to try, each with the key that undoes it. The cursor can
+    // sit at the end of a chain where DOWN does nothing, so more than one pair
+    // is needed before concluding the screen has no cursor at all.
+    const struct { const char* name; uint8_t go; uint8_t back; } kProbes[] = {
+        {"DOWN", Key::DOWN,  Key::UP},
+        {"UP",   Key::UP,    Key::DOWN},
+        {"RIGHT",Key::RIGHT, Key::LEFT},
+        {"LEFT", Key::LEFT,  Key::RIGHT},
+    };
+
+    for (const auto& probe : kProbes) {
+        dev.readSettled(minMs, settleMs, maxMs);
+        if (dev.grid().cells.empty()) {
+            env.code = ExitCode::NO_DATA;
+            env.message = "pin-theme: no display data decoded";
+            return emitExit(dev, env);
+        }
+        const UiCapture before = captureFromGrid(dev.grid(), true);
+
+        dev.press(probe.go);
+        dev.readSettled(minMs, settleMs, maxMs);
+        const UiCapture after = captureFromGrid(dev.grid(), true);
+
+        // Put the cursor back before doing anything else with the result. This
+        // matters more than it looks: a cursor left somewhere unexpected is how
+        // a later keyjazz capture recorded a note into the wrong phrase row.
+        dev.press(probe.back);
+        dev.readSettled(minMs, settleMs, maxMs);
+
+        const auto a = colorCellSets(before);
+        const auto b = colorCellSets(after);
+
+        std::vector<std::pair<size_t, ColorKey>> moved;   // (extent, colour)
+        std::set<ColorKey> seen;
+        for (const auto& kv : a) seen.insert(kv.first);
+        for (const auto& kv : b) seen.insert(kv.first);
+        for (const auto& col : seen) {
+            const auto ia = a.find(col);
+            const auto ib = b.find(col);
+            const std::set<CellKey> empty;
+            const std::set<CellKey>& sa = (ia == a.end()) ? empty : ia->second;
+            const std::set<CellKey>& sb = (ib == b.end()) ? empty : ib->second;
+            if (sa != sb) moved.push_back({sa.empty() ? sb.size() : sa.size(), col});
+        }
+
+        if (moved.empty()) {
+            std::printf("pin-theme: %s moved nothing; trying the next direction\n",
+                        probe.name);
+            continue;
+        }
+
+        std::sort(moved.begin(), moved.end(),
+                  [](const auto& l, const auto& r) { return l.first < r.first; });
+
+        std::printf("pin-theme: %s moved %zu colour(s):\n", probe.name, moved.size());
+        for (const auto& m : moved)
+            std::printf("    [%3d,%3d,%3d]  %zu cells%s\n",
+                        m.second[0], m.second[1], m.second[2], m.first,
+                        (&m == &moved.front()) ? "   <- accent (smallest extent)" : "");
+
+        auto& theme = getTheme();
+        theme.accent[0] = moved.front().second[0];
+        theme.accent[1] = moved.front().second[1];
+        theme.accent[2] = moved.front().second[2];
+        theme.pinned = true;
+        theme.source = AccentSource::CALIBRATED;
+        theme.themeId = before.themeId;
+        const Firmware fw = dev.firmware();
+        theme.pinnedFwMajor = fw.major;
+        theme.pinnedFwMinor = fw.minor;
+        theme.pinnedFwPatch = fw.patch;
+        theme.method = std::string("pressed ") + probe.name +
+                       " and took the smallest colour whose cells moved";
+
+        if (!theme.saveToFile(path)) {
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = "pin-theme: cannot write " + path;
+            return emitExit(dev, env);
+        }
+        std::printf("pin-theme: wrote %s\n", path.c_str());
+        env.message = "theme accent pinned";
+        return emitExit(dev, env);
+    }
+
+    env.code = ExitCode::COMMAND_FAILED;
+    env.message = "pin-theme: no direction key moved any colour -- either the "
+                  "screen has no cursor, or the presses are not reaching the device";
+    return emitExit(dev, env);
+}
+
+
 int main(int argc, char** argv) {
     std::string port, jsonPath, keysArg, loadFilePath, gotoScreenArg, readFieldArg;
     std::string recordFramesPath, pinGesturesField, scriptPath, findFileArg, loadSongArg, uiCapturePath;
+    std::string cursorColorArg;   // "R,G,B" -- theme accent override, see ScreenGrid::cursorColor
+    bool pinThemeFlag = false;    // learn the accent from the device instead of assuming it
     bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false, allowMutation = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
@@ -355,6 +494,8 @@ int main(int argc, char** argv) {
         else if (a == "--find-file")       findFileArg = next();
         else if (a == "--load-song")       loadSongArg = next();
         else if (a == "--ui-capture")      uiCapturePath = next();
+        else if (a == "--cursor-color")    cursorColorArg = next();
+        else if (a == "--pin-theme")       pinThemeFlag = true;
         else if (a == "--keyjazz")         keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--keyjazz-vel")     keyjazzVel = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--json")            jsonPath = next();
@@ -442,6 +583,40 @@ int main(int argc, char** argv) {
         std::printf("gestures: not loaded (file missing or no edit gestures pinned)\n");
     }
 
+    // Theme accent, in precedence order: --cursor-color, then hw_theme.json,
+    // then the compiled-in stock value. That last one is a guess and says so --
+    // it is the state in which a themed device silently reads as one that has
+    // stopped accepting keys, so it must never look like a confirmed setting.
+    auto& theme = getTheme();
+    if (theme.loadFromFile(kDefaultThemePath)) {
+        std::printf("theme: accent [%d,%d,%d] from %s (fw %d.%d.%d, theme_id \"%s\")\n",
+                    theme.accent[0], theme.accent[1], theme.accent[2], kDefaultThemePath,
+                    theme.pinnedFwMajor, theme.pinnedFwMinor, theme.pinnedFwPatch,
+                    theme.themeId.c_str());
+    }
+    if (!cursorColorArg.empty()) {
+        int rgb[3] = {-1, -1, -1};
+        if (std::sscanf(cursorColorArg.c_str(), "%d,%d,%d", &rgb[0], &rgb[1], &rgb[2]) != 3
+            || rgb[0] < 0 || rgb[0] > 255 || rgb[1] < 0 || rgb[1] > 255
+            || rgb[2] < 0 || rgb[2] > 255) {
+            env.code = ExitCode::UNKNOWN_ARG;
+            env.message = "--cursor-color wants R,G,B with each 0-255, got: " + cursorColorArg;
+            return emitExit(dev, env);
+        }
+        theme.accent[0] = static_cast<uint8_t>(rgb[0]);
+        theme.accent[1] = static_cast<uint8_t>(rgb[1]);
+        theme.accent[2] = static_cast<uint8_t>(rgb[2]);
+        theme.pinned = true;
+        theme.source = AccentSource::FLAG;
+    }
+    if (!theme.isPinned()) {
+        std::printf("theme: accent [%d,%d,%d] is the built-in default and is NOT "
+                    "confirmed for this device -- run m8_nav --pin-theme\n",
+                    theme.accent[0], theme.accent[1], theme.accent[2]);
+    }
+    dev.setCursorColor(theme.accent[0], theme.accent[1], theme.accent[2]);
+    dev.setCursorTolerance(theme.tolerance);
+
     dev.readSettled(minMs, settleMs, maxMs);
     if (dev.grid().cells.empty()) {
         env.code = ExitCode::NO_DATA;
@@ -452,6 +627,22 @@ int main(int argc, char** argv) {
     Firmware fw = dev.firmware();
     std::printf("device: hw_type=%d  firmware=%d.%d.%d  font_mode=%d\n",
                 fw.hwType, fw.major, fw.minor, fw.patch, fw.fontMode);
+
+    if (pinThemeFlag)
+        return pinTheme(dev, env, kDefaultThemePath, minMs, settleMs, maxMs);
+
+    // Blindness check. If the accent appears nowhere on a screen that decoded
+    // cells, the accent is wrong -- the M8 has not stopped drawing a cursor.
+    // Saying so here is the whole point: the failure is otherwise silent, and
+    // every downstream symptom (cursor row -1, "the press is not landing")
+    // points at the device instead of at this one value. hw_findings UI-14.
+    if (!dev.grid().accentPresent()) {
+        std::printf("theme: WARNING -- accent [%d,%d,%d] (%s) appears on no cell of "
+                    "this screen. Cursor reads will all fail and will look like the "
+                    "device is ignoring keys. Fix with: m8_nav --port <PORT> --pin-theme\n",
+                    theme.accent[0], theme.accent[1], theme.accent[2],
+                    accentSourceName(theme.source));
+    }
 
     if (semanticStateFlag) {
         std::printf("%s\n", semanticState(dev).toJson().c_str());

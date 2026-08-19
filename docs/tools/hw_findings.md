@@ -1327,3 +1327,85 @@ Two candidate mappings remain: `0 = C` (what the engine implements) and
 To settle it, get the transport genuinely running with an AUDIBLE instrument and
 a scale narrow enough to hear the root move — the probe's instrument 00 is
 `TYPE NONE`, which is silent, so nothing about it was observable either way.
+
+---
+
+## UI-14 — The stock theme accent is [0,240,248], and the driver was looking for [0,252,248]
+
+**Environment:** M8 headless on `COM3`, firmware 6.5.2, stock theme, `font_mode=0`.
+**Command:** `m8_nav --port COM3 --ui-capture artifacts/inst00_capture.json`
+**Artifact:** `artifacts/inst00_capture.json` (gitignored; regenerate with the command
+above — `screen=INST.00`, `cells=812`, `rects=3`, `palette=8`).
+
+The capture reports `theme_id: "m8-default-6.5.2"`, so this is the factory theme, not a
+user customisation. Its full palette:
+
+| idx | RGB | role (by usage) | cells |
+|---|---|---|---|
+| 0 | `[0, 0, 0]` | background | — |
+| 1 | `[0, 240, 248]` | **cursor / accent** | 20 |
+| 2 | `[32, 36, 48]` | empty | 37 |
+| 3 | `[72, 76, 96]` | info | 238 |
+| 4 | `[144, 172, 184]` | default text | 195 |
+| 5 | `[144, 180, 184]` | slider | — (2 rects) |
+| 6 | `[248, 32, 48]` | titles | 154 |
+| 7 | `[248, 252, 248]` | values | 168 |
+
+Index 1's 20 cells spell the `CUTOFF FF` row, which is where the cursor was sitting, and
+the third rect (`col 11, row 19`) carries `style 1` — the CUTOFF slider drawn in accent.
+That is the cursor, confirmed twice over.
+
+**The bug this closes.** `ScreenGrid::cursorColor` defaulted to `[0, 252, 248]` and
+`isCursor()` was an exact three-channel equality test. `[0,240,248] != [0,252,248]`, so
+`isCursor()` returned false for **every cell on every screen**: `cursorRowY`,
+`cursorField` and `moveCursorToGrid` all returned -1, `m8drv probe` reported
+`cursor_moved: false` on every press, and `inspect` found zero accent cells and concluded
+"the press is not landing on this screen."
+
+**The presses were landing the whole time.** Three independent proofs from the same
+session: `goto` walked SONG → PHRASE00 → INST00; a DOWN probe on INSTRUMENT returned
+`rows_changed: 1` with the verdict *"PRESS LANDS but cursor tracking is broken"*; and a
+run of DOWN presses on PHRASE moved the real cursor to row 3, where four subsequent
+`m8_capture --keyjazz` calls then recorded a note (`A#4 64` → `C-4 7F`, matching the last
+capture's velocity `0x7F`). **Keyjazz records into the phrase at the cursor row — do not
+capture from a grid screen.**
+
+**Fix.** `cursorColor` corrected to the measured `[0,240,248]`, `isCursor()` given a
+per-channel tolerance of 16 (far below the spacing between the eight stock palette
+entries, so it cannot latch onto a neighbour), and `m8_nav --cursor-color R,G,B` added for
+devices on a theme further from stock. An exact-equality test against one hardcoded colour
+was never going to survive a device with user-selectable themes.
+
+- **Date:** 2026-08-18
+
+### Confirmed by calibration, same session
+
+`m8_nav --port COM3 --pin-theme` on the INSTRUMENT screen, deriving the accent from
+motion rather than from any assumed value:
+
+```
+pin-theme: DOWN moved 3 colour(s):
+    [  0,240,248]  20 cells   <- accent (smallest extent)
+    [248,252,248]  168 cells
+    [144,172,184]  195 cells
+```
+
+Three colours move on a cursor step, not one, and the reason is worth stating because
+it is what makes the extent rule work: the row the cursor *leaves* reverts to normal
+text and the row it *arrives* at becomes accent, so both the accent and the ordinary
+text colours change extent. The accent is the small one — 20 cells against 168 and 195,
+a margin wide enough that the rule is not delicate. The independently-read palette above
+says `[0,240,248]`; the calibration, which never looks at a colour value, agrees exactly.
+
+**Falsification.** Pointing the driver at an accent the device does not have
+(`--cursor-color 248,160,0`) now produces, rather than silence:
+
+```
+theme: WARNING -- accent [248,160,0] (--cursor-color) appears on no cell of this
+screen. Cursor reads will all fail and will look like the device is ignoring keys.
+Fix with: m8_nav --port <PORT> --pin-theme
+```
+
+That warning is the actual deliverable. The wrong colour was always going to be
+findable in an afternoon; what cost a session was that the driver had no way to say
+"I cannot see a cursor" and so said "the device is not responding" instead.

@@ -1,0 +1,9 @@
+{
+  "pinned": true,
+  "firmware": "6.5.2",
+  "theme_id": "m8-default-6.5.2",
+  "accent": [0, 240, 248],
+  "tolerance": 16,
+  "method": "pressed DOWN and took the smallest colour whose cells moved",
+  "notes": "The cursor accent, pinned by observation rather than assumption: a direction key is pressed and the palette entry whose cells move is the cursor. Re-pin with m8_nav --pin-theme after changing the device theme. See hw_findings.md UI-14."
+}

@@ -18,7 +18,10 @@
 #include "m8/DeviceScriptRunner.h"
 #include "m8/Semantic.h"
 #include "m8/UiCapture.h"
+#include "m8/DeviceTheme.h"
 #include <fstream>
+#include <cstdio>
+#include <string>
 
 using namespace m8::dev;
 
@@ -95,7 +98,10 @@ TEST_CASE("ScreenGrid decodes system-info frames", "[hwdecode]") {
 
 TEST_CASE("ScreenGrid cursor detection", "[hwdecode]") {
     ScreenGrid grid;
-    // Default cursor color is (0, 252, 248).
+    // Default cursor color is the fw 6.5.2 stock accent (0, 240, 248); this
+    // (0, 252, 248) is 12 off in green and so still inside the tolerance, which
+    // is the point -- see the cursorColor note in M8Device.h and hw_findings
+    // UI-14.
     auto cursorFrame = makeCharFrame('X', 50, 30, 0, 252, 248, 0, 0, 0);
     auto normalFrame = makeCharFrame('Y', 60, 30, 255, 255, 255, 0, 0, 0);
     grid.handleFrame(cursorFrame);
@@ -103,6 +109,33 @@ TEST_CASE("ScreenGrid cursor detection", "[hwdecode]") {
 
     CHECK(grid.isCursor(grid.cells[{30, 50}]));
     CHECK_FALSE(grid.isCursor(grid.cells[{30, 60}]));
+}
+
+// Regression for hw_findings UI-14. isCursor() was an exact three-channel
+// equality against a constant that did not match the device's actual stock
+// accent, so it returned false for every cell on every screen -- and the
+// symptom was not "no cursor", it was every cursor read coming back -1, which
+// the driver reported as "the press is not landing". A tolerance test is what
+// makes that unable to recur silently for a near-stock theme; a theme further
+// out is meant to fail loudly and be pointed at `m8_nav --cursor-color`.
+TEST_CASE("cursor detection tolerates a near-stock theme accent", "[hwdecode]") {
+    ScreenGrid grid;
+    // The measured fw 6.5.2 accent itself must match.
+    grid.handleFrame(makeCharFrame('A', 0, 30, 0, 240, 248, 0, 0, 0));
+    // The pre-2026-08-18 constant is within tolerance of it.
+    grid.handleFrame(makeCharFrame('B', 8, 30, 0, 252, 248, 0, 0, 0));
+    // A different theme's accent is not, and must not be mistaken for one.
+    grid.handleFrame(makeCharFrame('C', 16, 30, 248, 160, 0, 0, 0, 0));
+    // Neither may a neighbouring entry of the stock palette -- the values here
+    // are the measured "values" white and "titles" red from UI-14.
+    grid.handleFrame(makeCharFrame('D', 24, 30, 248, 252, 248, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('E', 32, 30, 248, 32, 48, 0, 0, 0));
+
+    CHECK(grid.isCursor(grid.cells[{30, 0}]));
+    CHECK(grid.isCursor(grid.cells[{30, 8}]));
+    CHECK_FALSE(grid.isCursor(grid.cells[{30, 16}]));
+    CHECK_FALSE(grid.isCursor(grid.cells[{30, 24}]));
+    CHECK_FALSE(grid.isCursor(grid.cells[{30, 32}]));
 }
 
 // M8_DRIVER_BUGS.md #22. Layout and colours taken from a real fw 6.5.2 SONG
@@ -1245,4 +1278,134 @@ TEST_CASE("isGridScreen agrees with gridDims", "[hwdecode]") {
         CHECK_FALSE(isGridScreen(s));
         CHECK(gridDims(s).cols == 0);
     }
+}
+
+
+// Regression: toJson() escaped only quote and backslash, so a cell carrying one
+// of the M8 font custom glyphs (the meter and slider fills live outside
+// printable ASCII) wrote a raw byte into the file. The result was not valid
+// JSON: the hand-rolled fromJson() below read it fine, so nothing in the C++
+// tests noticed, while `m8drv inspect` -- which parses the same file with
+// Python -- died with a JSONDecodeError and reported nothing at all.
+TEST_CASE("capture JSON escapes glyphs outside printable ASCII", "[hwdecode]") {
+    m8::dev::UiCapture cap;
+    cap.screen = "INST.00";
+    cap.palette = {{{0, 0, 0}}, {{0, 240, 248}}};
+    cap.cells.push_back({0, 0, static_cast<char>(0x01), 1, 0});   // control byte
+    cap.cells.push_back({1, 0, '"', 1, 0});                        // quote glyph
+    cap.cells.push_back({2, 0, '\\', 1, 0});                       // backslash glyph
+    cap.cells.push_back({3, 0, 'A', 1, 0});                        // ordinary
+
+    const std::string text = m8::dev::toJson(cap);
+
+    // No raw control byte may reach the file -- that is what breaks strict
+    // parsers. Newline is the one legal control character here: toJson writes
+    // one per line by design. Accumulate, assert once.
+    bool rawControl = false;
+    for (unsigned char c : text)
+        if (c < 0x20 && c != '\n') rawControl = true;
+    CHECK_FALSE(rawControl);
+
+    m8::dev::UiCapture back;
+    std::string err;
+    REQUIRE(m8::dev::fromJson(text, back, err));
+    REQUIRE(back.cells.size() == 4);
+    CHECK(back.cells[0].ch == static_cast<char>(0x01));
+    CHECK(back.cells[1].ch == '"');
+    CHECK(back.cells[2].ch == '\\');
+    CHECK(back.cells[3].ch == 'A');
+}
+
+// --- Theme robustness (hw_findings UI-14) ------------------------------------
+
+// The grid cursor is drawn as inverse video -- accent as BACKGROUND behind a
+// dark glyph -- and isCursor() tested the foreground alone, so it was
+// structurally blind to it. m8drv inspect documented this in a docstring for
+// weeks without anything acting on it.
+TEST_CASE("cursor detection sees an inverse-video cursor", "[hwdecode]") {
+    ScreenGrid grid;
+    // Accent as foreground: the form-screen cursor.
+    grid.handleFrame(makeCharFrame('A', 0, 30, 0, 240, 248, 0, 0, 0));
+    // Accent as background behind a dark glyph: the grid cursor.
+    grid.handleFrame(makeCharFrame('B', 8, 30, 0, 0, 0, 0, 240, 248));
+    // Neither: ordinary text.
+    grid.handleFrame(makeCharFrame('C', 16, 30, 144, 172, 184, 0, 0, 0));
+
+    CHECK(grid.isCursorFg(grid.cells[{30, 0}]));
+    CHECK(grid.isCursor(grid.cells[{30, 0}]));
+    CHECK(grid.isCursorBg(grid.cells[{30, 8}]));
+    CHECK(grid.isCursor(grid.cells[{30, 8}]));
+    CHECK_FALSE(grid.isCursor(grid.cells[{30, 16}]));
+}
+
+// The blindness check. This is the state that cost a whole session: a wrong
+// accent makes isCursor() false everywhere, so every cursor query returns -1
+// and the driver reports a device that is ignoring keys. A screen that decoded
+// cells but carries no accent anywhere is the signature of that, and it has to
+// be distinguishable from an empty screen.
+TEST_CASE("accentPresent reports whether the accent is findable at all", "[hwdecode]") {
+    ScreenGrid grid;
+    CHECK_FALSE(grid.accentPresent());          // no cells at all
+
+    grid.handleFrame(makeCharFrame('X', 0, 30, 144, 172, 184, 0, 0, 0));
+    CHECK_FALSE(grid.accentPresent());          // cells, but none accented
+
+    grid.handleFrame(makeCharFrame('Y', 8, 30, 0, 240, 248, 0, 0, 0));
+    CHECK(grid.accentPresent());
+
+    // A device themed away from the pinned accent reads as blind, not as a
+    // screen with no cursor -- which is exactly what the warning must say.
+    ScreenGrid themed;
+    themed.handleFrame(makeCharFrame('Z', 0, 30, 248, 160, 0, 0, 0, 0));
+    CHECK_FALSE(themed.accentPresent());
+    themed.cursorColor[0] = 248; themed.cursorColor[1] = 160; themed.cursorColor[2] = 0;
+    CHECK(themed.accentPresent());
+}
+
+TEST_CASE("ThemeTable round-trips a pinned accent", "[hwdecode]") {
+    using namespace m8::dev;
+    const std::string path = "hw_theme_test_tmp.json";
+
+    ThemeTable out;
+    out.pinned = true;
+    out.accent[0] = 248; out.accent[1] = 160; out.accent[2] = 0;
+    out.tolerance = 12;
+    out.themeId = "custom-orange";
+    out.pinnedFwMajor = 6; out.pinnedFwMinor = 5; out.pinnedFwPatch = 2;
+    out.method = "pressed DOWN";
+    REQUIRE(out.saveToFile(path));
+
+    ThemeTable in;
+    REQUIRE(in.loadFromFile(path));
+    CHECK(in.isPinned());
+    CHECK(in.accent[0] == 248);
+    CHECK(in.accent[1] == 160);
+    CHECK(in.accent[2] == 0);
+    CHECK(in.tolerance == 12);
+    CHECK(in.themeId == "custom-orange");
+    CHECK(in.pinnedFwMinor == 5);
+    CHECK(in.source == AccentSource::FILE);
+
+    const uint8_t near_[3] = {248, 168, 8};
+    const uint8_t far_[3]  = {0, 240, 248};
+    CHECK(in.matches(near_));
+    CHECK_FALSE(in.matches(far_));
+
+    std::remove(path.c_str());
+}
+
+// An unpinned file is a draft. Trusting one would put us back to assuming a
+// colour, just with an extra step, so loadFromFile must refuse it.
+TEST_CASE("ThemeTable refuses an unpinned theme file", "[hwdecode]") {
+    using namespace m8::dev;
+    const std::string path = "hw_theme_unpinned_tmp.json";
+    {
+        std::ofstream f(path);
+        f << "{\"pinned\": false, \"accent\": [1, 2, 3]}";
+    }
+    ThemeTable in;
+    CHECK_FALSE(in.loadFromFile(path));
+    CHECK_FALSE(in.isPinned());
+    CHECK(in.source == AccentSource::BUILTIN_DEFAULT);
+    std::remove(path.c_str());
 }

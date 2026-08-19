@@ -63,8 +63,32 @@ std::string ScreenGrid::alnumUpper(const std::string& s) {
     return o;
 }
 
+static bool nearColor(const uint8_t rgb[3], const uint8_t want[3], int tol) {
+    for (int i = 0; i < 3; ++i) {
+        const int d = static_cast<int>(rgb[i]) - static_cast<int>(want[i]);
+        if (d > tol || d < -tol) return false;
+    }
+    return true;
+}
+
+bool ScreenGrid::isCursorFg(const Cell& c) const {
+    return nearColor(c.fg, cursorColor, cursorColorTol);
+}
+
+bool ScreenGrid::isCursorBg(const Cell& c) const {
+    return nearColor(c.bg, cursorColor, cursorColorTol);
+}
+
 bool ScreenGrid::isCursor(const Cell& c) const {
-    return c.fg[0] == cursorColor[0] && c.fg[1] == cursorColor[1] && c.fg[2] == cursorColor[2];
+    return isCursorFg(c) || isCursorBg(c);
+}
+
+bool ScreenGrid::accentPresent() const {
+    for (const auto& [pos, c] : cells) {
+        (void)pos;
+        if (isCursorFg(c) || isCursorBg(c)) return true;
+    }
+    return false;
 }
 
 bool ScreenGrid::isInHighlight(int pixelX, int pixelY) const {
