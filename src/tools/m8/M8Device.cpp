@@ -210,11 +210,33 @@ int ScreenGrid::cursorRowY() const {
     // vacated row's trailing blanks, so stale accent-coloured spaces linger.
     // Directly observed in the run above -- (row 11, col 3, ' ') survived the
     // press that moved the cursor to row 12.
+    // Two passes, and the order matters. The accent is the cursor; the '<'
+    // glyph only *sometimes* is.
+    //
+    // These used to be one test ORed together, and that was safe only while
+    // the accent match was broken. With the accent working again (UI-14), a
+    // screen that draws '<' for something else wins the OR and pins the read
+    // forever: PHRASE row 0 carries "<0" as the PLAYHEAD marker, so cursorRowY
+    // returned row 0 while the real cursor sat at step 14 and the grid
+    // coordinates tracked it correctly. A confident wrong answer, from the
+    // workaround for the bug that has since been fixed.
+    //
+    // So: accent first, and fall back to '<' only when no accent row exists,
+    // which preserves the behaviour on any screen where that marker is all
+    // there is to go on.
     int labelBest = -1;
     for (auto& [pos, c] : cells) {
-        const bool marker = (c.ch == 0x3C) || (isCursor(c) && c.ch != ' ');
-        if (marker && pos.second < 24 && !isInHighlight(pos.second, pos.first)) {
+        if (isCursor(c) && c.ch != ' ' && pos.second < 24
+            && !isInHighlight(pos.second, pos.first)) {
             if (labelBest < 0 || pos.first < labelBest) labelBest = pos.first;
+        }
+    }
+    if (labelBest < 0) {
+        for (auto& [pos, c] : cells) {
+            if (c.ch == 0x3C && pos.second < 24
+                && !isInHighlight(pos.second, pos.first)) {
+                if (labelBest < 0 || pos.first < labelBest) labelBest = pos.first;
+            }
         }
     }
     if (labelBest >= 0) return labelBest;

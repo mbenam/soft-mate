@@ -1409,3 +1409,33 @@ TEST_CASE("ThemeTable refuses an unpinned theme file", "[hwdecode]") {
     CHECK(in.source == AccentSource::BUILTIN_DEFAULT);
     std::remove(path.c_str());
 }
+
+// The accent outranks the '<' glyph, and that ordering is the whole fix.
+//
+// cursorRowY used to accept either, ORed together, which was harmless only
+// while the accent match was broken. Once the accent worked again, PHRASE's
+// row 0 -- which carries "<0" as the PLAYHEAD marker, not a cursor -- won the
+// OR and pinned the reported row there permanently. Observed on hardware:
+// grid coordinates walked 15 -> 14 -> 13 while cursorRowY answered row 60
+// every time. A workaround for a fixed bug, still confidently answering.
+TEST_CASE("cursorRowY prefers the accent over a stray marker glyph", "[hwdecode]") {
+    ScreenGrid grid;
+    // PHRASE-shaped: the playhead marker sits on row 0 ...
+    grid.handleFrame(makeCharFrame('<', 0, 60, 144, 172, 184, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('0', 8, 60, 144, 172, 184, 0, 0, 0));
+    // ... while the real cursor, in the accent, is far down the grid.
+    grid.handleFrame(makeCharFrame('9', 0, 150, 0, 240, 248, 0, 0, 0));
+
+    CHECK(grid.cursorRowY() == 150);
+}
+
+// The marker must still work where it is genuinely all there is: a screen
+// carrying no accent at all. Dropping the fallback outright would trade one
+// silent wrong answer for another.
+TEST_CASE("cursorRowY falls back to the marker when no accent is present", "[hwdecode]") {
+    ScreenGrid grid;
+    grid.handleFrame(makeCharFrame('<', 0, 60, 144, 172, 184, 0, 0, 0));
+    grid.handleFrame(makeCharFrame('X', 8, 150, 144, 172, 184, 0, 0, 0));
+
+    CHECK(grid.cursorRowY() == 60);
+}

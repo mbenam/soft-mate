@@ -476,6 +476,17 @@ static std::vector<float> captureOnce(SerialPort& serial, CaptureData& captureDa
     std::printf("capture: recording %.1f s...\n", seconds);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     if (keyjazz) {
+        // m8_capture speaks serial but does not decode the display, so unlike
+        // m8_nav it cannot tell which screen the note is about to land on --
+        // and on PHRASE or TABLE the M8 records keyjazz into the cell under
+        // the cursor rather than only sounding it. Four capture runs on
+        // 2026-08-18 overwrote a phrase row that way (hw_findings.md UI-14).
+        // Warning rather than refusing, because refusing needs the screen and
+        // this tool cannot see it; the refusal lives in m8_nav, which can.
+        std::printf("! keyjazz writes into the cell under the cursor on PHRASE and\n"
+                    "!   TABLE. If the device is on either, this capture is editing the\n"
+                    "!   loaded project. Park it first:  m8_nav --port <PORT>\n"
+                    "!   --goto-screen INSTRUMENT\n");
         serialKeyjazzOn(serial, static_cast<uint8_t>(keyjazzNote), keyjazzVel);
         std::printf("serial: keyjazz note-on (note %d, vel 0x%02X)\n", keyjazzNote, keyjazzVel);
     } else {

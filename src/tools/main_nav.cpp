@@ -21,6 +21,7 @@
 #include <cstring>
 #include <cstdint>
 #include <string>
+#include <cctype>
 #include <vector>
 #include <map>
 #include <set>
@@ -540,14 +541,47 @@ int main(int argc, char** argv) {
 
     // Parse key sequence.
     std::vector<uint8_t> keys;
+    bool keysBad = false;
+    std::string keysBadTok;
     if (!keysArg.empty()) {
+        // Accept names as well as raw masks. strtol() alone returned 0 for any
+        // name, so `--keys UP,UP` pressed mask 0x00 twice -- a bare key release --
+        // and reported success. A no-op that claims to have moved the cursor is
+        // the same failure shape as the accent bug: the tool is confidently
+        // wrong about what it did, and the caller believes it.
+        const struct { const char* name; uint8_t mask; } kNamed[] = {
+            {"LEFT",  Key::LEFT},  {"UP",    Key::UP},
+            {"DOWN",  Key::DOWN},  {"SHIFT", Key::SHIFT},
+            {"PLAY",  Key::PLAY},  {"RIGHT", Key::RIGHT},
+            {"OPT",   Key::OPT},   {"EDIT",  Key::EDIT},
+        };
         size_t pos = 0;
         while (pos < keysArg.size()) {
             size_t comma = keysArg.find(',', pos);
             std::string tok = keysArg.substr(pos, comma == std::string::npos
                                ? std::string::npos : comma - pos);
-            if (!tok.empty())
-                keys.push_back(static_cast<uint8_t>(std::strtol(tok.c_str(), nullptr, 0)));
+            if (!tok.empty()) {
+                std::string up;
+                for (char ch : tok)
+                    up += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                uint8_t mask = 0;
+                bool found = false;
+                for (const auto& k : kNamed) {
+                    if (up == k.name) { mask = k.mask; found = true; break; }
+                }
+                if (!found) {
+                    char* endp = nullptr;
+                    const long v = std::strtol(tok.c_str(), &endp, 0);
+                    // A token must consume entirely, or it was never a number.
+                    if (endp && *endp == '\0' && endp != tok.c_str()
+                        && v >= 0 && v <= 255) {
+                        mask = static_cast<uint8_t>(v);
+                        found = true;
+                    }
+                }
+                if (!found) { keysBad = true; keysBadTok = tok; break; }
+                keys.push_back(mask);
+            }
             if (comma == std::string::npos) break;
             pos = comma + 1;
         }
@@ -557,6 +591,12 @@ int main(int argc, char** argv) {
 
     // Open device.
     M8Device dev;
+    if (keysBad) {
+        env.code = ExitCode::UNKNOWN_ARG;
+        env.message = "--keys: unrecognised key '" + keysBadTok +
+                      "' (want a name like UP/DOWN/EDIT or a mask like 0x21)";
+        return emitExit(dev, env);
+    }
     if (noReset) {
         if (!dev.openNoReset(port.c_str())) {
             env.code = ExitCode::DEVICE_NOT_FOUND;
@@ -703,6 +743,26 @@ int main(int argc, char** argv) {
 
     // --keyjazz mode.
     if (keyjazzNote >= 0) {
+        // Keyjazz is not only audible: on a screen with note cells, the M8
+        // writes the note into the cell under the cursor. On 2026-08-18 four
+        // capture runs did exactly that -- the cursor happened to be on PHRASE
+        // row 3 after an earlier probe, and the last capture velocity 0x7F
+        // landed there over the user data (hw_findings.md UI-14).
+        //
+        // The rule was written down that day and enforced by nothing, which is
+        // the same state that let the inverse-video cursor hole sit in a
+        // docstring for weeks. So it is a refusal now, opted out of with the
+        // flag that already means "I intend to change the device".
+        const Screen cur = identifyScreen(dev.grid());
+        if (!allowMutation && (cur == Screen::PHRASE || cur == Screen::TABLE)) {
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message =
+                "refusing keyjazz on a note-entry screen: the M8 records the note "
+                "into the cell under the cursor, so this would edit the loaded "
+                "project. Move to INSTRUMENT or SONG first, or pass --allow-mutation "
+                "if overwriting that cell is the intent.";
+            return emitExit(dev, env);
+        }
         dev.keyjazz(static_cast<uint8_t>(keyjazzNote), static_cast<uint8_t>(keyjazzVel));
         std::printf("keyjazz: note 0x%02X (%d), vel 0x%02X (%d)\n", keyjazzNote, keyjazzNote, keyjazzVel, keyjazzVel);
         return emitExit(dev, env);
