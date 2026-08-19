@@ -477,6 +477,7 @@ int main(int argc, char** argv) {
     std::string recordFramesPath, pinGesturesField, scriptPath, findFileArg, loadSongArg, uiCapturePath;
     std::string cursorColorArg;   // "R,G,B" -- theme accent override, see ScreenGrid::cursorColor
     bool pinThemeFlag = false;    // learn the accent from the device instead of assuming it
+    std::string recordRawPath;    // dump the pre-SLIP byte stream, for #32
     bool dumpScreen = false, noReset = false, semanticStateFlag = false, serveMode = false, allowMutation = false;
     int maxMs = 2000, settleMs = 250, minMs = 700;
     int holdMs = 40, gapMs = 120;
@@ -497,6 +498,7 @@ int main(int argc, char** argv) {
         else if (a == "--ui-capture")      uiCapturePath = next();
         else if (a == "--cursor-color")    cursorColorArg = next();
         else if (a == "--pin-theme")       pinThemeFlag = true;
+        else if (a == "--record-raw")      recordRawPath = next();
         else if (a == "--keyjazz")         keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--keyjazz-vel")     keyjazzVel = static_cast<int>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--json")            jsonPath = next();
@@ -536,6 +538,7 @@ int main(int argc, char** argv) {
     if (!dumpScreen && jsonPath.empty() && keysArg.empty()
         && loadFilePath.empty() && gotoScreenArg.empty() && readFieldArg.empty()
         && recordFramesPath.empty() && pinGesturesField.empty()
+        && recordRawPath.empty()
         && scriptPath.empty())
         dumpScreen = true;
 
@@ -657,6 +660,16 @@ int main(int argc, char** argv) {
     dev.setCursorColor(theme.accent[0], theme.accent[1], theme.accent[2]);
     dev.setCursorTolerance(theme.tolerance);
 
+    // Install the raw tap BEFORE the first read, not after.
+    //
+    // The M8 sends only what changed. open() does E / 500ms / R, and the full
+    // repaint that R provokes arrives during the FIRST read -- so a tap
+    // installed later sees only the incremental animation and reports "zero
+    // draw-character frames", which reads as damning evidence about the device
+    // and is entirely an artifact of when the instrument was switched on. That
+    // mistake was made and acted on once already; the ordering is the fix.
+    std::vector<uint8_t> rawCapture;
+    if (!recordRawPath.empty()) dev.setRawTap(&rawCapture);
     dev.readSettled(minMs, settleMs, maxMs);
     if (dev.grid().cells.empty()) {
         env.code = ExitCode::NO_DATA;
@@ -676,6 +689,32 @@ int main(int argc, char** argv) {
     // Saying so here is the whole point: the failure is otherwise silent, and
     // every downstream symptom (cursor row -1, "the press is not landing")
     // points at the device instead of at this one value. hw_findings UI-14.
+    // Two independent health checks, because they catch different failures and
+    // the cheap one catches almost nothing. Out-of-range coordinates would mean
+    // a stream so broken it produces non-coordinates; the observed corruption
+    // (#32) instead produced wrong-but-legal ones, and sailed straight through.
+    // The layout check is the one that sees it.
+    if (!dev.grid().decodeLooksSane()) {
+        std::printf("decode: WARNING -- %d cell(s) far outside the panel, %d short "
+                    "frame(s); first was ch=0x%02X at (%d,%d)\n",
+                    dev.grid().offPanelCells, dev.grid().shortFrames,
+                    dev.grid().firstOffPanelCh, dev.grid().firstOffPanelX,
+                    dev.grid().firstOffPanelY);
+    }
+    {
+        const Screen shp = identifyScreen(dev.grid());
+        const std::string hint = (shp == Screen::INSTRUMENT)
+                               ? readInstrumentType(dev.grid()) : std::string();
+        const double match = layoutMatchRatio(dev.grid(), shp, hint);
+        if (match >= 0.0 && match < 0.6) {
+            std::printf("decode: WARNING -- only %.0f%% of this screen's labels are where "
+                        "the map says. The frames are well-formed and our decode is faithful "
+                        "to them; the DEVICE is transmitting a displaced framebuffer. Field "
+                        "reads will fail in ways that read as navigation bugs. Try navigating "
+                        "away and back to force a full repaint. M8_DRIVER_BUGS.md #32.\n",
+                        match * 100.0);
+        }
+    }
     if (!dev.grid().accentPresent()) {
         std::printf("theme: WARNING -- accent [%d,%d,%d] (%s) appears on no cell of "
                     "this screen. Cursor reads will all fail and will look like the "
@@ -782,6 +821,22 @@ int main(int argc, char** argv) {
             env.message = "cannot capture: display did not settle (screen changed or no cells)";
             return emitExit(dev, env);
         }
+        // Settling is not soundness. The check above compares topHeader() only,
+        // and on the corrupt read that produced bug #32 the header sat in the
+        // undamaged top rows and matched twice -- so a garbled screen was
+        // written out with settled: true and believed by everything downstream.
+        // Write the file even when the decode is unhealthy, and report the
+        // failure through the exit code instead. Refusing outright was the
+        // first instinct and it was wrong: it denied the artifact to the one
+        // person who needs it -- whoever is diagnosing the corruption -- and a
+        // diagnostic tool that goes silent exactly when something is broken is
+        // the pattern this whole bug list is about.
+        const Screen capScreen = identifyScreen(dev.grid());
+        const std::string capHint = (capScreen == Screen::INSTRUMENT)
+                                  ? readInstrumentType(dev.grid()) : std::string();
+        const double capMatch = layoutMatchRatio(dev.grid(), capScreen, capHint);
+        const bool decodeBad = !dev.grid().decodeLooksSane()
+                            || (capMatch >= 0.0 && capMatch < 0.6);
         auto cap = captureFromGrid(dev.grid(), true);
         std::ofstream out(uiCapturePath);
         if (!out) {
@@ -792,10 +847,49 @@ int main(int argc, char** argv) {
         out << toJson(cap);
         std::printf("wrote ui capture: %s  (screen=%s  cells=%zu  rects=%zu  palette=%zu)\n",
                     uiCapturePath.c_str(), cap.screen.c_str(), cap.cells.size(), cap.rects.size(), cap.palette.size());
+        if (decodeBad) {
+            env.code = ExitCode::NO_DATA;
+            env.message = "capture written, but the decode is unhealthy ("
+                        + std::to_string(dev.grid().offPanelCells) + " off-panel, "
+                        + std::to_string(dev.grid().shortFrames) + " short frames, "
+                        + std::to_string(static_cast<int>(capMatch * 100)) + "% of labels "
+                          "in place) -- treat its contents as suspect";
+        }
         return emitExit(dev, env);
     }
 
     // --record-frames mode.
+    if (!recordRawPath.empty()) {
+        // rawCapture already holds the startup read -- the one carrying the
+        // post-reset full repaint. Keep going for a few more so the file also
+        // spans the steady-state incremental traffic.
+        std::vector<uint8_t>& raw = rawCapture;
+        for (int i = 0; i < 5; ++i) dev.readSettled(minMs, settleMs, maxMs);
+        dev.setRawTap(nullptr);
+        std::ofstream rawOut(recordRawPath, std::ios::binary);
+        if (!rawOut) {
+            env.code = ExitCode::COMMAND_FAILED;
+            env.message = "cannot write " + recordRawPath;
+            return emitExit(dev, env);
+        }
+        rawOut.write(reinterpret_cast<const char*>(raw.data()),
+                     static_cast<std::streamsize>(raw.size()));
+        const Screen rawScreen = identifyScreen(dev.grid());
+        const std::string rawHint = (rawScreen == Screen::INSTRUMENT)
+                                  ? readInstrumentType(dev.grid()) : std::string();
+        const char* rawName = "UNKNOWN";
+        for (auto& si : kScreenTable)
+            if (si.id == rawScreen) { rawName = si.canonHeader; break; }
+        const double rawMatch = layoutMatchRatio(dev.grid(), rawScreen, rawHint);
+        char matchTxt[32];
+        if (rawMatch < 0.0) std::snprintf(matchTxt, sizeof(matchTxt), "n/a (grid screen)");
+        else std::snprintf(matchTxt, sizeof(matchTxt), "%.0f%% of labels in place",
+                           rawMatch * 100.0);
+        std::printf("wrote %zu raw bytes to %s (screen=%s, %s)\n",
+                    raw.size(), recordRawPath.c_str(), rawName, matchTxt);
+        return emitExit(dev, env);
+    }
+
     if (!recordFramesPath.empty()) {
         int rc = recordFrames(dev, recordFramesPath, recordDurationMs);
         if (rc != 0) env.code = ExitCode::COMMAND_FAILED;

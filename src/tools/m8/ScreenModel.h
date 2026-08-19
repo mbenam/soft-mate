@@ -707,6 +707,52 @@ inline ScreenFieldMap getFieldMap(Screen s, const std::string& typeHint) {
     return getFieldMap(s);
 }
 
+// ---- Layout sanity ---------------------------------------------------------
+//
+// What fraction of a screen's mapped labels are actually where the map says?
+//
+// This exists because the obvious corruption check does not work. A
+// desynchronised serial stream shifts field boundaries, so x/y decode to the
+// WRONG values -- but wrong values that are still perfectly legal coordinates.
+// Every cell of the garbled read in M8_DRIVER_BUGS.md #32 sat inside the panel;
+// a bounds check saw nothing to complain about, and neither did the settle
+// check, because the damage was stable and the header sat in the undamaged top
+// rows. The screen was garbage and every layer above believed it.
+//
+// The field maps are the answer, and they were already there. A correctly
+// decoded screen puts its labels exactly where the map says -- measured against
+// hardware, so this is not circular -- and a smeared one does not. On real
+// captures the separation is absolute rather than marginal: a healthy
+// INSTRUMENT read scores 23/23, and two independently garbled reads of the same
+// screen score 2/23. There is no threshold to tune between those.
+//
+// Returns -1 for screens this cannot judge: grid-style screens, and any screen
+// whose map is too small for the ratio to mean anything.
+inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
+                               const std::string& typeHint = "") {
+    ScreenFieldMap map = typeHint.empty() ? getFieldMap(s) : getFieldMap(s, typeHint);
+    if (map.isGrid || !map.fields || map.count < 5) return -1.0;
+
+    int hits = 0;
+    for (size_t i = 0; i < map.count; ++i) {
+        const FieldInfo& f = map.fields[i];
+        const std::string label = f.label;
+        // Map coordinates are (device col - 1, device row - 3); cells are keyed
+        // by pixel, at the 8x10 character pitch.
+        const int y = (f.row + 3) * 10;
+        bool all = true;
+        for (size_t k = 0; k < label.size() && all; ++k) {
+            const int x = (f.col + 1 + static_cast<int>(k)) * 8;
+            auto it = grid.cells.find({y, x});
+            const char got = (it != grid.cells.end())
+                           ? static_cast<char>(it->second.ch) : ' ';
+            if (got != label[k]) all = false;
+        }
+        if (all) ++hits;
+    }
+    return static_cast<double>(hits) / static_cast<double>(map.count);
+}
+
 // Look up a field by name in a screen's field map.
 // Matching priority: exact > prefix (field starts with name) > suffix (field
 // ends with name) > substring. This prevents short names like "AMP" from

@@ -265,6 +265,12 @@ int ScreenGrid::cursorRowY() const {
 void ScreenGrid::clear() {
     cells.clear();
     highlights.clear();
+    offPanelCells = 0;
+    offEdgeCells  = 0;
+    offPitchCells = 0;
+    shortFrames   = 0;
+    firstOffPanelX = firstOffPanelY = -1;
+    firstOffPanelCh = 0;
 }
 
 void ScreenGrid::eraseRegion(int x, int y, int w, int h) {
@@ -281,10 +287,40 @@ void ScreenGrid::handleFrame(const std::vector<uint8_t>& f) {
     if (f.empty()) return;
     switch (f[0]) {
         case 0xFD: {  // draw character: char,xlo,xhi,ylo,yhi,fgRGB,bgRGB
-            if (f.size() < 12) return;
+            if (f.size() < 12) { ++shortFrames; return; }
             uint8_t ch = f[1];
             int x = f[2] | (f[3] << 8);
             int y = f[4] | (f[5] << 8);
+            // Validate before storing. The panel is 320x240; a character
+            // outside it is not a character the device drew, it is a byte
+            // offset error being read as a coordinate. Storing it anyway is
+            // how a desynced stream becomes a screen everything above believes.
+            // Two different things live outside the panel and only one is a fault.
+            //
+            // The M8 draws a space at (0,240) on the INSTRUMENT screen -- one
+            // row below a 24-row panel -- on every single read, identically,
+            // and PHRASE draws none at all. That is the device's own behaviour,
+            // not a desync, and the first version of this check called it
+            // corruption and cried wolf on every connection.
+            //
+            // A desynced stream, by contrast, produces coordinates that are not
+            // coordinates: varying, and far outside anything the panel could
+            // address. So: anything within one cell of the edge is dropped
+            // quietly (it cannot be displayed either way), and only the wild
+            // values are treated as evidence of a broken stream.
+            if (x < 0 || x >= 320 || y < 0 || y >= 240) {
+                const bool wild = (x < -8 || y < -10 || x >= 2 * 320 || y >= 2 * 240);
+                if (!wild) { ++offEdgeCells; return; }
+                if (offPanelCells == 0) {
+                    firstOffPanelX = x; firstOffPanelY = y; firstOffPanelCh = ch;
+                }
+                ++offPanelCells;
+                return;
+            }
+            // Off-pitch is counted, not rejected: characters land on the 8px
+            // grid, but this is a weaker signal than the bounds check and the
+            // cost of a false reject is a missing glyph, so it only warns.
+            if (x % 8 != 0) ++offPitchCells;
             Cell c;
             c.ch = ch;
             c.fg[0] = f[6]; c.fg[1] = f[7]; c.fg[2] = f[8];
@@ -599,6 +635,7 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
         auto now = std::chrono::steady_clock::now();
         if (n > 0) {
             lastData = now;
+            if (m_rawTap) m_rawTap->insert(m_rawTap->end(), buf, buf + n);
             for (size_t i = 0; i < n; ++i)
                 if (m_slip.feed(buf[i], frame)) {
                     m_grid.handleFrame(frame);
@@ -614,6 +651,14 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
         if (sinceStart >= maxMs) { m_lastRead.timedOut = true; break; }
         if (sinceStart >= minMs && sinceData >= settleMs) { m_lastRead.settled = true; break; }
     }
+    // Mirror the grid's decode health into the stats, so a caller that only has
+    // the ReadStats can still tell a clean read from a corrupt one. "Settled"
+    // answers whether the picture stopped changing; these answer whether it is
+    // a picture at all, and the two are independent -- a desynced stream goes
+    // quiet exactly like a good one (M8_DRIVER_BUGS.md #32).
+    m_lastRead.offPanelCells = m_grid.offPanelCells;
+    m_lastRead.offPitchCells = m_grid.offPitchCells;
+    m_lastRead.shortFrames   = m_grid.shortFrames;
 }
 
 const ScreenGrid& M8Device::read(int settleMs, int maxMs) {

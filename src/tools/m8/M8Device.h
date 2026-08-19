@@ -119,6 +119,29 @@ public:
     // behind a dark glyph. This tested the foreground alone until 2026-08-18,
     // so the grid cursor was structurally invisible to it and to everything
     // built on it (cursorRowY, cursorField, moveCursorToGrid).
+    // Frame-decode health. A desynchronised stream -- one lost or extra byte --
+    // shifts every subsequent field boundary, so x/y decode to nonsense and the
+    // grid fills with cells at impossible coordinates. Rendered, that is a
+    // plausible-looking screen with the lower rows drifting, and until these
+    // counters existed nothing anywhere noticed: `cells[{y,x}] = c` accepted
+    // any coordinate, and a short frame was dropped by a silent `return`.
+    //
+    // Observed on fw 6.5.2 (M8_DRIVER_BUGS.md #32): rows 3-5 correct, rows 6+
+    // cumulatively offset, a word wrapped mid-token across two rows -- and
+    // `field not found` / `could not find enum` reported downstream, both of
+    // which read as navigation bugs and were not.
+    int offPanelCells = 0;   // wildly out of range -- a coordinate that is not one
+    int offEdgeCells  = 0;   // one cell past the edge -- the device does this, benignly
+    // The first offending coordinate, because the count alone cannot tell a
+    // desynced stream (wild, varying values) from one legitimate off-panel
+    // draw we are wrongly rejecting (the same sane-looking value every read).
+    int firstOffPanelX = -1, firstOffPanelY = -1;
+    uint8_t firstOffPanelCh = 0;
+    int offPitchCells = 0;   // x not a multiple of 8 -- suspicious, not fatal
+    int shortFrames   = 0;   // 0xFD too short to carry its documented payload
+
+    bool decodeLooksSane() const { return offPanelCells == 0 && shortFrames == 0; }
+
     bool isCursor(const Cell& c) const;
     bool isCursorFg(const Cell& c) const;
     bool isCursorBg(const Cell& c) const;
@@ -192,6 +215,11 @@ struct ReadStats {
     int  framesSeen  = 0;      // complete SLIP frames decoded this read
     bool settled     = false;  // true = exited via the settle branch
     bool timedOut    = false;  // true = exited via the maxMs branch
+    // Mirrors ScreenGrid's decode counters at the end of the read, so a caller
+    // holding only the stats can still tell a clean read from a corrupt one.
+    int  offPanelCells = 0;
+    int  offPitchCells = 0;
+    int  shortFrames   = 0;
 };
 
 class M8Device {
@@ -259,6 +287,15 @@ public:
         m_grid.cursorColor[2] = b;
     }
     void setCursorTolerance(int tol) { m_grid.cursorColorTol = tol; }
+
+    // Tap every byte read from the port, BEFORE SLIP decoding.
+    //
+    // --record-frames writes the decoded grid, which is the wrong side of the
+    // question when the decode itself is suspect -- its own comment says as
+    // much. Diagnosing #32 needs the bytes as they arrived: a mis-framed stream
+    // and a device sending something we do not parse look identical once
+    // decoded, and only the raw form tells them apart.
+    void setRawTap(std::vector<uint8_t>* sink) { m_rawTap = sink; }
     const ReadStats& lastRead() const { return m_lastRead; }
 
 private:
@@ -267,6 +304,7 @@ private:
     SerialPort m_port;
     SlipDecoder m_slip;
     ScreenGrid m_grid;
+    std::vector<uint8_t>* m_rawTap = nullptr;
     ReadStats m_lastRead;
     bool m_open = false;
 };

@@ -1540,3 +1540,106 @@ TEST_CASE("instrument maps include the TYPE row buttons", "[hwdecode]") {
         CHECK(save->row == 2);
     }
 }
+
+// M8_DRIVER_BUGS.md #32. A desynced stream shifts every field boundary, so x/y
+// decode to nonsense -- and `cells[{y,x}] = c` used to accept any coordinate,
+// which turned a corrupt stream into a plausible screen that everything above
+// believed. The failures it produced downstream ("field not found",
+// "could not find enum") both read as navigation bugs and were not.
+TEST_CASE("frame decode rejects impossible coordinates", "[hwdecode]") {
+    ScreenGrid grid;
+
+    // A good cell lands and is not counted against anything.
+    grid.handleFrame(makeCharFrame(0x41, 8, 30, 255, 255, 255, 0, 0, 0));
+    CHECK(grid.cells.size() == 1);
+    CHECK(grid.decodeLooksSane());
+
+    // One cell past the edge: dropped, but NOT evidence of anything. The M8
+    // really does draw a space at (0,240) on the INSTRUMENT screen, on every
+    // read. This assertion previously demanded these be counted as corruption,
+    // which is what made the first version of the check warn on every healthy
+    // connection -- the assertion was changed deliberately, not relaxed to get
+    // green.
+    grid.handleFrame(makeCharFrame(0x42, 320, 30, 255, 255, 255, 0, 0, 0));
+    grid.handleFrame(makeCharFrame(0x43, 8, 240, 255, 255, 255, 0, 0, 0));
+    CHECK(grid.cells.size() == 1);          // neither stored
+    CHECK(grid.offEdgeCells == 2);
+    CHECK(grid.offPanelCells == 0);
+    CHECK(grid.decodeLooksSane());          // benign
+
+    // Wild values are a different matter: a coordinate no panel could address
+    // is not a coordinate, it is a field boundary read at the wrong offset.
+    grid.handleFrame(makeCharFrame(0x45, 4000, 30, 255, 255, 255, 0, 0, 0));
+    CHECK(grid.offPanelCells == 1);
+    CHECK_FALSE(grid.decodeLooksSane());
+
+    // Off-pitch is counted but still stored -- a weaker signal than the bounds
+    // check, and the cost of a false reject is a missing glyph.
+    ScreenGrid g2;
+    g2.handleFrame(makeCharFrame(0x44, 12, 30, 255, 255, 255, 0, 0, 0));
+    CHECK(g2.cells.size() == 1);
+    CHECK(g2.offPitchCells == 1);
+    CHECK(g2.decodeLooksSane());            // suspicious, not fatal
+
+    // clear() must reset the counters, or one bad read poisons every later one.
+    grid.clear();
+    CHECK(grid.offPanelCells == 0);
+    CHECK(grid.offEdgeCells == 0);
+    CHECK(grid.shortFrames == 0);
+    CHECK(grid.decodeLooksSane());
+}
+
+// The check that actually catches M8_DRIVER_BUGS.md #32.
+//
+// A desynced stream decodes cells to WRONG BUT LEGAL coordinates, so bounds
+// checks see nothing and the settle check passes (the damage is stable, and
+// the header sits in the undamaged top rows). Measured on real captures: a
+// healthy INSTRUMENT read scores 23/23 labels in place, two independently
+// garbled reads of the same screen score 2/23. Nothing to tune between those.
+TEST_CASE("layoutMatchRatio separates a decoded screen from a smeared one", "[hwdecode]") {
+    using namespace m8::dev;
+
+    auto drawLabel = [](ScreenGrid& g, const char* text, int mapCol, int mapRow, int shift) {
+        for (int k = 0; text[k]; ++k) {
+            const int x = (mapCol + 1 + k) * 8 + shift;
+            const int y = (mapRow + 3) * 10;
+            g.handleFrame(makeCharFrame(text[k], x, y, 144, 172, 184, 0, 0, 0));
+        }
+    };
+
+    // A well-formed SAMPLER screen: labels exactly where the map puts them.
+    ScreenGrid good;
+    drawLabel(good, "TYPE",    0,  2, 0);
+    drawLabel(good, "NAME",    0,  3, 0);
+    drawLabel(good, "TRANSP.", 0,  4, 0);
+    drawLabel(good, "SAMPLE",  0,  6, 0);
+    drawLabel(good, "SLICE",   0,  8, 0);
+    drawLabel(good, "PLAY",    0,  9, 0);
+    drawLabel(good, "FILTER",  0, 15, 0);
+    drawLabel(good, "CUTOFF",  0, 16, 0);
+    drawLabel(good, "RES",     0, 17, 0);
+    const double m1 = layoutMatchRatio(good, Screen::INSTRUMENT, "SAMPLER");
+    REQUIRE(m1 > 0.0);
+
+    // The same labels, every one shifted by a single character cell -- which is
+    // what a one-byte field-boundary slip does to the whole screen.
+    ScreenGrid smeared;
+    drawLabel(smeared, "TYPE",    0,  2, 8);
+    drawLabel(smeared, "NAME",    0,  3, 8);
+    drawLabel(smeared, "TRANSP.", 0,  4, 8);
+    drawLabel(smeared, "SAMPLE",  0,  6, 8);
+    drawLabel(smeared, "SLICE",   0,  8, 8);
+    drawLabel(smeared, "PLAY",    0,  9, 8);
+    drawLabel(smeared, "FILTER",  0, 15, 8);
+    drawLabel(smeared, "CUTOFF",  0, 16, 8);
+    drawLabel(smeared, "RES",     0, 17, 8);
+    const double m2 = layoutMatchRatio(smeared, Screen::INSTRUMENT, "SAMPLER");
+
+    CHECK(m2 < m1);
+    CHECK(m2 < 0.6);        // below the threshold m8_nav warns at
+    CHECK(m1 > m2 + 0.3);   // and the gap is wide, not marginal
+
+    // Grid screens carry no field map and must report "cannot judge", not 0 --
+    // scoring them zero would warn on every PHRASE read forever.
+    CHECK(layoutMatchRatio(good, Screen::PHRASE) < 0.0);
+}

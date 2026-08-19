@@ -269,6 +269,7 @@ class M8Driver:
         self.banner: Dict[str, str] = {}
         self.gestures_ready: Optional[bool] = None
         self.theme_pinned: Optional[bool] = None
+        self.decode_sane: Optional[bool] = None
         self.theme_blind: Optional[bool] = None
         self.firmware: Optional[str] = None
         self._startup_error: Optional[str] = None
@@ -305,6 +306,7 @@ class M8Driver:
         self.banner = {}
         self.gestures_ready: Optional[bool] = None
         self.theme_pinned: Optional[bool] = None
+        self.decode_sane: Optional[bool] = None
         self.theme_blind: Optional[bool] = None
         self.firmware: Optional[str] = None
         self._startup_error: Optional[str] = None
@@ -430,6 +432,18 @@ class M8Driver:
                 self.gestures_ready = False
             elif "populated=" in line:
                 self.gestures_ready = "populated=true" in line
+        elif line.startswith("decode:"):
+            # Distinct from "not settled". Settling asks whether the picture
+            # stopped changing; this asks whether it is a picture at all. A
+            # desynced stream goes quiet exactly like a good one, so the two
+            # are independent and both have to reach the caller.
+            self.banner["decode"] = line
+            # Either warning means the screen is untrustworthy; the labels-in-place
+            # one is the only check that catches the corruption actually observed.
+            if "WARNING" in line:
+                self.decode_sane = False
+            elif self.decode_sane is None:
+                self.decode_sane = True
         elif line.startswith("theme:"):
             # Two distinct failures, and they are not the same thing. "NOT
             # confirmed" means nobody has pinned the accent for this device, so
@@ -917,6 +931,13 @@ class M8Driver:
         out["set_usable"] = self.gestures_ready is not False
         out["theme_pinned"] = self.theme_pinned
         out["theme_blind"] = self.theme_blind
+        out["decode_sane"] = self.decode_sane
+        if self.decode_sane is False:
+            out["decode_advice"] = (
+                "the serial stream desynced, so this screen is not trustworthy. "
+                "Field reads will fail in ways that look like navigation bugs. "
+                "Re-read; if it persists, capture frames with "
+                f"m8_nav --port {self.port} --record-frames. M8_DRIVER_BUGS #32.")
         if self.theme_blind:
             out["theme_advice"] = (
                 "the pinned accent is on no cell of this screen -- cursor reads "
