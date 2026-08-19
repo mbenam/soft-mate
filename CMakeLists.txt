@@ -242,6 +242,7 @@ add_executable(m8_tests
     tests/test_persistence.cpp
     tests/test_audio.cpp
     tests/test_ui_scripts.cpp
+    tests/test_device_fake.cpp
     tests/test_macrosynth.cpp
     tests/test_instrument_io.cpp
     tests/test_fmsynth.cpp

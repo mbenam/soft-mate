@@ -597,17 +597,17 @@ SerialPort::~SerialPort() { close(); }
 M8Device::~M8Device() { close(); }
 
 bool M8Device::open(const char* port) {
-    if (!m_port.open(port)) return false;
-    m_port.sendByte('E');
+    if (!m_port->open(port)) return false;
+    m_port->sendByte('E');
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    m_port.sendByte('R');
+    m_port->sendByte('R');
     m_open = true;
     return true;
 }
 
 bool M8Device::openNoReset(const char* port) {
-    if (!m_port.open(port)) return false;
-    m_port.sendByte('E');
+    if (!m_port->open(port)) return false;
+    m_port->sendByte('E');
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     m_open = true;
     return true;
@@ -615,8 +615,8 @@ bool M8Device::openNoReset(const char* port) {
 
 void M8Device::close() {
     if (m_open) {
-        m_port.sendByte('D');
-        m_port.close();
+        m_port->sendByte('D');
+        m_port->close();
         m_open = false;
     }
 }
@@ -631,7 +631,7 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
     // where the display is already settled (static screen after navigation).
     auto lastData = start - std::chrono::milliseconds(settleMs);
     for (;;) {
-        size_t n = m_port.recv(buf, sizeof(buf));
+        size_t n = m_port->recv(buf, sizeof(buf));
         auto now = std::chrono::steady_clock::now();
         if (n > 0) {
             lastData = now;
@@ -720,11 +720,11 @@ std::optional<std::string> M8Device::valueOf(const FieldRef& field) {
 }
 
 void M8Device::press(uint8_t mask, int holdMs) {
-    m_port.sendByte('C');
-    m_port.sendByte(mask);
+    m_port->sendByte('C');
+    m_port->sendByte(mask);
     std::this_thread::sleep_for(std::chrono::milliseconds(holdMs));
-    m_port.sendByte('C');
-    m_port.sendByte(0x00);
+    m_port->sendByte('C');
+    m_port->sendByte(0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 }
 
@@ -739,12 +739,12 @@ void M8Device::playToggle() {
 }
 
 void M8Device::keyjazz(uint8_t note, uint8_t vel) {
-    m_port.sendByte('K');
-    m_port.sendByte(note);
-    m_port.sendByte(vel);
+    m_port->sendByte('K');
+    m_port->sendByte(note);
+    m_port->sendByte(vel);
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    m_port.sendByte('K');
-    m_port.sendByte(0xFF);
+    m_port->sendByte('K');
+    m_port->sendByte(0xFF);
 }
 
 void M8Device::step(int settleMs, int maxMs) {

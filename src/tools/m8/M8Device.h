@@ -187,21 +187,44 @@ private:
     static std::string alnumUpper(const std::string& s);
 };
 
-// ---- Serial port (Win32) --------------------------------------------------
+// ---- Serial transport -----------------------------------------------------
 
-struct SerialPort {
+// The I/O seam. Every byte M8Device puts on or takes off the wire goes through
+// this, which is what lets a test drive the primitives without hardware.
+//
+// It exists because Primitives.cpp had NO offline coverage at all: every closed
+// loop in it -- moveCursorTo, editValue, dismissModal, loadFile -- presses a key
+// and re-reads, so none of them could be exercised without a real M8 on COM3.
+// That is how a whole family of bugs (#22-#27) stayed invisible until someone
+// happened to hold a connection open on real hardware.
+//
+// Deliberately at the byte level rather than at the ScreenGrid level: a fake
+// that hands back a ready-made grid would skip SLIP framing, the settle logic
+// and the key-press encoding, which is where several of those bugs actually
+// lived.
+struct ISerial {
+    virtual ~ISerial() = default;
+    virtual bool   open(const char* port) = 0;
+    virtual bool   send(const void* data, size_t len) = 0;
+    virtual bool   sendByte(uint8_t b) = 0;
+    virtual size_t recv(uint8_t* buf, size_t cap) = 0;
+    virtual void   close() = 0;
+};
+
+// The real one (Win32 / POSIX).
+struct SerialPort : ISerial {
 #ifdef _WIN32
     void* h = nullptr;  // HANDLE, void* to avoid Win32 header in this header
 #else
     int fd = -1;
 #endif
 
-    bool open(const char* port);
-    bool send(const void* data, size_t len);
-    bool sendByte(uint8_t b);
-    size_t recv(uint8_t* buf, size_t cap);
-    void close();
-    ~SerialPort();
+    bool open(const char* port) override;
+    bool send(const void* data, size_t len) override;
+    bool sendByte(uint8_t b) override;
+    size_t recv(uint8_t* buf, size_t cap) override;
+    void close() override;
+    ~SerialPort() override;
 };
 
 // ---- M8Device -------------------------------------------------------------
@@ -232,6 +255,10 @@ public:
     bool openNoReset(const char* port);    // serial + 'E' enable only
     void close();
     bool isOpen() const { return m_open; }
+
+    // Substitute the transport. For tests only -- see tests/test_device_fake.cpp.
+    // Passing nullptr restores the real port. Must be called before open().
+    void setSerial(ISerial* s) { m_port = s ? s : &m_ownPort; }
 
     // ---- Perception -------------------------------------------------------
 
@@ -301,7 +328,8 @@ public:
 private:
     void readInto(int minMs, int settleMs, int maxMs);
 
-    SerialPort m_port;
+    SerialPort m_ownPort;              // the real port, owned
+    ISerial*   m_port = &m_ownPort;    // what we actually talk through
     SlipDecoder m_slip;
     ScreenGrid m_grid;
     std::vector<uint8_t>* m_rawTap = nullptr;

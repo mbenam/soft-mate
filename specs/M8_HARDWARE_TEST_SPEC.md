@@ -291,6 +291,17 @@ the harness copies `probes/*.m8s` to the SD drive letter directly (`Copy-Item`),
 the manual card shuffle. If no, the operator copies the library once per session (still one
 touch for the whole batch, not per-probe).
 
+> **ANSWERED 2026-08-19 (this rig): NO.** The headless does not present its SD card as a drive
+> while serial + audio are active — `Get-Volume` shows no removable volume with the device
+> connected, and the operator confirmed the card is moved by hand. Recorded in
+> `hwtest_out/rig.json`, which is gitignored, so this line is the durable copy — **do not
+> re-ask.**
+>
+> The consequence is a working rule, not just a fact: **every probe a measurement needs must be
+> generated in one step and handed over together.** A round trip here is a human unplugging the
+> card, not a script — so "generate one probe, look, generate another" is the expensive
+> mistake. Decide the whole probe matrix before asking for the copy.
+
 ### 8.2 Automating the load (serial browser navigation)
 
 The device must be *told* to load a file. Two sub-options:
