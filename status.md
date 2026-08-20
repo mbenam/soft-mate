@@ -678,6 +678,29 @@ is implemented and verified.
   post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`
   0x0D–0x16** alias to simpler forms. **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
   (`FILTER` 06/07 ZDF and `LIM` 04/05 POST/POST:AD are now implemented — see Sampler above.)
+- **`AMP` is modelled wrong in KIND, not just in curve — MEASURED 2026-08-19 (fw 6.5.2, COM3).**
+  `SynthVoice::applyAmpLimFilter` treats AMP as an output gain, `1 + (byte/255)*7`, i.e. up to
+  **+18 dB**. Hardware, WavSynth at instrument volume `0x7F` (peak 0.36, so ~30 dB of signal —
+  the earlier low-level attempts were noise-limited and inconclusive):
+
+  | `LIM` mode | AMP `0x00` → `0xFF`, measured |
+  |---|---|
+  | `00 CLIP` | **−0.02 dB** — peak 0.3561→0.3539, crest 18.14→18.11. No effect at all. |
+  | `08 POST:W3` | **−23.09 dB** — peak 0.3261→0.0317, crest 18.20→21.05. |
+
+  So the device does *nothing* in one mode and *attenuates* by 23 dB in another, where we
+  amplify by 18 dB in both. **Interpretation, not measurement:** this is the shape of a
+  gain-compensated **drive into the LIM stage** — unity until the saturator engages, and in a
+  wavefolder mode (`POST:W1–W3`) driving it hard folds the signal into something quieter and
+  spikier, which the rising crest supports. Our model is a plain multiply, which is a different
+  thing.
+
+  **Not fixed, deliberately.** Correcting it is not a curve tweak: it needs AMP characterised
+  against all 9 `LIM` modes and across instrument types, and a wrong-but-precise curve is worse
+  than a known-wrong one (AGENTS.md §7). Four points on one type is not that. Whatever replaces
+  it must also explain why `LIM 00` shows no level change at all. Captures:
+  `hwtest_out/fit/W00,WFF,P00,PFF.wav` (gitignored). The AMP sweep that led here is in
+  `docs/ui_screen_spec.md`.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).

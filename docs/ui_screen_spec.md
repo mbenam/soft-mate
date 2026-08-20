@@ -157,6 +157,15 @@ the mechanism.
   treat the dB figures as ±a few tenths, not exact. Artifacts:
   `hwtest_out/caps/HYPV*.wav`, `MACV*.wav` (gitignored).
 
+  **Follow-up 2026-08-19, and it changes the engine's problem.** Sweeping the
+  on-screen `AMP` field itself (not the file byte) on a WavSynth probe at
+  instrument volume `0x7F` — 30 dB more signal than the sweep above — found AMP
+  does **nothing** with `LIM = 00 CLIP` (−0.02 dB across its whole range) and
+  **−23 dB** with `LIM = 08 POST:W3`. Our engine amplifies by +18 dB in both.
+  So the fidelity gap is not the curve, it is the kind of thing AMP is; recorded
+  under Placeholders in `status.md`. It also means the "our curve is too steep"
+  reading of the table above was itself too generous.
+
 - `HandleTableInput` takes no data reference — TABLE moves a cursor but cannot
   edit anything.
 
