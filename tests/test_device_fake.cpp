@@ -14,7 +14,9 @@
 // above it knows the difference. It speaks the real display protocol: SLIP
 // framing, 0xFD draw-char commands with absolute pixel coordinates, a 0xFF
 // sysinfo frame, and it reads 'E'/'R'/'D' and 'C' <mask> key presses the same
-// way the device does.
+// way the device does. It also *responds*: arrows move a cursor, the pinned
+// edit gestures change a value, and the screen is repainted -- which is what
+// closes the loop the primitives are built around.
 //
 // Byte level on purpose. A fake that handed back a ready-made ScreenGrid would
 // bypass SLIP framing, the settle loop and the key-press encoding -- and that is
@@ -22,28 +24,37 @@
 // across reads within one connection; #32 was a coordinate fault in the frames
 // themselves).
 //
-// This file establishes the seam and proves it carries traffic in both
-// directions. Driving the primitives themselves through it is the next step.
+// What it deliberately does NOT model: partial repaints. The real M8 sends only
+// changed cells, which is what leaves the ghosts behind bug #24. That behaviour
+// already has coverage at the ScreenGrid level, and modelling it here would make
+// every test depend on it.
 // ===========================================================================
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cstring>
+#include <algorithm>
+#include <cstdio>
 #include <deque>
 #include <string>
 #include <vector>
 
 #include "m8/M8Device.h"
 #include "m8/ScreenModel.h"
+#include "m8/Primitives.h"
+#include "m8/Gestures.h"
 
 using namespace m8::dev;
 
 namespace {
 
-// One row of a form screen, as the device would draw it.
+// One row of a form screen. `valueCol` >= 0 gives it an editable two-hex-digit
+// value, drawn at that column -- the shape every numeric field on PROJECT and
+// INSTRUMENT actually has.
 struct FakeRow {
-    int         row;    // screen row (0-23); pixel y is row * 10
-    std::string text;   // drawn from column 0
+    int         row       = 0;    // screen row (0-23); pixel y is row * 10
+    std::string label;            // drawn from column 0
+    int         valueCol  = -1;
+    int         value     = 0;
 };
 
 class FakeM8 : public ISerial {
@@ -58,11 +69,16 @@ public:
     int  openCount  = 0;
     bool closed     = false;
 
-    // Prime the screen without going through open(). open() sleeps 500ms
-    // between 'E' and 'R' on the real device, and most of these tests are not
-    // about the handshake -- paying it five times over would put 2.5s of
-    // sleeping into every suite run for nothing.
+    // Prime the screen without going through open(), which sleeps 500ms
+    // between 'E' and 'R' on the real device. Most tests are not about the
+    // handshake and paying it repeatedly would put seconds of sleeping into
+    // every suite run for nothing.
     void powerOn() { queueFullRepaint(); }
+
+    int valueAt(int row) const {
+        for (const auto& r : rows) if (r.row == row) return r.value;
+        return -1;
+    }
 
     // ---- ISerial -----------------------------------------------------------
     bool open(const char*) override { ++openCount; queueFullRepaint(); return true; }
@@ -84,11 +100,51 @@ private:
     std::deque<uint8_t> m_out;
     bool m_expectMask = false;      // the byte after 'C' is the key mask
 
+    int cursorIndex() const {
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].row == cursorRow) return static_cast<int>(i);
+        return -1;
+    }
+
+    void moveCursor(int delta) {
+        int i = cursorIndex();
+        if (i < 0) return;
+        i = std::clamp(i + delta, 0, static_cast<int>(rows.size()) - 1);
+        cursorRow = rows[static_cast<size_t>(i)].row;
+    }
+
+    void bumpValue(int delta) {
+        int i = cursorIndex();
+        if (i < 0) return;
+        FakeRow& r = rows[static_cast<size_t>(i)];
+        if (r.valueCol < 0) return;             // not an editable field
+        // Clamps rather than wraps, which is what the device does and what
+        // editValue's re-read-every-iteration loop relies on.
+        r.value = std::clamp(r.value + delta, 0, 255);
+    }
+
+    void applyPress(uint8_t mask) {
+        if (mask == 0) return;                  // release
+        const auto& g = getGestures();
+        // Gestures first: EDIT|<arrow> must not be read as a bare arrow.
+        if (g.isReady()) {
+            if (mask == g.valueInc)   { bumpValue(+1);  queueFullRepaint(); return; }
+            if (mask == g.valueDec)   { bumpValue(-1);  queueFullRepaint(); return; }
+            if (mask == g.valueInc16) { bumpValue(+16); queueFullRepaint(); return; }
+            if (mask == g.valueDec16) { bumpValue(-16); queueFullRepaint(); return; }
+        }
+        if (mask == Key::DOWN) { moveCursor(+1); queueFullRepaint(); return; }
+        if (mask == Key::UP)   { moveCursor(-1); queueFullRepaint(); return; }
+        // Anything else lands but changes nothing, which is a real M8 behaviour
+        // and the reason `probe`'s "nothing moved" verdict is a heuristic.
+    }
+
     void feed(uint8_t b) {
         if (m_expectMask) {
             m_expectMask = false;
             presses.push_back(b);
-            return;                 // a press changes nothing unless a test says so
+            applyPress(b);
+            return;
         }
         if (b == 'C') { m_expectMask = true; return; }
         control.push_back(b);
@@ -106,7 +162,8 @@ private:
         m_out.push_back(0xC0);              // END
     }
 
-    void drawChar(char ch, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+    void drawChar(char ch, int col, int row, uint8_t r, uint8_t g, uint8_t b) {
+        const int x = col * 8, y = row * 10;
         emit({0xFD, static_cast<uint8_t>(ch),
               static_cast<uint8_t>(x & 0xFF), static_cast<uint8_t>((x >> 8) & 0xFF),
               static_cast<uint8_t>(y & 0xFF), static_cast<uint8_t>((y >> 8) & 0xFF),
@@ -117,39 +174,88 @@ private:
         emit({0xFF, 0, 6, 5, 2, 0});        // sysinfo: hw 0, fw 6.5.2, font 0
         for (const auto& fr : rows) {
             const bool cur = (fr.row == cursorRow);
-            // The accent is ScreenGrid::cursorColor's default, which was measured
-            // off a real headless on fw 6.5.2 -- so no theme setup is needed.
+            // The accent is ScreenGrid::cursorColor's default, measured off a
+            // real headless on fw 6.5.2 -- so no theme setup is needed.
             const uint8_t r = cur ? 0   : 200;
             const uint8_t g = cur ? 240 : 200;
             const uint8_t b = cur ? 248 : 200;
-            for (size_t i = 0; i < fr.text.size(); ++i)
-                drawChar(fr.text[i], static_cast<int>(i) * 8, fr.row * 10, r, g, b);
+
+            // Labels start at COLUMN 1, and the accent run is CONTIGUOUS from
+            // there through the end of the value -- interior padding included.
+            // Both details are measured, not invented (artifacts/scope_PROJECT.json:
+            // the cursor row's accent covers cols 1-16, "TEMPO        120"), and
+            // getting them wrong is not cosmetic. readCursorValue strips the
+            // field label with a strict PREFIX compare, so a label drawn at
+            // column 0 makes cursorMainText() return " TRANSPOSE00", the compare
+            // misses, nothing is stripped, and the leading hex run of
+            // "TRANSPOSE00" parses as 0. editValue then reads 0 forever, steps
+            // up 256 times and clamps at 0xFF -- which is exactly bug #13's
+            // symptom, reproduced here by an unfaithful fake rather than by a
+            // real defect.
+            const int labelCol = 1;
+            for (size_t i = 0; i < fr.label.size(); ++i)
+                drawChar(fr.label[i], labelCol + static_cast<int>(i), fr.row, r, g, b);
+            if (fr.valueCol >= 0) {
+                for (int c = labelCol + static_cast<int>(fr.label.size());
+                     c < fr.valueCol; ++c)
+                    drawChar(' ', c, fr.row, r, g, b);
+                char buf[3];
+                std::snprintf(buf, sizeof(buf), "%02X", fr.value & 0xFF);
+                drawChar(buf[0], fr.valueCol,     fr.row, r, g, b);
+                drawChar(buf[1], fr.valueCol + 1, fr.row, r, g, b);
+            }
         }
     }
 };
 
 // The PROJECT screen, transcribed from artifacts/scope_PROJECT.json (fw 6.5.2).
+// Labels start at column 1 and values at column 14, matching the real screen --
+// which matters, because kProjectFields' columns are asserted against exactly
+// those positions in test_device_decode.cpp.
 std::vector<FakeRow> projectRows() {
     return {
         { 1, "PROJECT"},
-        { 5, " TEMPO        120.00 <>"},
-        { 6, " TRANSPOSE    00"},
-        { 7, " GROOVE       00DEFAULT"},
-        { 8, " SCALE        00C CHROMATIC"},
-        { 9, " LIVE QUANTIZ 00CHAIN LEN"},
-        {11, " MIDI         SETTINGS MAPPINGS"},
-        {13, " NAME         SCALEPROBE--"},
-        {14, " PROJECT      LOAD SAVE NEW"},
-        {17, " INST. POOL   VIEW INST.POOL"},
-        {20, " SYSTEM       SETTINGS"},
+        { 5, "TEMPO"},
+        { 6, "TRANSPOSE",   14, 0x00},
+        { 7, "GROOVE",      14, 0x00},
+        { 8, "SCALE",       14, 0x00},
+        { 9, "LIVE QUANTIZ",14, 0x00},
+        {11, "MIDI"},
+        {13, "NAME"},
+        {14, "PROJECT"},
+        {17, "INST. POOL"},
+        {20, "SYSTEM"},
     };
 }
 
-// Reads are cheap here but not free: readSettled waits for a quiet window, so
-// keep the settle short. These are the smallest values the loop honours.
+// Populate the global gesture table for the duration of a test, then put back
+// whatever was there. editValue refuses to run without pinned gestures, and the
+// table is a process-wide global, so leaving it set would leak into other tests.
+struct ScopedGestures {
+    GestureTable saved;
+    ScopedGestures() {
+        saved = getGestures();
+        GestureTable& g = getGestures();
+        g.populated  = true;
+        g.pinnedFwMajor = 6; g.pinnedFwMinor = 5; g.pinnedFwPatch = 2;
+        // The real hw_buttons.json convention, per Gestures.h.
+        g.valueInc   = Key::EDIT | Key::UP;
+        g.valueDec   = Key::EDIT | Key::DOWN;
+        g.valueInc16 = Key::EDIT | Key::RIGHT;
+        g.valueDec16 = Key::EDIT | Key::LEFT;
+        g.enumNext   = g.valueInc;
+        g.enumPrev   = g.valueDec;
+    }
+    ~ScopedGestures() { getGestures() = saved; }
+};
+
+// readSettled waits for a quiet window; keep it short so the loops stay fast.
 constexpr int kMin = 0, kSettle = 20, kMax = 400;
+constexpr int kHold = 1;
 
 } // namespace
+
+// ---- the seam itself -------------------------------------------------------
 
 TEST_CASE("FakeM8: the transport seam carries a screen", "[hwdecode]") {
     FakeM8 fake;
@@ -163,9 +269,8 @@ TEST_CASE("FakeM8: the transport seam carries a screen", "[hwdecode]") {
     // The bytes really went through SLIP and the 0xFD decoder, not around them.
     CHECK(fake.openCount == 1);
     CHECK(identifyScreen(dev.grid()) == Screen::PROJECT);
-    CHECK(dev.grid().cells.size() > 100);
+    CHECK(dev.grid().cells.size() > 50);
 
-    // And the decoded text is the text the fake drew.
     bool sawTranspose = false;
     for (const auto& [y, text] : dev.grid().mainRows())
         if (text.find("TRANSPOSE") != std::string::npos) sawTranspose = true;
@@ -175,8 +280,8 @@ TEST_CASE("FakeM8: the transport seam carries a screen", "[hwdecode]") {
 TEST_CASE("FakeM8: the firmware frame is decoded", "[hwdecode]") {
     FakeM8 fake;
     fake.rows = projectRows();
-
     fake.powerOn();
+
     M8Device dev;
     dev.setSerial(&fake);
     dev.readSettled(kMin, kSettle, kMax);
@@ -191,13 +296,13 @@ TEST_CASE("FakeM8: the firmware frame is decoded", "[hwdecode]") {
 TEST_CASE("FakeM8: key presses reach the wire as 'C' mask then release", "[hwdecode]") {
     FakeM8 fake;
     fake.rows = projectRows();
-
     fake.powerOn();
+
     M8Device dev;
     dev.setSerial(&fake);
     dev.readSettled(kMin, kSettle, kMax);
 
-    dev.press(Key::DOWN, 5);
+    dev.press(Key::DOWN, kHold);
 
     // A press is mask-down then mask-up. The release matters: a kill landing
     // between the two leaves a key held auto-repeating, which is why m8drv
@@ -211,16 +316,15 @@ TEST_CASE("FakeM8: the accent row is what the driver calls the cursor", "[hwdeco
     FakeM8 fake;
     fake.rows = projectRows();
     fake.cursorRow = 6;                    // TRANSPOSE
-    const int expectedY = 6 * 10;
-
     fake.powerOn();
+
     M8Device dev;
     dev.setSerial(&fake);
     dev.readSettled(kMin, kSettle, kMax);
 
     // This is the read that bugs #5, #22 and #24 all corrupted in different
     // ways, and none of them could be reproduced without a device until now.
-    CHECK(dev.grid().cursorRowY() == expectedY);
+    CHECK(dev.grid().cursorRowY() == 60);
 }
 
 TEST_CASE("FakeM8: 'D' is sent on close", "[hwdecode]") {
@@ -236,4 +340,126 @@ TEST_CASE("FakeM8: 'D' is sent on close", "[hwdecode]") {
     for (uint8_t b : fake.control) if (b == 'D') sawDisconnect = true;
     CHECK(sawDisconnect);
     CHECK(fake.closed);
+}
+
+// ---- the closed loops, which is the point ----------------------------------
+
+TEST_CASE("FakeM8: arrows move the cursor and the driver follows", "[hwdecode]") {
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.cursorRow = 5;                    // TEMPO
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+    REQUIRE(dev.grid().cursorRowY() == 50);
+
+    dev.press(Key::DOWN, kHold);
+    dev.readSettled(kMin, kSettle, kMax);
+    CHECK(dev.grid().cursorRowY() == 60);  // TRANSPOSE
+
+    dev.press(Key::DOWN, kHold);
+    dev.readSettled(kMin, kSettle, kMax);
+    CHECK(dev.grid().cursorRowY() == 70);  // GROOVE
+
+    dev.press(Key::UP, kHold);
+    dev.readSettled(kMin, kSettle, kMax);
+    CHECK(dev.grid().cursorRowY() == 60);
+}
+
+TEST_CASE("moveCursorTo reaches a named field", "[hwdecode]") {
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.cursorRow = 5;                    // start on TEMPO
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    auto res = moveCursorTo(dev, "TRANSPOSE", kHold);
+    INFO("moveCursorTo: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.cursorRow == 6);
+}
+
+TEST_CASE("editValue converges upward using coarse then fine steps", "[hwdecode]") {
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.cursorRow = 6;                    // already on TRANSPOSE
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    // 0x00 -> 0x20. Bug #25: this used to single-step up to 256 times at a
+    // ~320ms floor, which presented as a hang rather than as slow work.
+    //
+    // The gap is deliberately small. editValue hardcodes readSettled(120, 200,
+    // 1200), so every iteration costs ~320ms whatever the transport is -- a
+    // 0x40 gap made this test alone take tens of seconds. 0x20 exercises the
+    // same coarse-then-fine path in a fraction of the time. Changing the
+    // primitive's timings to suit a test would be the wrong trade.
+    auto res = editValue(dev, "TRANSPOSE", "20", kHold);
+    INFO("editValue: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.valueAt(6) == 0x20);
+
+    // The coarse gesture must actually have been used: single-stepping a gap of
+    // 32 needs 32 presses, coarse-then-fine needs a handful. Each press logs a
+    // mask and a release, so 20 entries is roughly 10 presses.
+    CHECK(fake.presses.size() < 20);
+}
+
+TEST_CASE("editValue converges downward", "[hwdecode]") {
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.rows[2].value = 0xC0;             // TRANSPOSE starts high
+    fake.cursorRow = 6;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    // Bug #14: the stepping loop only ever pressed value_inc, so a target BELOW
+    // the current value was structurally unreachable -- values clamp at 0xFF
+    // rather than wrapping, so it just pinned there.
+    auto res = editValue(dev, "TRANSPOSE", "A0", kHold);
+    INFO("editValue: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.valueAt(6) == 0xA0);
+}
+
+TEST_CASE("editValue parses its target as hex, not decimal", "[hwdecode]") {
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.rows[2].value = 0x18;             // 24 decimal -- between the two readings
+    fake.cursorRow = 6;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    // Bug #26, and the worst failure mode in the whole list: with base-0 parsing
+    // `set PAN 80` converged correctly and silently on 80 DECIMAL = 0x50, and
+    // nothing in the result said anything was off.
+    //
+    // Starting at 0x18 (24) makes the two readings differ in DIRECTION as well
+    // as value: "20" as hex is 32 and walks UP, as decimal it is 20 and walks
+    // DOWN. So a regression cannot pass by landing near enough -- it ends up on
+    // the wrong side. It also converges in a couple of steps, which keeps the
+    // ~320ms-per-iteration cost down.
+    auto res = editValue(dev, "TRANSPOSE", "20", kHold);
+    INFO("editValue: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.valueAt(6) == 0x20);        // 32, not 20
+    CHECK(fake.valueAt(6) != 20);
 }

@@ -301,6 +301,15 @@ touch for the whole batch, not per-probe).
 > generated in one step and handed over together.** A round trip here is a human unplugging the
 > card, not a script — so "generate one probe, look, generate another" is the expensive
 > mistake. Decide the whole probe matrix before asking for the copy.
+>
+> **And copy them to the project directory, NOT the card root.** The M8's LOAD
+> PROJECT browser lists its own projects folder (`/Songs` on this card), not the
+> volume root — the root's `.m8s` files are invisible to it. Measured
+> 2026-08-19 the expensive way: five probes copied to the root, three failed
+> runs, a power cycle chasing a directory-cache theory, and `loadFile` reporting
+> a bare `rc=14` throughout. The listing was in hand the whole time and one
+> comparison against the card's contents would have caught it — the browser
+> showed `FXEQ1.M8S`/`SCALEPROBE.M8S`, and neither is at the card root.
 
 ### 8.2 Automating the load (serial browser navigation)
 

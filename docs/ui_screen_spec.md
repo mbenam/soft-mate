@@ -127,6 +127,36 @@ the mechanism.
   delete the control until that is measured — silence and a 6 dB level error look
   the same in a diff.
 
+  **MEASURED 2026-08-19 (fw 6.5.2, COM3). Verdict: KEEP THE CONTROL.** Three
+  HyperSynth probes plus a MacroSynth control pair, identical but for the byte
+  `SongIO` routes to `HyperState::amp` (the file's `synth_params.volume`),
+  loaded on hardware and captured. RMS over a fixed 1.5 s window from onset:
+
+  | probe | `0x00` | `0x20` | `0x40` | `0x00`→`0x40` |
+  |---|---|---|---|---|
+  | HYPERSYN | −44.48 dBFS | −39.30 | −39.64 | **+4.83 dB** |
+  | MACROSYN (control) | −49.63 dBFS | — | −44.80 | **+4.83 dB** |
+
+  The device **does** apply the gain to HyperSynth, and does it indistinguishably
+  from MacroSynth, which draws the control on screen. The second reading above —
+  "our engine has an extra gain the device lacks" — is dead. The control stays.
+  The real divergence is that the device does not *draw* it.
+
+  **Two things this also found, neither predicted.** Our curve is wrong:
+  `SynthVoice::applyAmpLimFilter` uses `1 + (byte/255)*7`, which is +8.81 dB
+  across `0x00`→`0x40`, against +4.83 measured. And the device's response is
+  **flat above `0x20`** (`0x00`→`0x20` is +5.18 dB, `0x20`→`0x40` is −0.34 dB)
+  where ours rises monotonically to `0xFF`. Fitting that curve is separate work
+  and is not done.
+
+  **What this does NOT establish**, stated because the byte naming here is a
+  trap: the vendored library calls the LIM mode `amp_type` and the AMP value
+  `volume`, and `SongIO.cpp:888` is what defines our reading. This probe varied
+  the *file* byte our engine treats as amp. Whether the device's on-screen `AMP`
+  field writes that same byte was not tested. One capture per point, no repeat —
+  treat the dB figures as ±a few tenths, not exact. Artifacts:
+  `hwtest_out/caps/HYPV*.wav`, `MACV*.wav` (gitignored).
+
 - `HandleTableInput` takes no data reference — TABLE moves a cursor but cannot
   edit anything.
 

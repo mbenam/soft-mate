@@ -135,20 +135,8 @@ m8_makeprobe --type macrosynth --table-tick 1 --out probe_table.m8s
 
 ## Gotchas — read before trusting this tool's own "PASS"
 
-- **`--type wavsynth|fmsynth|hypersynth` always "fails" and exits 1 — verified by actually
-  running it** (`m8_makeprobe --type fmsynth --out x.m8s` → `FAIL: instrument 0 is not
-  MacroSynth` / `round-trip FAILED` / exit 1). `verifyRoundTrip`'s `else` branch (used for every
-  type that isn't literally `"sampler"`) hardcodes a MacroSynth check — a real, pre-existing,
-  unfixed bug in the tool's own self-check, not in the generated file. **The file is written to
-  disk correctly before this check runs and is NOT deleted on failure** — confirmed: the exit-1
-  run above still produced a correctly-sized 163840-byte `.m8s` file. So the practical impact is
-  narrow but real: the probe file itself is fine, but any script or CI step that gates on this
-  tool's exit code will treat every wavsynth/fmsynth/hypersynth probe generation as a failure,
-  and the printed `wrote <path> (type=... note=...)` success line never prints for these types
-  either (it's after the `if (!verifyRoundTrip(...)) return 1;` check). If you're scripting
-  against this tool for those three types, don't gate on the exit code — check that the output
-  file exists and has nonzero size instead, or fix `verifyRoundTrip` to be type-aware (mirroring
-  its existing `sampler` branch) before relying on it.
+- ~~**`--type wavsynth|fmsynth|hypersynth` always "fails" and exits 1.**~~ **STALE — disproved 2026-08-19 by running all four types.** `verifyRoundTrip` has since gained type-aware branches for `wavsynth`, `fmsynth` and `hypersynth` alongside the original `sampler` one, so none of them hits the MacroSynth check any more. Measured: `macrosynth`, `hypersynth`, `wavsynth` and `fmsynth` each **exit 0** and each print their `wrote <path> (type=... note=...)` line. Gating a script on this tool's exit code is fine now. Kept rather than deleted because the old advice ("don't gate on the exit code") is still sitting in scripts and reviewers' heads, and a silently vanished warning reads as "nobody checked".
+
 - **`--volume` is `synth_params.volume`, not the on-screen "AMP" field you'd naively expect.**
   Both exist and are related but distinct — see `src/io/SongIO.cpp`'s `s.amp = sp.volume;`
   mapping if you need the exact relationship. Don't assume setting `--volume` low is equivalent
