@@ -601,15 +601,30 @@ static m8::Mod engineModToLib(const engine::Modulator& engMod) {
 }
 
 // ---- SynthParams ↔ engine instrument fields ----
+//
+// MEASURED 2026-08-19 (fw 6.5.2), and this mapping was WRONG until then: the
+// device screen's AMP is the file's `amp_type` and its LIM is `amp_limit`. This
+// file read `amp` from `volume` and `lim` from `amp_type` -- every field shifted
+// one across -- so every loaded song played with the wrong amp value and the
+// wrong limiter mode. Confirmed by loading a probe with a distinct signature
+// byte in each slot and reading the device: volume=0x11 appeared nowhere on the
+// INSTRUMENT screen, amp_type=0x22 showed as AMP, amp_limit=0x03 as LIM, and
+// mixer_pan/dry/chorus/delay/reverb=0x44..0x88 as PAN/DRY/MFX/DEL/REV.
+//
+// `volume` is a separate level control. It is carried through load and save so a
+// save cannot zero it, but the voice does NOT apply it yet -- its curve has not
+// been measured, and guessing one is how the AMP model got into this state.
+// See status.md.
 
 static void libSynthParamsToEngine(const m8::SynthParams& sp,
                                     engine::SamplerState& s,
                                     engine::Modulator* mods) {
-    s.amp = sp.volume;
+    s.volume = sp.volume;
+    s.amp = sp.amp_type;
     s.filter_type = sp.filter_type;
     s.cutoff = sp.filter_cutoff;
     s.res = sp.filter_res;
-    s.lim = sp.amp_type;
+    s.lim = sp.amp_limit;
     s.pan = sp.mixer_pan;
     s.dry = sp.mixer_dry;
     s.cho = sp.mixer_chorus;
@@ -621,11 +636,12 @@ static void libSynthParamsToEngine(const m8::SynthParams& sp,
 
 static void libSynthParamsToMacrosyn(const m8::SynthParams& sp,
                                       engine::MacrosynState& m) {
-    m.amp = sp.volume;
+    m.volume = sp.volume;
+    m.amp = sp.amp_type;
     m.filter_type = sp.filter_type;
     m.cutoff = sp.filter_cutoff;
     m.res = sp.filter_res;
-    m.lim = sp.amp_type;
+    m.lim = sp.amp_limit;
     m.pan = sp.mixer_pan;
     m.dry = sp.mixer_dry;
     m.cho = sp.mixer_chorus;
@@ -635,11 +651,12 @@ static void libSynthParamsToMacrosyn(const m8::SynthParams& sp,
 
 static void engineSamplerToLibSynthParams(const engine::SamplerState& s,
                                            m8::SynthParams& sp) {
-    sp.volume = s.amp;
+    sp.volume = s.volume;
+    sp.amp_type = s.amp;
     sp.filter_type = s.filter_type;
     sp.filter_cutoff = s.cutoff;
     sp.filter_res = s.res;
-    sp.amp_type = s.lim;
+    sp.amp_limit = s.lim;
     sp.mixer_pan = s.pan;
     sp.mixer_dry = s.dry;
     sp.mixer_chorus = s.cho;
@@ -649,11 +666,12 @@ static void engineSamplerToLibSynthParams(const engine::SamplerState& s,
 
 static void engineMacrosynToLibSynthParams(const engine::MacrosynState& ms,
                                             m8::SynthParams& sp) {
-    sp.volume = ms.amp;
+    sp.volume = ms.volume;
+    sp.amp_type = ms.amp;
     sp.filter_type = ms.filter_type;
     sp.filter_cutoff = ms.cutoff;
     sp.filter_res = ms.res;
-    sp.amp_type = ms.lim;
+    sp.amp_limit = ms.lim;
     sp.mixer_pan = ms.pan;
     sp.mixer_dry = ms.dry;
     sp.mixer_chorus = ms.cho;
@@ -854,11 +872,12 @@ static void convertSongToEngine(const m8::Song& song,
                 ms.shape = inst.shape;
                 ms.timbre = inst.timbre;
                 ms.color = inst.color;
-                ms.amp = inst.synth_params.volume;
+                ms.volume = inst.synth_params.volume;
+                ms.amp = inst.synth_params.amp_type;
                 ms.filter_type = inst.synth_params.filter_type;
                 ms.cutoff = inst.synth_params.filter_cutoff;
                 ms.res = inst.synth_params.filter_res;
-                ms.lim = inst.synth_params.amp_type;
+                ms.lim = inst.synth_params.amp_limit;
                 ms.pan = inst.synth_params.mixer_pan;
                 ms.dry = inst.synth_params.mixer_dry;
                 ms.cho = inst.synth_params.mixer_chorus;
@@ -885,11 +904,12 @@ static void convertSongToEngine(const m8::Song& song,
                 for (int s = 0; s < 16; ++s)
                     for (int n = 0; n < 6; ++n)
                         h.chords[s][n] = inst.chords[s][n];
-                h.amp = inst.synth_params.volume;
+                h.volume = inst.synth_params.volume;
+                h.amp = inst.synth_params.amp_type;
                 h.filter_type = inst.synth_params.filter_type;
                 h.cutoff = inst.synth_params.filter_cutoff;
                 h.res = inst.synth_params.filter_res;
-                h.lim = inst.synth_params.amp_type;
+                h.lim = inst.synth_params.amp_limit;
                 h.pan = inst.synth_params.mixer_pan;
                 h.dry = inst.synth_params.mixer_dry;
                 h.cho = inst.synth_params.mixer_chorus;
@@ -919,11 +939,12 @@ static void convertSongToEngine(const m8::Song& song,
                 fm.mod2 = inst.mod2;
                 fm.mod3 = inst.mod3;
                 fm.mod4 = inst.mod4;
-                fm.amp         = inst.synth_params.volume;
+                fm.volume      = inst.synth_params.volume;
+                fm.amp         = inst.synth_params.amp_type;
                 fm.filter_type = inst.synth_params.filter_type;
                 fm.cutoff      = inst.synth_params.filter_cutoff;
                 fm.res         = inst.synth_params.filter_res;
-                fm.lim         = inst.synth_params.amp_type;
+                fm.lim         = inst.synth_params.amp_limit;
                 fm.pan         = inst.synth_params.mixer_pan;
                 fm.dry         = inst.synth_params.mixer_dry;
                 fm.cho         = inst.synth_params.mixer_chorus;
@@ -943,11 +964,12 @@ static void convertSongToEngine(const m8::Song& song,
                 ws.mult    = inst.mult;
                 ws.warp    = inst.warp;
                 ws.scan    = inst.scan;
-                ws.amp         = inst.synth_params.volume;
+                ws.volume      = inst.synth_params.volume;
+                ws.amp         = inst.synth_params.amp_type;
                 ws.filter_type = inst.synth_params.filter_type;
                 ws.cutoff      = inst.synth_params.filter_cutoff;
                 ws.res         = inst.synth_params.filter_res;
-                ws.lim         = inst.synth_params.amp_type;
+                ws.lim         = inst.synth_params.amp_limit;
                 ws.pan         = inst.synth_params.mixer_pan;
                 ws.dry         = inst.synth_params.mixer_dry;
                 ws.cho         = inst.synth_params.mixer_chorus;
@@ -1089,8 +1111,12 @@ static void convertEngineToSong(const engine::Sequencer& seq,
 
     // Instruments — overlay the fields our engine models onto the ORIGINAL song
     // instruments. We only touch modeled/screen-exposed fields; every other byte
-    // (pitch, amp_limit, env_*_amt, lfo_*_amt, mods, associated_eq, sample_path,
-    // number) is preserved from the file that was re-read at the start of saveSong().
+    // (pitch, env_*_amt, lfo_*_amt, mods, associated_eq, sample_path, number) is
+    // preserved from the file that was re-read at the start of saveSong().
+    //
+    // amp_limit LEFT this list on 2026-08-19: it is the device's LIM field and is
+    // modelled now. See AGENTS.md 7's INSTRUMENT byte map -- AMP is amp_type and
+    // LIM is amp_limit, and this file had both wired one field across.
     // That preservation is what keeps the byte-identical round-trip test passing.
     for (size_t i = 0; i < song.instruments.size() && i < 128; ++i) {
         const auto& engInst = state.instruments[i];
@@ -1141,11 +1167,12 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             for (int s = 0; s < 16; ++s)
                 for (int n = 0; n < 6; ++n)
                     hyp.chords[s][n] = static_cast<uint8_t>(h.chords[s][n]);
-            hyp.synth_params.volume = static_cast<uint8_t>(h.amp);
+            hyp.synth_params.volume = static_cast<uint8_t>(h.volume);
+            hyp.synth_params.amp_type = static_cast<uint8_t>(h.amp);
             hyp.synth_params.filter_type = static_cast<uint8_t>(h.filter_type);
             hyp.synth_params.filter_cutoff = static_cast<uint8_t>(h.cutoff);
             hyp.synth_params.filter_res = static_cast<uint8_t>(h.res);
-            hyp.synth_params.amp_type = static_cast<uint8_t>(h.lim);
+            hyp.synth_params.amp_limit = static_cast<uint8_t>(h.lim);
             hyp.synth_params.mixer_pan = static_cast<uint8_t>(h.pan);
             hyp.synth_params.mixer_dry = static_cast<uint8_t>(h.dry);
             hyp.synth_params.mixer_chorus = static_cast<uint8_t>(h.cho);
@@ -1175,11 +1202,12 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             fms.mod2 = static_cast<uint8_t>(fm.mod2);
             fms.mod3 = static_cast<uint8_t>(fm.mod3);
             fms.mod4 = static_cast<uint8_t>(fm.mod4);
-            fms.synth_params.volume        = static_cast<uint8_t>(fm.amp);
+            fms.synth_params.volume        = static_cast<uint8_t>(fm.volume);
+            fms.synth_params.amp_type      = static_cast<uint8_t>(fm.amp);
             fms.synth_params.filter_type   = static_cast<uint8_t>(fm.filter_type);
             fms.synth_params.filter_cutoff = static_cast<uint8_t>(fm.cutoff);
             fms.synth_params.filter_res    = static_cast<uint8_t>(fm.res);
-            fms.synth_params.amp_type      = static_cast<uint8_t>(fm.lim);
+            fms.synth_params.amp_limit     = static_cast<uint8_t>(fm.lim);
             fms.synth_params.mixer_pan     = static_cast<uint8_t>(fm.pan);
             fms.synth_params.mixer_dry     = static_cast<uint8_t>(fm.dry);
             fms.synth_params.mixer_chorus  = static_cast<uint8_t>(fm.cho);
@@ -1199,11 +1227,12 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             wvs.mult       = static_cast<uint8_t>(ws.mult);
             wvs.warp       = static_cast<uint8_t>(ws.warp);
             wvs.scan       = static_cast<uint8_t>(ws.scan);
-            wvs.synth_params.volume        = static_cast<uint8_t>(ws.amp);
+            wvs.synth_params.volume        = static_cast<uint8_t>(ws.volume);
+            wvs.synth_params.amp_type      = static_cast<uint8_t>(ws.amp);
             wvs.synth_params.filter_type   = static_cast<uint8_t>(ws.filter_type);
             wvs.synth_params.filter_cutoff = static_cast<uint8_t>(ws.cutoff);
             wvs.synth_params.filter_res    = static_cast<uint8_t>(ws.res);
-            wvs.synth_params.amp_type      = static_cast<uint8_t>(ws.lim);
+            wvs.synth_params.amp_limit     = static_cast<uint8_t>(ws.lim);
             wvs.synth_params.mixer_pan     = static_cast<uint8_t>(ws.pan);
             wvs.synth_params.mixer_dry     = static_cast<uint8_t>(ws.dry);
             wvs.synth_params.mixer_chorus  = static_cast<uint8_t>(ws.cho);

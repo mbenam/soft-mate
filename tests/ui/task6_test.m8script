@@ -27,6 +27,18 @@ key SHIFT+RIGHT
 key SHIFT+RIGHT
 wait 1
 
-# 4. assert_slider: Instrument 00 DRY slider at row 8, col 24 has fill=8
-#    Confirmed from dump_json sliders: {"row":8,"col":24,"fill":8}
-assert_slider row 8 col 24 fill 8
+# 4. assert_slider: Instrument 00's DRY slider at row 11, col 24, fill 8.
+#
+#    CHANGED 2026-08-19, and the old assertion was wrong rather than stale.
+#    It asserted row 8 col 24 fill 8 and called that DRY, but row 8 is the
+#    AMP row -- and its fill of 8 came from AMP reading the file's `volume`
+#    byte (0x30 in sunrise.m8s) instead of `amp_type` (0x01). SongIO had the
+#    instrument byte map shifted one field across; see AGENTS.md 7. With that
+#    corrected AMP is 0x01 and its slider is empty, so keeping the old cell
+#    would mean asserting fill 0 -- which cannot tell "correct" from "not
+#    drawn at all".
+#
+#    Repointed to the slider this comment always claimed to test. DRY is 0xF0
+#    on instrument 00, so the bar is full and the assertion has teeth, and
+#    mixer_dry is a field whose mapping was never in doubt.
+assert_slider row 11 col 24 fill 8

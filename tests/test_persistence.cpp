@@ -1495,3 +1495,50 @@ TEST_CASE("L32 SCA/SCG decode from the bytes a device writes", "[io]") {
     REQUIRE(again.sequencer.phrases[0][1].fx[0].cmd == FxCmd::SCA);
     REQUIRE(again.sequencer.phrases[0][1].fx[0].val == 0x20);
 }
+
+// L33 -- AMP and LIM come from amp_type and amp_limit, NOT from volume.
+//
+// This is the offline form of a hardware experiment run on 2026-08-19 (fw 6.5.2,
+// COM3). The fixture is the exact .m8s that was loaded on the device: every
+// instrument parameter slot carries a distinct signature byte, so reading the
+// INSTRUMENT screen said unambiguously which file byte feeds which UI field.
+// What the device showed:
+//
+//     file volume    = 0x11  ->  appears NOWHERE on the INSTRUMENT screen
+//     file amp_type  = 0x22  ->  AMP 22
+//     file amp_limit = 0x03  ->  LIM 03
+//     file mixer_pan = 0x44  ->  PAN 44
+//     file mixer_dry = 0x55  ->  DRY 55
+//     cho/del/rev  = 66/77/88 -> MFX 66  DEL 77  REV 88
+//
+// SongIO read `amp` from `volume` and `lim` from `amp_type` -- every field one
+// across -- so every loaded song played with the wrong amp value AND the wrong
+// limiter mode. It went unnoticed for months because nothing compared a loaded
+// value against the device, and because the two wrong bytes are both plausible
+// numbers. The expectations below are hardware-verified, not derived from the
+// code they check. AGENTS.md 7 carries the byte map.
+TEST_CASE("L33 AMP and LIM load from amp_type and amp_limit, not volume", "[io]") {
+    auto r = loadSong("tests/fixtures/device_golden/instmap.m8s", "");
+    REQUIRE(r.ok);
+    REQUIRE(r.state.instruments[0].type == InstType::INST_WAVSYNTH);
+    const auto& ws = r.state.instruments[0].wav;
+
+    // The one that was wrong. 0x22 is amp_type; 0x11 is volume.
+    CHECK(ws.amp == 0x22);
+    CHECK(ws.amp != 0x11);
+
+    // The other half of the same shift. 0x03 is amp_limit; 0x22 is amp_type.
+    CHECK(ws.lim == 0x03);
+    CHECK(ws.lim != 0x22);
+
+    // Carried so a save cannot zero it, even though the voice does not apply it.
+    CHECK(ws.volume == 0x11);
+
+    // These were always right, and are here so a "fix" that shifts the whole
+    // block the other way cannot pass.
+    CHECK(ws.pan == 0x44);
+    CHECK(ws.dry == 0x55);
+    CHECK(ws.cho == 0x66);
+    CHECK(ws.del == 0x77);
+    CHECK(ws.rev == 0x88);
+}

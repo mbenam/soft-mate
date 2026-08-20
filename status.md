@@ -678,7 +678,7 @@ is implemented and verified.
   post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`
   0x0D–0x16** alias to simpler forms. **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
   (`FILTER` 06/07 ZDF and `LIM` 04/05 POST/POST:AD are now implemented — see Sampler above.)
-- **`SongIO` reads AMP and LIM from the WRONG BYTES — CONFIRMED 2026-08-19 (fw 6.5.2, COM3).**
+- **`SongIO` read AMP and LIM from the WRONG BYTES — FIXED 2026-08-19 (fw 6.5.2, COM3).**
   `SongIO.cpp:888` does `s.amp = sp.volume` and `s.lim = sp.amp_type`. Both are shifted by one
   field. Measured by loading a probe carrying a distinct signature byte in every parameter slot
   and reading the device screen:
@@ -699,12 +699,26 @@ is implemented and verified.
   `LIM 00` and −23 dB at `LIM 08`. Both measurements were right — they were of different
   parameters, because the file-byte sweeps never touched AMP.
 
-  **Not fixed, and not a one-line swap.** Correcting the load path alone would make the save path
-  write `amp` back into `volume` and **zero a real user parameter on round-trip**. A safe fix is:
-  carry `volume` through load and save on all five instrument types (even if the voice ignores it
-  at first), then point `amp`/`lim` at the right bytes. It changes the level of every song that
-  loads, which is the intended effect — we are currently applying the wrong byte — but it wants
-  doing deliberately, with the round-trip tests watched, not at the end of a long session.
+  **Fixed in that order.** `volume` was added to all five instrument state structs and carried
+  through load and save first — so the save path could not zero a real user parameter — and only
+  then were `amp`/`lim` repointed at `amp_type`/`amp_limit`. 18 sites, both directions. The
+  byte-identical round-trip tests (`L4`, `L19`, `S-RT1`, `L24`) stayed green throughout, which is
+  what proves files survive intact.
+
+  **The regenerated UI golden is the independent confirmation.** `--update-goldens` rewrote all
+  twelve screens and exactly one differed, by nine lines: `AMP 30 → 01` and `LIM SIN → CLIP`,
+  precisely what the byte map predicts from `sunrise.m8s` (`volume=0x30`, `amp_type=0x01`,
+  `amp_limit=0x00`). **The startup song had been playing with the wrong limiter mode on every
+  boot** — the file says CLIP, we rendered SIN — and nothing caught it because the golden and the
+  engine agreed with each other, both wrong.
+
+  Pinned by `L33` (`[io]`), whose fixture is the exact `.m8s` that was loaded on the device and
+  whose expectations are what the M8's screen showed — hardware-verified, not derived from the
+  code they check.
+
+  **Still open:** `volume` is carried but the voice does **not** apply it. It is a real level
+  control (varying it measured +4.83 dB from `0x00` to `0x40` on two instrument types), but its
+  curve has not been measured and guessing one is how the AMP model got into this state.
 - **`AMP` is modelled wrong in KIND, not just in curve — MEASURED 2026-08-19 (fw 6.5.2, COM3).**
   `SynthVoice::applyAmpLimFilter` treats AMP as an output gain, `1 + (byte/255)*7`, i.e. up to
   **+18 dB**. Hardware, WavSynth at instrument volume `0x7F` (peak 0.36, so ~30 dB of signal —

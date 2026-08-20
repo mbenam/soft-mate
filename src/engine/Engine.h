@@ -61,6 +61,10 @@ struct SamplerState {
     int filter_type = 0;   // 0 = OFF, 1 = LP, 2 = HP, 3 = BP
     int cutoff = 0xFF;
     int res = 0x00;
+    // The file's instrument VOLUME byte. Carried so a save cannot zero it;
+    // deliberately NOT applied by the voice yet -- see status.md. AMP and
+    // VOLUME are different controls on the device (measured 2026-08-19).
+    int volume = 0x00;
     int amp = 0x00;
     int lim = 0;           // 0 = CLIP, 1 = SIN, etc.
     int pan = 0x80;
@@ -82,6 +86,10 @@ struct MacrosynState {
     int filter_type = 0;   // 0 = OFF, 1 = LP, 2 = HP, 3 = BP
     int cutoff = 0xFF;
     int res = 0x00;
+    // The file's instrument VOLUME byte. Carried so a save cannot zero it;
+    // deliberately NOT applied by the voice yet -- see status.md. AMP and
+    // VOLUME are different controls on the device (measured 2026-08-19).
+    int volume = 0x00;
     int amp = 0x00;
     int lim = 0;           // 0 = CLIP, 1 = SIN, etc.
     int pan = 0x80;
@@ -105,6 +113,10 @@ struct WavSynthState {
     int filter_type = 0;   // 0-7 standard, 8-11 WAV filter modes
     int cutoff = 0xFF;
     int res = 0x00;
+    // The file's instrument VOLUME byte. Carried so a save cannot zero it;
+    // deliberately NOT applied by the voice yet -- see status.md. AMP and
+    // VOLUME are different controls on the device (measured 2026-08-19).
+    int volume = 0x00;
     int amp = 0x00;
     int lim = 0;           // 0=CLIP, 1=SIN, 2=FOLD, 3=WRAP, 4=POST, 5=POST:AD
     int pan = 0x80;
@@ -129,6 +141,10 @@ struct HyperState {
     int filter_type = 0;   // 0 = OFF, 1 = LP, 2 = HP, 3 = BP
     int cutoff = 0xFF;
     int res = 0x00;
+    // The file's instrument VOLUME byte. Carried so a save cannot zero it;
+    // deliberately NOT applied by the voice yet -- see status.md. AMP and
+    // VOLUME are different controls on the device (measured 2026-08-19).
+    int volume = 0x00;
     int amp = 0x00;
     int lim = 0;           // 0 = CLIP, 1 = SIN, etc.
     int pan = 0x80;
@@ -165,6 +181,10 @@ struct FMSynthState {
     int filter_type = 0;
     int cutoff = 0xFF;
     int res = 0x00;
+    // The file's instrument VOLUME byte. Carried so a save cannot zero it;
+    // deliberately NOT applied by the voice yet -- see status.md. AMP and
+    // VOLUME are different controls on the device (measured 2026-08-19).
+    int volume = 0x00;
     int amp = 0x00;
     int lim = 0;
     int pan = 0x80;

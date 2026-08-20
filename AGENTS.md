@@ -181,12 +181,11 @@ INSTRUMENT byte map   MEASURED 2026-08-19 on fw 6.5.2 by loading a probe with a 
               +1E mixer_chorus -> MFX (66)
               +1F mixer_delay  -> DEL (77)
               +20 mixer_reverb -> REV (88)
-            ^ SongIO.cpp maps `s.amp = sp.volume` and `s.lim = sp.amp_type`.
-              Both are WRONG, shifted by one field. AMP is amp_type and LIM is
-              amp_limit -- which is what the vendored library's names say.
-              `volume` is a separate level control our engine does not model.
-              Not yet fixed: see status.md, it changes every song's level and
-              needs `volume` carried through or a save would zero it.
+            ^ SongIO.cpp read `amp` from `volume` and `lim` from `amp_type` --
+              every field one across. FIXED 2026-08-19; pinned by test L33.
+              `volume` is a separate level control: carried through load and
+              save so a save cannot zero it, but NOT applied by the voice --
+              its curve is unmeasured. See status.md.
 
 LIM         9 modes,  0x00-0x08
             00 CLIP  01 SIN  02 FOLD  03 WRAP
