@@ -249,6 +249,122 @@ struct ScopedGestures {
     ~ScopedGestures() { getGestures() = saved; }
 };
 
+// ---- a grid screen ---------------------------------------------------------
+//
+// SONG, modelled from a real capture (hwtest_out/caps/chk1.json, fw 6.5.2).
+// Grid screens are addressed and read completely differently from form screens
+// -- (step, col) instead of a field name, with the column read off the HEADER
+// row rather than the cursor row -- so none of the form fake above exercises
+// any of it. Bugs #22, #23 and #27 all lived in exactly that path.
+//
+// The transport plumbing below is duplicated from FakeM8 rather than hoisted
+// into a shared base. That is a deliberate trade: FakeM8's tests pass, and
+// restructuring a working class to save thirty lines in a test file is the more
+// expensive mistake. If a third screen ever needs one, extract it then.
+class FakeSongGrid : public ISerial {
+public:
+    // Measured from the capture: track headers at columns 4,7,...,25 (pitch 3),
+    // data rows 6-21, row label in columns 1-2.
+    static constexpr int kHeaderRow   = 5;
+    static constexpr int kFirstRow    = 6;
+    static constexpr int kSteps       = 16;
+    static constexpr int kCols        = 8;
+    static int colX(int c) { return 4 + c * 3; }
+
+    int step = 0, col = 0;
+    std::vector<uint8_t> presses;
+
+    void powerOn() { repaint(); }
+
+    bool open(const char*) override { repaint(); return true; }
+    void close() override {}
+    bool send(const void* d, size_t n) override {
+        const auto* p = static_cast<const uint8_t*>(d);
+        for (size_t i = 0; i < n; ++i) feed(p[i]);
+        return true;
+    }
+    bool sendByte(uint8_t b) override { feed(b); return true; }
+    size_t recv(uint8_t* buf, size_t cap) override {
+        size_t n = 0;
+        while (n < cap && !m_out.empty()) { buf[n++] = m_out.front(); m_out.pop_front(); }
+        return n;
+    }
+
+private:
+    std::deque<uint8_t> m_out;
+    bool m_expectMask = false;
+
+    void feed(uint8_t b) {
+        if (m_expectMask) {
+            m_expectMask = false;
+            presses.push_back(b);
+            if      (b == Key::DOWN)  { step = std::min(step + 1, kSteps - 1); repaint(); }
+            else if (b == Key::UP)    { step = std::max(step - 1, 0);          repaint(); }
+            else if (b == Key::RIGHT) { col  = std::min(col + 1, kCols - 1);   repaint(); }
+            else if (b == Key::LEFT)  { col  = std::max(col - 1, 0);           repaint(); }
+            return;
+        }
+        if (b == 'C') { m_expectMask = true; return; }
+        if (b == 'R' || b == 'E') repaint();
+    }
+
+    void emit(const std::vector<uint8_t>& f) {
+        for (uint8_t b : f) {
+            if (b == 0xC0)      { m_out.push_back(0xDB); m_out.push_back(0xDC); }
+            else if (b == 0xDB) { m_out.push_back(0xDB); m_out.push_back(0xDD); }
+            else                  m_out.push_back(b);
+        }
+        m_out.push_back(0xC0);
+    }
+
+    void ch(char c, int cx, int cy, uint8_t r, uint8_t g, uint8_t b) {
+        const int x = cx * 8, y = cy * 10;
+        emit({0xFD, static_cast<uint8_t>(c),
+              static_cast<uint8_t>(x & 0xFF), static_cast<uint8_t>((x >> 8) & 0xFF),
+              static_cast<uint8_t>(y & 0xFF), static_cast<uint8_t>((y >> 8) & 0xFF),
+              r, g, b, 0, 0, 0});
+    }
+
+    void repaint() {
+        emit({0xFF, 0, 6, 5, 2, 0});
+        const uint8_t nr = 200, ng = 200, nb = 200;   // normal
+        const uint8_t ar = 0,   ag = 240, ab = 248;   // accent
+
+        const char* hdr = "SONG";
+        for (int i = 0; hdr[i]; ++i) ch(hdr[i], 1 + i, 3, 248, 32, 64);
+
+        // Column header. The cursor's OWN column header cell is accented -- the
+        // M8 really does this, and bug #23's fix reads the current column
+        // straight off it instead of measuring pixel pitch.
+        for (int c = 0; c < kCols; ++c) {
+            const bool cur = (c == col);
+            ch(static_cast<char>('1' + c), colX(c), kHeaderRow,
+               cur ? ar : nr, cur ? ag : ng, cur ? ab : nb);
+        }
+
+        for (int sfor = 0; sfor < kSteps; ++sfor) {
+            const int row = kFirstRow + sfor;
+            const bool cur = (sfor == step);
+            char lbl[3];
+            std::snprintf(lbl, sizeof(lbl), "%02X", sfor);
+            // The row label carries the accent on the cursor's row. cursorRowY()
+            // looks for exactly this in the left label columns (x < 24) -- bug
+            // #22 was it taking the topmost accent cell instead, which on a grid
+            // screen is always the column header.
+            ch(lbl[0], 1, row, cur ? ar : nr, cur ? ag : ng, cur ? ab : nb);
+            ch(lbl[1], 2, row, cur ? ar : nr, cur ? ag : ng, cur ? ab : nb);
+            for (int c = 0; c < kCols; ++c) {
+                const bool onCell = cur && (c == col);
+                const uint8_t r = onCell ? ar : nr, g = onCell ? ag : ng,
+                              b = onCell ? ab : nb;
+                if (onCell) ch(' ', colX(c) - 1, row, r, g, b);   // matches the capture
+                ch('-', colX(c),     row, r, g, b);
+                ch('-', colX(c) + 1, row, r, g, b);
+            }
+        }
+    }
+};
+
 // readSettled waits for a quiet window; keep it short so the loops stay fast.
 constexpr int kMin = 0, kSettle = 20, kMax = 400;
 constexpr int kHold = 1;
@@ -462,4 +578,72 @@ TEST_CASE("editValue parses its target as hex, not decimal", "[hwdecode]") {
     CHECK(res.ok);
     CHECK(fake.valueAt(6) == 0x20);        // 32, not 20
     CHECK(fake.valueAt(6) != 20);
+}
+
+// ---- grid-screen loops -----------------------------------------------------
+
+TEST_CASE("FakeSong: a grid screen decodes with its column header", "[hwdecode]") {
+    FakeSongGrid fake;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    CHECK(identifyScreen(dev.grid()) == Screen::SONG);
+    // Row 0 of the grid sits at pixel y 60, and the cursor starts there.
+    CHECK(dev.grid().cursorRowY() == FakeSongGrid::kFirstRow * 10);
+}
+
+TEST_CASE("cursorRowY prefers the row label over the column header on a grid",
+          "[hwdecode]") {
+    // Bug #22, live: the column header is accented too and sits ABOVE the data,
+    // so a scan that takes the topmost accent cell reports the header row and
+    // the cursor never appears to move. Put the cursor low so the two rows are
+    // far apart and the wrong answer is unmistakable.
+    FakeSongGrid fake;
+    fake.step = 9;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    CHECK(dev.grid().cursorRowY() == (FakeSongGrid::kFirstRow + 9) * 10);
+    CHECK(dev.grid().cursorRowY() != FakeSongGrid::kHeaderRow * 10);
+}
+
+TEST_CASE("moveCursorToGrid reaches a (step, col)", "[hwdecode]") {
+    // Bug #23: every call failed rc=7 because the column axis was wrong three
+    // ways at once. The fix reads the current column off the accented HEADER
+    // cell, which is what this fake draws.
+    FakeSongGrid fake;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    auto res = moveCursorToGrid(dev, 7, 5, kHold);
+    INFO("moveCursorToGrid: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.step == 7);
+    CHECK(fake.col == 5);
+}
+
+TEST_CASE("moveCursorToGrid moves both axes backwards too", "[hwdecode]") {
+    FakeSongGrid fake;
+    fake.step = 12;
+    fake.col  = 6;
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    auto res = moveCursorToGrid(dev, 3, 1, kHold);
+    INFO("moveCursorToGrid: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.step == 3);
+    CHECK(fake.col == 1);
 }
