@@ -678,6 +678,33 @@ is implemented and verified.
   post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`
   0x0D–0x16** alias to simpler forms. **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
   (`FILTER` 06/07 ZDF and `LIM` 04/05 POST/POST:AD are now implemented — see Sampler above.)
+- **`SongIO` reads AMP and LIM from the WRONG BYTES — CONFIRMED 2026-08-19 (fw 6.5.2, COM3).**
+  `SongIO.cpp:888` does `s.amp = sp.volume` and `s.lim = sp.amp_type`. Both are shifted by one
+  field. Measured by loading a probe carrying a distinct signature byte in every parameter slot
+  and reading the device screen:
+
+  | file byte | value written | device shows |
+  |---|---|---|
+  | `volume` | `0x11` | **nowhere on the INSTRUMENT screen** |
+  | `amp_type` | `0x22` | `AMP 22` |
+  | `amp_limit` | `0x03` | `LIM 03` |
+  | `mixer_pan` / `dry` / `chorus` / `delay` / `reverb` | `44 55 66 77 88` | `PAN 44` `DRY 55` `MFX 66` `DEL 77` `REV 88` |
+
+  So `AMP <- amp_type`, `LIM <- amp_limit` — which is what the vendored library's field names
+  plainly say — and `volume` is a separate level control this engine does not model at all.
+  Every `.m8s` we load therefore plays with the wrong amp value **and** the wrong limiter mode.
+
+  **This explains the AMP entry below.** Sweeping the file's `volume` byte gave +4.83 dB on both
+  HyperSynth and MacroSynth (a real level control); sweeping `AMP` on the device gave −0.02 dB at
+  `LIM 00` and −23 dB at `LIM 08`. Both measurements were right — they were of different
+  parameters, because the file-byte sweeps never touched AMP.
+
+  **Not fixed, and not a one-line swap.** Correcting the load path alone would make the save path
+  write `amp` back into `volume` and **zero a real user parameter on round-trip**. A safe fix is:
+  carry `volume` through load and save on all five instrument types (even if the voice ignores it
+  at first), then point `amp`/`lim` at the right bytes. It changes the level of every song that
+  loads, which is the intended effect — we are currently applying the wrong byte — but it wants
+  doing deliberately, with the round-trip tests watched, not at the end of a long session.
 - **`AMP` is modelled wrong in KIND, not just in curve — MEASURED 2026-08-19 (fw 6.5.2, COM3).**
   `SynthVoice::applyAmpLimFilter` treats AMP as an output gain, `1 + (byte/255)*7`, i.e. up to
   **+18 dB**. Hardware, WavSynth at instrument volume `0x7F` (peak 0.36, so ~30 dB of signal —

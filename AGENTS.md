@@ -169,6 +169,25 @@ FILTER      8 modes,  0x00-0x07
             00 OFF  01 LOWPASS  02 HIGHPAS  03 BANDPAS
             04 BANDSTP  05 LP>HP  06 ZDF LP  07 ZDF HP
 
+INSTRUMENT byte map   MEASURED 2026-08-19 on fw 6.5.2 by loading a probe with a distinct
+            signature byte in every parameter slot and reading the screen.
+            Offsets are from the start of an instrument record (WavSynth; the
+            Sampler agrees, its own fields shift the tail by one).
+              +0F volume      NOT shown on the INSTRUMENT screen at all
+              +1A amp_type -> AMP     (showed 22 when volume held 11)
+              +1B amp_limit-> LIM     (showed 03)
+              +1C mixer_pan -> PAN    (44)
+              +1D mixer_dry -> DRY    (55)
+              +1E mixer_chorus -> MFX (66)
+              +1F mixer_delay  -> DEL (77)
+              +20 mixer_reverb -> REV (88)
+            ^ SongIO.cpp maps `s.amp = sp.volume` and `s.lim = sp.amp_type`.
+              Both are WRONG, shifted by one field. AMP is amp_type and LIM is
+              amp_limit -- which is what the vendored library's names say.
+              `volume` is a separate level control our engine does not model.
+              Not yet fixed: see status.md, it changes every song's level and
+              needs `volume` carried through or a save would zero it.
+
 LIM         9 modes,  0x00-0x08
             00 CLIP  01 SIN  02 FOLD  03 WRAP
             04 POST  05 POST:AD  06 POST:W1  07 POST:W2  08 POST:W3
