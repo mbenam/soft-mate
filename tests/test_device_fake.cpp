@@ -238,11 +238,21 @@ struct ScopedGestures {
         GestureTable& g = getGestures();
         g.populated  = true;
         g.pinnedFwMajor = 6; g.pinnedFwMinor = 5; g.pinnedFwPatch = 2;
-        // The real hw_buttons.json convention, per Gestures.h.
-        g.valueInc   = Key::EDIT | Key::UP;
-        g.valueDec   = Key::EDIT | Key::DOWN;
-        g.valueInc16 = Key::EDIT | Key::RIGHT;
-        g.valueDec16 = Key::EDIT | Key::LEFT;
+        // The masks actually pinned in hw_buttons.json on this device (fw 6.5.2),
+        // read out of the file rather than assumed:
+        //   value_inc   0x05  EDIT+RIGHT  (+1)
+        //   value_dec   0x81  EDIT+LEFT   (-1)
+        //   value_inc16 0x41  EDIT+UP     (+16)
+        //   value_dec16 0x21  EDIT+DOWN   (-16)
+        // This fixture had the fine and coarse pairs SWAPPED until 2026-08-19.
+        // Nothing went red, because the fake and the fixture agreed with each
+        // other -- they were just both wrong about the device, so the
+        // coarse-step test was not exercising the gesture the M8 uses as coarse.
+        // A fake is only worth what its constants are worth.
+        g.valueInc   = Key::EDIT | Key::RIGHT;
+        g.valueDec   = Key::EDIT | Key::LEFT;
+        g.valueInc16 = Key::EDIT | Key::UP;
+        g.valueDec16 = Key::EDIT | Key::DOWN;
         g.enumNext   = g.valueInc;
         g.enumPrev   = g.valueDec;
     }

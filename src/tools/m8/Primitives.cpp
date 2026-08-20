@@ -1133,6 +1133,11 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
     dev.readSettled(120, 200, 1200);
     std::string currentRaw = readCursorValue(dev, fieldLabel);
 
+    // Remember which field the cursor actually reports sitting on, so the walk
+    // below can notice if it stops being that field. See the check inside the
+    // stepping loop for why (M8_DRIVER_BUGS.md #34).
+    const std::optional<std::string> startField = identifyCursorField(dev, targetScreen);
+
     // If target matches current, nothing to do.
     if (currentRaw.find(targetValue) != std::string::npos) {
         return JsonResult::success();
@@ -1179,6 +1184,37 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
                 auto mr = dismissModal(dev, true, holdMs);
                 if (!mr.ok) return mr;
                 dev.readSettled(120, 200, 1200);
+            }
+
+            // The cursor must still be on the field we aimed at.
+            //
+            // editValue verified the VALUE it was writing and nothing verified
+            // the TARGET, so a stray press that moves the cursor mid-walk
+            // silently redirects every remaining step onto a neighbouring field.
+            // Observed 2026-08-19 (M8_DRIVER_BUGS.md #34): `set AMP FF` left AMP
+            // at FD and moved LIM from 04 to 08, with no LIM command issued and
+            // nothing in the result saying so. That is the same shape as #32,
+            // which corrupted a project and cost two sessions to diagnose.
+            //
+            // This does not prevent the drift -- it makes it loud. A caller can
+            // retry; what it must never do is believe a success that edited
+            // something else.
+            //
+            // Only a POSITIVE mismatch aborts. identifyCursorField deliberately
+            // returns no name for an unmapped cursor stop (bug #31), and
+            // treating "cannot tell" as "drifted" would cry wolf on exactly the
+            // screens whose maps have gaps -- the failure mode this bug list is
+            // otherwise full of.
+            if (startField) {
+                auto nowField = identifyCursorField(dev, targetScreen);
+                if (nowField && *nowField != *startField) {
+                    return JsonResult::fail(
+                        "editValue: cursor drifted off '" + *startField + "' onto '"
+                        + *nowField + "' during the edit -- aborting rather than writing to "
+                        "the wrong field (M8_DRIVER_BUGS.md #34). '" + *startField
+                        + "' may be partially written; re-read it before trusting it.",
+                        dev.grid());
+                }
             }
 
             std::string val = readCursorValue(dev, fieldLabel);

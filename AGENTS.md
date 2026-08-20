@@ -241,7 +241,11 @@ red, the fix is one line in `SamplerEngine::computeRegion()` — do not redesign
   implemented. `shape`, `timbre`, `color`, `redux` are stored and ignored.
 - **`PLAY` modes 09-0E** (REPITCH, BPM families) fall back to their non-repitched
   equivalents. They need SLICE first.
-- **`LIM` 05-08** (`POST:AD`, `POST:W1..W3`) alias to plain `POST`. Curves unknown.
+- **`LIM` 06-08** (`POST:W1..W3`) alias to plain `POST` — `applyLimiter`'s `default:` branch
+  is a hard clamp, identical to `CLIP`. Folding curves unknown and not hardware-verified.
+  *(Corrected 2026-08-19: this entry said 05-08. `LIM 05` POST:AD has been implemented as
+  `std::tanh(x)` for some time — genuinely distinct from `04`'s hard clamp — and `status.md`
+  line 680 already said so. Verified against `SynthVoice::applyLimiter` before editing.)*
 - **`FILTER` 06/07** (ZDF) alias to LP/HP. DaisySP has no ZDF SVF.
 - **LFO shapes 0x0D-0x16** (Drunk family, `*Env` one-shots) alias to TRI.
 - **`MOD BINV`** is a guess.
