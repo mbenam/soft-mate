@@ -111,7 +111,16 @@ static m8::Song buildProbeSong(
     int wavSize = 0x80,
     int wavMult = 0x80,
     int wavWarp = 0x00,
-    int wavScan = 0x00)
+    int wavScan = 0x00,
+    // The instrument AMP byte. This is `SynthParams::amp_type` -- MEASURED
+    // 2026-08-19 on fw 6.5.2 (AGENTS.md 7): the device's AMP field reads that
+    // byte, and `amp_limit` is LIM. The vendored library's names are right; it
+    // was SongIO that had them one field across.
+    //
+    // Without this there was NO way to set AMP from a probe: this generator
+    // hardcoded amp_type = 0, so every probe ever made had AMP 00 on the
+    // device, which is exactly what made an AMP sweep look like it did nothing.
+    int probeAmp = 0x00)
 {
     m8::Song song;
 
@@ -200,7 +209,7 @@ static m8::Song buildProbeSong(
         sp.filter_type = static_cast<uint8_t>(filterType);
         sp.filter_cutoff = static_cast<uint8_t>(filterCutoff);
         sp.filter_res = static_cast<uint8_t>(filterRes);
-        sp.amp_type = 0;
+        sp.amp_type = static_cast<uint8_t>(probeAmp);   // the device's AMP field
         sp.amp_limit = 0;
         sp.env_amp_amt = 0;
         sp.env_flt_amt = 0;
@@ -419,7 +428,8 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                             int expectedVolume = -1,
                             int expectedPan = 0x80,
                             int wavSize = -1, int wavMult = -1,
-                            int wavWarp = -1, int wavScan = -1) {
+                            int wavWarp = -1, int wavScan = -1,
+                            int expectedAmp = -1) {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -545,6 +555,13 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                          sp->mixer_pan, expectedPan);
             return false;
         }
+        // Same reasoning as the WavSynth shaping bytes: a probe whose parameter
+        // never reached the file reads on hardware as "the device ignores it".
+        if (expectedAmp >= 0 && sp->amp_type != expectedAmp) {
+            std::fprintf(stderr, "  FAIL: amp_type %02X != %02X\n",
+                         sp->amp_type, expectedAmp);
+            return false;
+        }
         if (sp->mixer_dry != 0xC0) {
             std::fprintf(stderr, "  FAIL: mixer_dry %02X != 0xC0\n", sp->mixer_dry);
             return false;
@@ -627,6 +644,7 @@ int main(int argc, char** argv) {
     // wavsynth-only; defaults match what buildProbeSong hardcoded before these
     // flags existed, so existing probe recipes are unchanged.
     int wavSize = 0x80, wavMult = 0x80, wavWarp = 0x00, wavScan = 0x00;
+    int probeAmp = 0x00;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -661,6 +679,7 @@ int main(int argc, char** argv) {
         else if (a == "--mult")        wavMult = num();
         else if (a == "--warp")        wavWarp = num();
         else if (a == "--scan")        wavScan = num();
+        else if (a == "--amp")         probeAmp = num();
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
@@ -782,11 +801,11 @@ int main(int argc, char** argv) {
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
                                tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth,
-                               probePan, wavSize, wavMult, wavWarp, wavScan);
+                               probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume,
-                         probePan, wavSize, wavMult, wavWarp, wavScan)) {
+                         probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }

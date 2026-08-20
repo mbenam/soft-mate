@@ -50,6 +50,7 @@ capture it with [`m8_capture`](m8_capture.md), then compare the two with
 | `--mult <n>` | `0x80` | **WavSynth-only.** Sets `MULT`. |
 | `--warp <n>` | `0x00` | **WavSynth-only.** Sets `WARP`. |
 | `--scan <n>` | `0x00` | **WavSynth-only.** Sets `SCAN`. |
+| `--amp <n>` | `0x00` | The instrument **AMP** byte (`SynthParams::amp_type`), any type. Until 2026-08-19 this generator hardcoded `amp_type = 0`, so **every probe ever made had `AMP 00` on the device** — which is what made an AMP sweep look like the parameter did nothing. AMP is `amp_type` and LIM is `amp_limit`, measured on fw 6.5.2 (AGENTS.md §7); the vendored library's names were right and it was `SongIO` that had them one field across. Note the engine does **not** apply AMP — on hardware it is a drive into the LIM stage, not a gain (−0.02 dB at `LIM 00`, −23 dB at `LIM 08`), and its curve is unmeasured. `verifyRoundTrip` asserts the byte reached the file. |
 | `--volume <n>` | `0xE0` | `synth_params.volume` (the mixer/channel-strip level, distinct from the on-screen "AMP" instrument-type field — see Gotchas). |
 | `--mod-amt <n>` | `0xFF` | Volume modulation envelope amount (`0x00`..`0xFF`, `0x80` = neutral/half for headroom captures). |
 | `--mod-hold <n>` | `0xFF` | Volume modulation envelope hold duration (`0x00`..`0xFF`). |
