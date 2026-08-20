@@ -91,7 +91,7 @@ private:
     // Shared by the sampler, hyper, FM and wav paths, which carried four
     // identical copies (ARCHITECTURE.md §5.2 #8). The macrosyn path
     // deliberately does NOT use this -- see the comment at its call site.
-    float applyAmpLimFilter(float in, int ampByte, int limMode, int filterType,
+    float applyAmpLimFilter(float in, int volumeByte, int limMode, int filterType,
                             int cutoffByte, int resByte, const ModTargets& mt);
 
     // Stereo forms of the two stateful stages, for the sampler path.
@@ -107,7 +107,7 @@ private:
     // Two independent phases would decimate L and R at different instants and
     // manufacture stereo out of a mono source.
     void applyDegradeStereo(float& l, float& r, int degradeByte, float degradeMod);
-    void applyAmpLimFilterStereo(float& l, float& r, int ampByte, int limMode,
+    void applyAmpLimFilterStereo(float& l, float& r, int volumeByte, int limMode,
                                  int filterType, int cutoffByte, int resByte,
                                  const ModTargets& mt);
     float applyFilterR(float in, int type, float cutoffHz, float res);

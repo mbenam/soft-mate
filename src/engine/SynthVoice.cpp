@@ -521,7 +521,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             // so summing here threw away information the hardware keeps.
             float l = sampOut[0], r = sampOut[1];
             applyDegradeStereo(l, r, s.degrade, mt.degrade);
-            applyAmpLimFilterStereo(l, r, s.amp, s.lim, s.filter_type,
+            applyAmpLimFilterStereo(l, r, s.volume, s.lim, s.filter_type,
                                     s.cutoff, s.res, mt);
             const float g = effVol * volMod * m_tableVolume;
             m_frameOut[0] = l * g;
@@ -533,7 +533,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         }
 
         sample = applyDegrade(sample, s.degrade, mt.degrade);
-        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type,
+        sample = applyAmpLimFilter(sample, s.volume, s.lim, s.filter_type,
                                    s.cutoff, s.res, mt);
         return sample * effVol * volMod * m_tableVolume;
     }
@@ -765,18 +765,18 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             sample = std::round(sample * steps) / steps;
         }
 
-        sample = applyAmpLimFilter(sample, s.amp, s.lim, s.filter_type, s.cutoff, s.res, mt);
+        sample = applyAmpLimFilter(sample, s.volume, s.lim, s.filter_type, s.cutoff, s.res, mt);
     }
 
     if (m_instrument && m_instrument->type == InstType::INST_HYPERSYN) {
         const HyperState& h = m_instrument->hyper;
-        sample = applyAmpLimFilter(sample, h.amp, h.lim, h.filter_type,
+        sample = applyAmpLimFilter(sample, h.volume, h.lim, h.filter_type,
                                    h.cutoff, h.res, mt);
     }
 
     if (isFM) {
         const FMSynthState& fm = m_instrument->fm;
-        sample = applyAmpLimFilter(sample, fm.amp, fm.lim, fm.filter_type,
+        sample = applyAmpLimFilter(sample, fm.volume, fm.lim, fm.filter_type,
                                    fm.cutoff, fm.res, mt);
     }
 
@@ -788,7 +788,7 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         // state), which is exactly what the previous `if (stdFilter > 0)`
         // guard did.
         int stdFilter = (ws.filter_type >= 8) ? 0 : ws.filter_type;
-        sample = applyAmpLimFilter(sample, ws.amp, ws.lim, stdFilter,
+        sample = applyAmpLimFilter(sample, ws.volume, ws.lim, stdFilter,
                                    ws.cutoff, ws.res, mt);
     }
 
@@ -857,12 +857,12 @@ float SynthVoice::applyFilterR(float in, int type, float cutoffHz, float res) {
     }
 }
 
-void SynthVoice::applyAmpLimFilterStereo(float& l, float& r, int ampByte, int limMode,
+void SynthVoice::applyAmpLimFilterStereo(float& l, float& r, int volumeByte, int limMode,
                                          int filterType, int cutoffByte, int resByte,
                                          const ModTargets& mt) {
     // Same maths as applyAmpLimFilter, including the LIM 04-08 ordering flip,
     // applied to each channel with its own filter state.
-    float ampVal = std::clamp(1.0f + (ampByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
+    float ampVal = std::clamp(1.0f + (volumeByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
     float baseCutoff = 20.0f * std::pow(2.0f, (cutoffByte / 255.0f) * 10.0f);
     float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
     float finalRes = std::clamp(resByte / 255.0f + mt.res, 0.0f, 1.0f);
@@ -895,16 +895,34 @@ float SynthVoice::applyDegrade(float in, int degradeByte, float degradeMod) {
     return in;
 }
 
-// AMP -> LIM -> FILTER output stage, shared by the sampler, hyper, FM and wav
-// paths (ARCHITECTURE.md §5.2 #8; the macrosyn path is deliberately excluded,
-// see the comment at its call site).
+// VOLUME -> LIM -> FILTER output stage, used by the sampler, MACROSYN, hyper,
+// FM and wav paths -- all five (ARCHITECTURE.md 5.2 #8).
+//
+// The gain here is driven by the instrument's VOLUME byte, not by AMP.
+// Until 2026-08-19 it was passed `amp`, but SongIO was loading `amp` FROM the
+// volume byte -- so this curve has always been fed volume, and the parameter was
+// merely misnamed all the way down. With the byte map corrected (AGENTS.md 7,
+// AMP is `amp_type` and LIM is `amp_limit`), passing `amp` here would have
+// silently dropped the volume control and made every loaded song far quieter.
+// So the pairing is kept and the name fixed: same audible behaviour as before,
+// with the limiter mode now coming from the right byte.
+//
+// AMP itself is therefore NOT applied. That is closer to the device than what
+// this did before: sweeping AMP on hardware moved the output -0.02 dB at
+// LIM 00 CLIP (i.e. nothing) and -23 dB at LIM 08 POST:W3, which is a drive
+// into the saturator, not an output gain. Modelling it as up to +18 dB of gain
+// was the wrong shape in every mode. Its real curve is unmeasured -- status.md.
+//
+// This block used to end by saying the macrosyn path was deliberately excluded.
+// It is NOT: the INST_MACROSYN branch calls this helper like every other type.
+// Verified against the call site before deleting the claim, 2026-08-19.
 //
 // LIM 04-08 (POST modes) apply the AMP gain and its clipping AFTER the filter
 // stage (manual p.55: "amplification applied ... after the filter stage");
 // LIM 00-03 amplify+shape first, then filter.
-float SynthVoice::applyAmpLimFilter(float in, int ampByte, int limMode, int filterType,
+float SynthVoice::applyAmpLimFilter(float in, int volumeByte, int limMode, int filterType,
                                     int cutoffByte, int resByte, const ModTargets& mt) {
-    float ampVal = std::clamp(1.0f + (ampByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
+    float ampVal = std::clamp(1.0f + (volumeByte / 255.0f) * 7.0f + mt.amp * 7.0f, 0.0f, 8.0f);
     float baseCutoff = 20.0f * std::pow(2.0f, (cutoffByte / 255.0f) * 10.0f);
     float finalCutoff = std::clamp(baseCutoff * std::pow(2.0f, mt.cutoff * 5.0f), 20.0f, 20000.0f);
     float finalRes = std::clamp(resByte / 255.0f + mt.res, 0.0f, 1.0f);

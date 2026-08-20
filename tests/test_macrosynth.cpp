@@ -96,7 +96,13 @@ TEST_CASE("Macrosynth degrade and redux modify audio signal", "[macrosynth]") {
         m.color = 0x80;
         m.degrade = degrade;
         m.redux = redux;
-        m.amp = 0x40;
+        // VOLUME, not AMP: redux quantises BEFORE the output-stage gain, so the
+        // difference this test looks for is scaled by that gain. Driving `amp`
+        // stopped working when the byte map was corrected (AGENTS.md 7) -- the
+        // gain reads `volume` now, and at unity the redux delta falls under the
+        // 0.01 threshold. The two other m.amp assignments in this file are left
+        // alone: their tests assert on presence, not level. Assertions unchanged.
+        m.volume = 0x40;
         m.pan = 0x80;
         m.dry = 0xC0;
 

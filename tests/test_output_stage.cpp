@@ -36,6 +36,17 @@ float renderSum(const std::vector<float>& audio) {
     return sum;
 }
 
+// NOTE 2026-08-19: the `amp` parameter below sets each instrument's VOLUME
+// byte, not its AMP byte. The output-stage gain has always been driven by
+// volume -- SongIO was loading `amp` FROM `volume`, so the whole chain was
+// merely misnamed (AGENTS.md 7). With the byte map corrected, AMP is a separate
+// control that this engine does not apply, so these tests must drive `volume`
+// or they measure nothing. The assertions below are unchanged.
+//
+// Other suites still set `.amp` as a rough 'make it audible' knob. They pass
+// because they assert on presence, not level; only the tests here and in
+// test_macrosynth.cpp depend on the gain's magnitude.
+
 // A 4-operator patch loud enough that the limiter genuinely engages, which is
 // what makes the AMP/LIM/FILTER ordering observable at all.
 void setupFM(EngineState& state, int amp, int lim, int filterType) {
@@ -47,7 +58,7 @@ void setupFM(EngineState& state, int amp, int lim, int filterType) {
         fm.ops[i].level = 0x80;
         fm.ops[i].ratio = i + 1;
     }
-    fm.amp = amp;
+    fm.volume = amp;   // the output-stage gain knob -- see note above
     fm.lim = lim;
     fm.filter_type = filterType;
     fm.cutoff = 0x60;
@@ -68,7 +79,7 @@ void setupWav(EngineState& state, int amp, int lim, int filterType) {
     ws.mult = 0x00;
     ws.warp = 0x80;
     ws.scan = 0x00;
-    ws.amp = amp;
+    ws.volume = amp;   // the output-stage gain knob -- see note above
     ws.lim = lim;
     ws.filter_type = filterType;
     ws.cutoff = 0x60;
@@ -83,7 +94,7 @@ void setupHyper(EngineState& state, int amp, int lim, int filterType) {
     h.swarm = 0x80;
     h.width = 0x80;
     h.subosc = 0x40;
-    h.amp = amp;
+    h.volume = amp;   // the output-stage gain knob -- see note above
     h.lim = lim;
     h.filter_type = filterType;
     h.cutoff = 0x60;

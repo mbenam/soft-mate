@@ -716,9 +716,23 @@ is implemented and verified.
   whose expectations are what the M8's screen showed — hardware-verified, not derived from the
   code they check.
 
-  **Still open:** `volume` is carried but the voice does **not** apply it. It is a real level
-  control (varying it measured +4.83 dB from `0x00` to `0x40` on two instrument types), but its
-  curve has not been measured and guessing one is how the AMP model got into this state.
+  **`volume` is applied as of 2026-08-19, with no new constant invented.** The output-stage gain
+  `1 + (byte/255)*7` had *always* been fed the volume byte — `SongIO` was loading `amp` **from**
+  `volume`, so the parameter was misnamed the whole way down. The pairing was kept and the name
+  fixed (`applyAmpLimFilter`'s `volumeByte`), so playback loudness is exactly what it was before
+  the mapping fix while the limiter mode now comes from the right byte. Had `amp` been passed
+  instead, every loaded song would have gone near-silent.
+
+  **AMP is consequently not applied at all**, which is closer to the device than what we did
+  before: on hardware AMP moved the output −0.02 dB at `LIM 00 CLIP` and −23 dB at `LIM 08
+  POST:W3` — a drive into the saturator, not an output gain. Up to +18 dB of gain was the wrong
+  *shape* in every mode, so applying nothing is strictly less wrong. Its real curve is still
+  unmeasured; see the AMP entry below.
+
+  **Trap left deliberately, not fixed:** ~17 tests across `test_audio`, `test_eq`,
+  `test_fmsynth` and `test_hypersynth` still set `.amp = 0x40` as a rough "make it audible" knob.
+  They pass because they assert presence, not level — but that field is inert now, so they will
+  shift if AMP is ever modelled as a drive. Noted in `test_output_stage.cpp`.
 - **`AMP` is modelled wrong in KIND, not just in curve — MEASURED 2026-08-19 (fw 6.5.2, COM3).**
   `SynthVoice::applyAmpLimFilter` treats AMP as an output gain, `1 + (byte/255)*7`, i.e. up to
   **+18 dB**. Hardware, WavSynth at instrument volume `0x7F` (peak 0.36, so ~30 dB of signal —

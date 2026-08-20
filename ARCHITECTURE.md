@@ -558,7 +558,15 @@ specifically built to catch.
       ordering flip, now used by the sampler, hyper, FM and wav paths — four
       identical copies, not two: the critique undercounted). Behaviour-
       preserving by construction; see the caveat below.
-      **The macrosyn path is deliberately excluded** and keeps its inline
+      **~~The macrosyn path is deliberately excluded~~ — STALE, corrected
+      2026-08-19.** It is not excluded: `SynthVoice.cpp`'s `INST_MACROSYN`
+      branch calls `applyAmpLimFilter` like every other type, so it is five
+      paths, not four. Verified against the call site. The reasoning kept
+      below is why it was *originally* left out and reads as a to-do that has
+      since been done; whether the consequences it lists were checked when
+      macrosyn was folded in is not recorded anywhere. Left visible rather
+      than deleted, because those consequences are worth re-testing.
+      ~~and keeps its inline
       chain. It predates the Phase 4 DSP work and never got it, so folding it in
       would change macrosyn audio, not just deduplicate: LIM 04-08 would gain
       the POST ordering (and 05 a `tanh` instead of a clamp), FILTER 05 would
