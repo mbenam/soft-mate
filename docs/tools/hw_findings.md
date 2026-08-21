@@ -1409,3 +1409,95 @@ Fix with: m8_nav --port <PORT> --pin-theme
 That warning is the actual deliverable. The wrong colour was always going to be
 findable in an afternoon; what cost a session was that the driver had no way to say
 "I cannot see a cursor" and so said "the device is not responding" instead.
+
+## UI-15 — The device palette is RGB565, and the clone's boot theme now matches it
+
+**Environment:** M8 headless on `COM3`, firmware 6.5.2, `font_mode=0`.
+**Command:** `python tools/m8drv/m8drv.py batch` — `GOTO`/`CAPTURE` pairs for SONG,
+PHRASE, MIXER and INSTRUMENT over one connection, then the same three grid screens
+again with playback running.
+**Artifacts:** scratch captures (regenerate with the command above).
+
+### The palette, by observed role
+
+Roles are assigned from which cells carry each index, not from assumption:
+
+| RGB | role (by usage) | evidence |
+|---|---|---|
+| `[0, 0, 0]` | background | every screen's `bg` |
+| `[32, 40, 48]` | empty | the `---` empty-step dashes (275 cells on PHRASE) |
+| `[72, 80, 96]` | info | column headers, `T>120`, the nav map |
+| `[144, 176, 184]` | default text | field labels |
+| `[248, 252, 248]` | values | field values (`00`, `E0`, `FF`) |
+| `[248, 32, 64]` | titles | `SONG`, `PHRASE 00`, `MIXER`, `INST.00` |
+| `[0, 252, 248]` | cursor / accent | the cursor's field |
+| `[0, 252, 96]` | play markers | the `<` and `>` playhead glyphs |
+| `[144, 184, 184]` | slider | INSTRUMENT scope only |
+
+The play-marker colour only appears with the sequencer running, which is why it is
+absent from a resting capture. It shows up as both `fg` and `bg` on the same cells.
+
+### Every channel is RGB565
+
+Red and blue are always multiples of 8, green always a multiple of 4 — a 5/6/5
+split expanded by shifting, not by bit-replication (`31 << 3 == 248`, never 255).
+
+This is the useful part. Four of the clone's boot-theme slots were written as
+`0xFF` in a channel, which the panel cannot produce. Quantizing each of those to
+RGB565 lands **exactly** on the measured device colour, four times out of four:
+
+| slot | clone had | quantized | device | |
+|---|---|---|---|---|
+| TEXT_VALUE | `FFFFFF` | `F8FCF8` | `F8FCF8` | match |
+| TEXT_TITLES | `FF2040` | `F82040` | `F82040` | match |
+| PLAY_MARKERS | `00FF60` | `00FC60` | `00FC60` | match |
+| CURSOR | `00FFFF` | `00FCF8` | `00FCF8` | match |
+
+So the clone's defaults were the device's theme all along, recorded with rounding
+errors. `src/ui/Theme.h` now carries the measured values.
+
+Three slots were never observed — SELECTION, METER_LOW/MID/PEAK need a selection or
+live meters on screen. They keep their original hue with the same quantization
+applied and are marked `INFERRED` in `Theme.h`. That is a guess about *value*, but
+not about *representability*: an unquantized colour is one the device could not
+display at all.
+
+### This supersedes §UI-14's palette table, without contradicting its fix
+
+§UI-14 (2026-08-18) read the same device and recorded different numbers — cursor
+`[0,240,248]`, titles `[248,32,48]`, empty `[32,36,48]`. The differences are real
+stored values, not a decode difference: both readings expand green as `g6 << 2`, and
+`240` is `g6=60` against today's `g6=63`.
+
+The device's theme changed between the two sessions. `theme_id` does not detect
+that — it is a pinned constant in `hw_theme.json`, not a value read from hardware,
+so both captures stamp `m8-default-6.5.2` regardless. The corroborating evidence is
+`hw_theme.json` itself, whose pinned accent is `[0,252,248]`: it was re-pinned after
+§UI-14 and agrees with today's reading.
+
+§UI-14's conclusion is untouched, and its fix is what absorbed the change: it
+replaced an exact-equality cursor test with a per-channel tolerance of 16, and
+`|252 - 240| = 12` falls inside that. Cursor tracking kept working across a theme
+change that would have broken the original exact test all over again. **Do not
+re-pin a colour from §UI-14's table; take it from a fresh capture or
+`m8_nav --pin-theme`.**
+
+### Column origin, checked the same session
+
+The device leaves **column 0 as a gutter**: on PHRASE the only cell inked there is
+the `<` playhead marker. Text starts at column 1. After the clone's content origin
+moved to (1,1), a fresh device-vs-clone capture pair agrees on the column for every
+token checked — `PHRASE` at 1, `FX1/FX2/FX3` at 13/19/25, `T>` at 34, `SCPIT` at 34.
+Rows still differ, which remains the pitch arithmetic of §UI-3 (8x10 device against
+8x8 clone) and is not a defect.
+
+### Driver note — `PRESS key=PLAY` is rejected by the daemon
+
+`parseKeyMask` ([Daemon.cpp:41](../../src/tools/m8/Daemon.cpp:41)) folds SHIFT, EDIT,
+OPT and the four arrows, but not PLAY — so `m8drv batch` cannot start the sequencer
+by name and returns `invalid key parameter: PLAY`. `Key::PLAY` exists, and the
+one-shot path in [main_nav.cpp:558](../../src/tools/main_nav.cpp:558) maps the name
+fine; only the daemon's parser is missing it. Work around it with the raw mask,
+`PRESS key=0x08`, which is how the playback captures above were taken.
+
+- **Date:** 2026-08-21

@@ -9,10 +9,12 @@ wait 1
 # 1. assert_no_overlap: normal rendering should have no cell written more than once
 assert_no_overlap
 
-# 2. assert_cell_color: "S" of "SONG" title at row 0, col 0
-#    SongScreen draws "SONG" at (0,0) with TEXT_TITLES color {0xFF, 0x20, 0x40, 255} = FF2040FF
-#    Confirmed from dump_json: colors[0][0] = "FF2040FF"
-assert_cell_color row 1 col 1 is FF2040FF
+# 2. assert_cell_color: "S" of "SONG" title, now at row 1 col 1 (the content
+#    origin is (1,1) -- Renderer::setOrigin).
+#    SongScreen draws the title in TEXT_TITLES. That slot is F82040, read off
+#    a real M8 (hw_findings.md UI-15); it used to be written FF2040, which is
+#    a colour the device cannot display -- its palette is RGB565.
+assert_cell_color row 1 col 1 is F82040FF
 
 # 3. assert_row_matches: row 3 (raw vram index, i.e. SONG row "00"'s chain-ref
 #    line) should start with hex chain refs.

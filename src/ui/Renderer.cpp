@@ -577,9 +577,18 @@ void Renderer::writeUiCapture(const std::string& path, const std::string& screen
     out << "  \"cells\": [\n";
     for (size_t i = 0; i < cells.size(); ++i) {
         const auto& cl = cells[i];
+        // Escape exactly as the device side does (m8/UiCapture.cpp): the meter
+        // fills at 0x01..0x07 and the EQ curve glyphs at 0x08..0x0E are real
+        // cell contents, and writing them raw yields a file no strict JSON
+        // parser will read -- side_by_side.py and `m8drv inspect` both die on
+        // the control character while the hand-rolled readers do not, so the
+        // breakage only shows on the screens that have meters.
         char escaped[8];
+        const unsigned char uch = static_cast<unsigned char>(cl.ch);
         if      (cl.ch == '"')  std::snprintf(escaped, sizeof(escaped), "\\\"");
         else if (cl.ch == '\\') std::snprintf(escaped, sizeof(escaped), "\\\\");
+        else if (uch < 0x20 || uch >= 0x7F)
+            std::snprintf(escaped, sizeof(escaped), "\\u%04X", uch);
         else                     std::snprintf(escaped, sizeof(escaped), "%c", cl.ch);
         out << "    {\"col\":" << cl.col << ",\"row\":" << cl.row
             << ",\"ch\":\"" << escaped << "\",\"fg\":" << remapStyle(cl.fg)

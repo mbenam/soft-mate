@@ -35,40 +35,49 @@ enum class ThemeSlot : uint8_t {
     COUNT
 };
 
+// The boot theme, read off a real M8 (firmware 6.5.2, theme m8-default-6.5.2)
+// on 2026-08-21 rather than eyeballed. Every entry marked "observed" is a
+// colour the device was seen rendering; docs/tools/hw_findings.md UI-15 records
+// the captures and which cells justify each role.
+//
+// The device palette is RGB565: red and blue are multiples of 8, green of 4.
+// That is exactly what the old defaults got wrong -- four slots were written as
+// 0xFF, which the panel cannot produce, and quantizing each of those to RGB565
+// lands on the measured device value, four times out of four. The three slots
+// marked INFERRED were never observed (they need a selection or live meters on
+// screen), so they keep their original hue with the same quantization applied,
+// which at least makes them colours the hardware could actually display.
+//
+// One array, shared by the member initializer and resetDefault(), because two
+// hand-maintained copies of the same thirteen colours will drift.
+inline constexpr ThemeColor kDefaultThemeColors[static_cast<size_t>(ThemeSlot::COUNT)] = {
+    {0x00, 0x00, 0x00}, // BACKGROUND    observed: every screen's background
+    {0x20, 0x28, 0x30}, // TEXT_EMPTY    observed: the "---" empty-step dashes
+    {0x48, 0x50, 0x60}, // TEXT_INFO     observed: column headers, T>120, nav map
+    {0x90, 0xB0, 0xB8}, // TEXT_DEFAULT  observed: field labels
+    {0xF8, 0xFC, 0xF8}, // TEXT_VALUE    observed: field values     (was FFFFFF)
+    {0xF8, 0x20, 0x40}, // TEXT_TITLES   observed: SONG/PHRASE/MIXER (was FF2040)
+    {0x00, 0xFC, 0x60}, // PLAY_MARKERS  observed: the < > playhead  (was 00FF60)
+    {0x00, 0xFC, 0xF8}, // CURSOR        observed: the cursor cell   (was 00FFFF)
+    {0x00, 0xFC, 0x80}, // SELECTION     INFERRED                    (was 00FF80)
+    {0x90, 0xB8, 0xB8}, // SCOPE_SLIDER  observed: INSTRUMENT scope
+    {0x00, 0xFC, 0xE0}, // METER_LOW     INFERRED                    (was 00FFE0)
+    {0xF8, 0xFC, 0x50}, // METER_MID     INFERRED                    (was FFFF50)
+    {0xF8, 0x00, 0x80}  // METER_PEAK    INFERRED                    (was FF0080)
+};
+
 struct Theme {
     char name[13] = "DEFAULT-----";
-    std::array<ThemeColor, static_cast<size_t>(ThemeSlot::COUNT)> colors = {{
-        {0x00, 0x00, 0x00}, // BACKGROUND
-        {0x20, 0x28, 0x30}, // TEXT_EMPTY (LABEL_DIM)
-        {0x48, 0x50, 0x60}, // TEXT_INFO
-        {0x90, 0xB0, 0xB8}, // TEXT_DEFAULT (LABEL_LITE)
-        {0xFF, 0xFF, 0xFF}, // TEXT_VALUE (VALUE)
-        {0xFF, 0x20, 0x40}, // TEXT_TITLES (TITLE)
-        {0x00, 0xFF, 0x60}, // PLAY_MARKERS
-        {0x00, 0xFF, 0xFF}, // CURSOR
-        {0x00, 0xFF, 0x80}, // SELECTION
-        {0x90, 0xB8, 0xB8}, // SCOPE_SLIDER
-        {0x00, 0xFF, 0xE0}, // METER_LOW
-        {0xFF, 0xFF, 0x50}, // METER_MID
-        {0xFF, 0x00, 0x80}  // METER_PEAK
-    }};
+    std::array<ThemeColor, static_cast<size_t>(ThemeSlot::COUNT)> colors = [] {
+        std::array<ThemeColor, static_cast<size_t>(ThemeSlot::COUNT)> a{};
+        for (size_t i = 0; i < a.size(); ++i) a[i] = kDefaultThemeColors[i];
+        return a;
+    }();
 
     void resetDefault() {
         std::strncpy(name, "DEFAULT-----", 12);
         name[12] = '\0';
-        colors[0]  = {0x00, 0x00, 0x00};
-        colors[1]  = {0x20, 0x28, 0x30};
-        colors[2]  = {0x48, 0x50, 0x60};
-        colors[3]  = {0x90, 0xB0, 0xB8};
-        colors[4]  = {0xFF, 0xFF, 0xFF};
-        colors[5]  = {0xFF, 0x20, 0x40};
-        colors[6]  = {0x00, 0xFF, 0x60};
-        colors[7]  = {0x00, 0xFF, 0xFF};
-        colors[8]  = {0x00, 0xFF, 0x80};
-        colors[9]  = {0x90, 0xB8, 0xB8};
-        colors[10] = {0x00, 0xFF, 0xE0};
-        colors[11] = {0xFF, 0xFF, 0x50};
-        colors[12] = {0xFF, 0x00, 0x80};
+        for (size_t i = 0; i < colors.size(); ++i) colors[i] = kDefaultThemeColors[i];
     }
 };
 
