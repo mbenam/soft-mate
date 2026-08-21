@@ -118,11 +118,16 @@ void RenderMixerScreen(Renderer& renderer,
                      lv.peakR, mx.track_vol[i], lv.clipped);
     }
 
-    // Send returns. No per-send metering yet, so these show their setting only.
+    // Send returns, metered like the tracks: the live level over the dim
+    // setting bar. These used to pass a hardcoded 0 peak, so the bars showed
+    // the MX/DE/RE setting and never moved no matter what was playing.
     const int sendVals[3] = { mx.cho_vol, mx.del_vol, mx.rev_vol };
     for (int i = 0; i < 3; ++i) {
-        DrawGlyphBar(renderer, kSendCol(i),     kSendMeterTop, kSendMeterBottom, 0, sendVals[i], false);
-        DrawGlyphBar(renderer, kSendCol(i) + 1, kSendMeterTop, kSendMeterBottom, 0, sendVals[i], false);
+        const auto& sv = levels.send[i];
+        DrawGlyphBar(renderer, kSendCol(i),     kSendMeterTop, kSendMeterBottom,
+                     sv.peakL, sendVals[i], sv.clipped);
+        DrawGlyphBar(renderer, kSendCol(i) + 1, kSendMeterTop, kSendMeterBottom,
+                     sv.peakR, sendVals[i], sv.clipped);
     }
 
     // Master meter: the actual bus output, after every stage.

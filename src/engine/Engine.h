@@ -604,6 +604,13 @@ public:
     MeterLevel getMasterLevel() const {
         return unpackLevel(m_masterLevel.load(std::memory_order_acquire));
     }
+    // send 0 = CHO (MX), 1 = DEL, 2 = REV -- the return's contribution to the
+    // mix, i.e. after the master send volume, so the bar answers "how much is
+    // this send putting into the output" rather than "how loud is the tail".
+    MeterLevel getSendLevel(int send) const {
+        if (send < 0 || send >= 3) return MeterLevel{0, 0, false};
+        return unpackLevel(m_sendLevel[send].load(std::memory_order_acquire));
+    }
 
     Playhead getPlayhead(int track) const {
         const uint32_t s = getPlayheadState(track);
@@ -986,12 +993,15 @@ private:
     // ---- Meters -------------------------------------------------------------
     std::atomic<uint32_t> m_trackLevel[8]{};
     std::atomic<uint32_t> m_masterLevel{0};
+    std::atomic<uint32_t> m_sendLevel[3]{};   // 0 = CHO, 1 = DEL, 2 = REV
     // Block maxima, reset every publish; and the decaying held peak the UI sees.
-    float m_meterBlockL[9] = {};      // 0..7 tracks, 8 = master
-    float m_meterBlockR[9] = {};
-    float m_meterHeldL[9]  = {};
-    float m_meterHeldR[9]  = {};
-    bool  m_meterClip[9]   = {};
+    // 0..7 tracks, 8 = master, 9..11 = the CHO/DEL/REV send returns.
+    static constexpr int kMeterSlots = 12;
+    float m_meterBlockL[kMeterSlots] = {};
+    float m_meterBlockR[kMeterSlots] = {};
+    float m_meterHeldL[kMeterSlots]  = {};
+    float m_meterHeldR[kMeterSlots]  = {};
+    bool  m_meterClip[kMeterSlots]   = {};
     // Per-publish decay. ~0.75 per block gives a visible fall-off at any
     // sensible block size without the meter looking frozen.
     static constexpr float kMeterDecay = 0.75f;

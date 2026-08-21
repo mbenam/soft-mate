@@ -201,6 +201,86 @@ TEST_CASE("MB4 meters report level and decay back to silence", "[mixer]") {
     REQUIRE(after.peakL <= 2);
 }
 
+TEST_CASE("MB6 send return meters follow the returns, not the setting", "[mixer]") {
+    // The MX/DE/RE bars used to be drawn with a hardcoded 0 peak, so they
+    // showed the send *setting* and never moved however loud the returns got.
+    // Nothing caught it because nothing metered the returns at all.
+    OfflineHost host;
+    auto& state = host.engine().getStateForInit();
+    state.instruments[0].type = InstType::INST_MACROSYN;
+    state.instruments[0].macrosyn.volume = 0x40;
+    state.instruments[0].macrosyn.pan = 0x80;
+    // All dry, no sends: the returns must read silent even though the master
+    // send volumes are wide open. This is the half that a setting-driven bar
+    // gets wrong -- it would show a full bar here.
+    state.instruments[0].macrosyn.dry = 0xFF;
+    state.instruments[0].macrosyn.cho = 0x00;
+    state.instruments[0].macrosyn.del = 0x00;
+    state.instruments[0].macrosyn.rev = 0x00;
+    state.mixer.cho_vol = 0xFF;
+    state.mixer.del_vol = 0xFF;
+    state.mixer.rev_vol = 0xFF;
+    state.mixer.mix_vol = 0xFF;
+    state.mixer.out_vol = 0xFF;
+
+    setStep(host.sequencer(), 0, 0, 60, 127, 0);
+    host.push(playPhrase(0, 0, 0));
+    host.render(8000);
+
+    REQUIRE(host.engine().getTrackLevel(0).peakL > 0);      // the track is sounding
+    for (int s = 0; s < 3; ++s) {
+        INFO("send " << s << " with no send amount");
+        REQUIRE(host.engine().getSendLevel(s).peakL == 0);
+    }
+
+    // Now feed the sends from the same instrument. Each return has to come up.
+    OfflineHost wet;
+    auto& ws = wet.engine().getStateForInit();
+    ws.instruments[0].type = InstType::INST_MACROSYN;
+    ws.instruments[0].macrosyn.volume = 0x40;
+    ws.instruments[0].macrosyn.pan = 0x80;
+    ws.instruments[0].macrosyn.dry = 0xFF;
+    ws.instruments[0].macrosyn.cho = 0xFF;
+    ws.instruments[0].macrosyn.del = 0xFF;
+    ws.instruments[0].macrosyn.rev = 0xFF;
+    ws.mixer.cho_vol = 0xFF;
+    ws.mixer.del_vol = 0xFF;
+    ws.mixer.rev_vol = 0xFF;
+    ws.mixer.mix_vol = 0xFF;
+    ws.mixer.out_vol = 0xFF;
+
+    setStep(wet.sequencer(), 0, 0, 60, 127, 0);
+    wet.push(playPhrase(0, 0, 0));
+    // Long enough for the delay and reverb to have something to return; the
+    // chorus is immediate but the other two need their lines to fill.
+    wet.render(40000);
+
+    for (int s = 0; s < 3; ++s) {
+        INFO("send " << s << " with the send wide open");
+        REQUIRE(wet.engine().getSendLevel(s).peakL > 0);
+    }
+
+    // The meter tracks the return's contribution to the mix, so turning the
+    // master send volume down has to take the meter down with it -- otherwise
+    // the bar is describing something the listener cannot hear.
+    OfflineHost muted;
+    auto& ms = muted.engine().getStateForInit();
+    ms.instruments[0] = ws.instruments[0];
+    ms.mixer = ws.mixer;
+    ms.mixer.cho_vol = 0x00;
+    ms.mixer.del_vol = 0x00;
+    ms.mixer.rev_vol = 0x00;
+
+    setStep(muted.sequencer(), 0, 0, 60, 127, 0);
+    muted.push(playPhrase(0, 0, 0));
+    muted.render(40000);
+
+    for (int s = 0; s < 3; ++s) {
+        INFO("send " << s << " with the master send volume at zero");
+        REQUIRE(muted.engine().getSendLevel(s).peakL == 0);
+    }
+}
+
 TEST_CASE("MB5 master bus stages allocate nothing", "[mixer]") {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();

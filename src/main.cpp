@@ -1329,6 +1329,7 @@ int main(int argc, char* argv[]) {
             m8::ui::mixer::MixerLevels mixLevels;
             for (int t = 0; t < 8; ++t) mixLevels.track[t] = engine.getTrackLevel(t);
             mixLevels.master = engine.getMasterLevel();
+            for (int s = 0; s < 3; ++s) mixLevels.send[s] = engine.getSendLevel(s);
             m8::ui::mixer::RenderMixerScreen(renderer, uiEngineState, active_cursor_mixer, mixLevels);
         } else if (viewManager.getCurrentView() == m8::ui::ViewType::EFFECTS) {
             m8::ui::effects::RenderEffectsScreen(renderer, uiEngineState, active_cursor_effects);

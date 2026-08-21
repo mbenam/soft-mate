@@ -153,10 +153,16 @@ master bus. Tempo verified on real songs.
 ### Mixer + master bus (`MIXER_SPEC.md`, 2026-08-12)
 Rebuilt screen and the bus behind it. The master chain now follows the manual's order:
 **OTT → [EQ, not built] → LIM → DJF → MIX → SPEAKER VOL**. Meters are live: per-track stereo
-peaks and a master peak travel from the audio thread as packed atomics (same wait-free route as
-the playhead) and are drawn as font glyphs — seven fill levels at `0x01`–`0x07`, stacked, 8
-levels per cell, coloured by level with red at clip. Volume settings show through as a dim bar
-under the live level, so a stopped mixer still shows the mix.
+peaks, a master peak, **and the three MX/DE/RE send returns** travel from the audio thread as
+packed atomics (same wait-free route as the playhead) and are drawn as font glyphs — seven fill
+levels at `0x01`–`0x07`, stacked, 8 levels per cell, coloured by level with red at clip. Volume
+settings show through as a dim bar under the live level, so a stopped mixer still shows the mix.
+The send meters are taken *after* the master send volume, so they show what each return actually
+adds to the mix and turning MX down takes its meter down with it. (Until 2026-08-21 the three
+send bars were drawn with a hardcoded zero peak: they rendered the MX/DE/RE *setting* and never
+moved, however loud the returns got. Pinned now by `MB6` (`[mixer]`), which checks all three
+directions — silent with no send amount, live with the sends open, silent again with the master
+send volume at zero.)
 **Model corrections:** the file's `master_volume` is MIX (was loading into the top-of-screen
 volume, which is why MIX was always a hardcoded default); SPEAKER VOL is app-level and never
 persisted; INPUT/USB are gone from the UI and no longer written on save (which also stops
@@ -511,7 +517,7 @@ If the file is missing, the app falls back to `loadDemoSong()` — the in-code "
 previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
 are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
-### Tests — 321 cases
+### Tests — 412 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -654,12 +660,14 @@ is implemented and verified.
   spectrum," not an A/B against captured hardware. Known approximations carried in the code:
   FM per-op mod routing encoding is community-reverse-engineered (not hw-verified), the two
   mod slots are merged by averaging, the PIT per-op destination is a TODO, and `kFMModIndex`
-  is an untuned constant (`FMSYNTH_IMPLEMENTATION.md` §10). WavSynth wavetable shapes 9+ alias
-  to sine (no dumped wavetable data), and its base-shape edges are un-band-limited
+  is an untuned constant (`FMSYNTH_IMPLEMENTATION.md` §10). WavSynth's base-shape edges are
+  un-band-limited
   (`WAVSYNTH_IMPLEMENTATION.md` §10). MacroSynth shapes **above `0x2B`** still fall back to the
   polyBLEP saw. The parity rig (`m8_makeprobe` + `m8_capture` + `m8_spectrum`) exists to close
   these gaps at the acceptance-gate stage.
-- **`PLAY` 09–0E** (REPITCH/BPM) fall back to the nearest 00–08 mode. **The tempo law is now
+- **`PLAY` 09–0E are implemented** — REPITCH (09–0B) at `SynthVoice.cpp:465` and the BPM family
+  (0C–0E) at `SynthVoice.cpp:476`, both driven by STEPS in `s.detune`. What remains open is the
+  *absolute constant*, below, not the modes. **The tempo law is
   measured** (2026-08-18, `SAMPLER_EDITOR_SPEC.md` §G): REPITCH *repitches* rather than
   time-stretching (2x-stretched 240 BPM capture matches the 120 BPM one at r=0.918), it loops
   while the note is held, and its loop period scales exactly as STEPS/BPM (tempo x2 -> period
@@ -837,18 +845,33 @@ is implemented and verified.
 
 - **MIDIOut, ExternalInst** — preserved on save, silent on play. (WavSynth, FMSynth,
   HyperSynth are now **implemented** — see Synth engines above.)
-- **Scales**, **SLICE** — stored/preserved, not read by the engine. (Tables are now
-  **executed** — see Tables above.)
-- **FX `VOL`/`PIT`/`REV` in phrase steps** — parsed, inert at phrase level. (`VOL`/`PIT`
-  *are* executed inside tables; `REV` is still a stub everywhere. `TBL`/`GRV`/`TIC` are now
-  live — see `FX_COMMANDS_SPEC.md` for the full per-command matrix and the long list of
-  M8 FX commands still absent, e.g. ARP/RET/RND/RETRIG/scale+arp commands.)
-- **Project transpose** — stored, unused. (**EQ is now implemented** — see the EQ entry under
-  Implemented. **Limiter, DJ filter and OTT are now
+- **`SLICE` playback** — the byte is stored and saved, and the engine reads it only to
+  *suppress* loop-point setup when it is non-zero (`SynthVoice.cpp:497`). It never selects a
+  slice region, so playback ignores it. (**Scales are now read** — `Engine.cpp:796` applies
+  `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
+  `Engine.cpp:47`. **Tables are executed** — see Tables above.)
+- **FX `REV` in phrase steps** — parsed, inert everywhere; there is no `FxCmd::REV` handler in
+  `src/engine/`. (**`VOL` and `PIT` are live at phrase level**, not just inside tables:
+  `Engine.cpp:548-552` accumulates them into `pendingVolOffset`/`pendingPitchOffset`,
+  `Engine.cpp:787` applies the pitch and `803`/`820` the volume, and `815`/`816`/`824` clear
+  them. `TBL`/`GRV`/`TIC` are live too — see `FX_COMMANDS_SPEC.md` for the full per-command
+  matrix and the long list of M8 FX commands still absent, e.g. ARP/RET/RND/RETRIG/scale+arp
+  commands.)
+- (**Project transpose is now applied** — `m_state.project.transpose` is read at
+  `Engine.cpp:345`, added to chain transpose at `Engine.cpp:386`, and folded into the played
+  note at `Engine.cpp:786`; `FxCmd::TSP` writes it at `Engine.cpp:578`. **EQ is now
+  implemented** — see the EQ entry under Implemented. **Limiter, DJ filter and OTT are now
   implemented** on the master bus — see the Mixer entry under Implemented. **Input/USB mixer**
   is deliberately not implemented and never will be: soft-mate has no analog or USB input. Its
   values still load and are preserved on save.)
-- **On-screen keyboard, sample browser/preview, live recording, `.m8i` save.**
+- **Sample preview/audition** (the browser lists and loads `.wav`s but cannot play one before
+  you commit to it) and **live recording**. (**The sample browser itself is implemented** —
+  `InstrumentScreen.cpp:631`/`659` open a `.wav`-filtered `FileBrowser` on the Samples dir.
+  **`.m8i` save is implemented** — `io::saveInstrument` (`InstrumentIO.cpp:513`), wired to the
+  UI at `main.cpp:562`, with load at `main.cpp:551`.)
+- **On-screen keyboard — deliberately out, not pending.** It sits on the same never-build list
+  as the currently-playing-note display and the piano-keyboard minimap overlay; see
+  `docs/ui_screen_spec.md`. Do not implement it.
 
 ---
 

@@ -17,6 +17,7 @@ namespace mixer {
 struct MixerLevels {
     engine::MeterLevel track[8]{};
     engine::MeterLevel master{};
+    engine::MeterLevel send[3]{};   // 0 = CHO (MX), 1 = DEL, 2 = REV
 };
 
 void RenderMixerScreen(Renderer& renderer,

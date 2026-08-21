@@ -262,7 +262,7 @@ void Engine::processCommands() {
                 for (int i = 0; i < 3; ++i) m_sendEq[i].reset();
                 for (int i = 0; i < 2; ++i) { m_ottLpL[i] = 0.0f; m_ottLpR[i] = 0.0f; }
                 for (int i = 0; i < 3; ++i) { m_ottEnvL[i] = 0.0f; m_ottEnvR[i] = 0.0f; }
-                for (int i = 0; i < 9; ++i) {
+                for (int i = 0; i < kMeterSlots; ++i) {
                     m_meterBlockL[i] = m_meterBlockR[i] = 0.0f;
                     m_meterHeldL[i] = m_meterHeldR[i] = 0.0f;
                     m_meterClip[i] = false;
@@ -1300,7 +1300,7 @@ void Engine::configureTrackEqs() {
 
 void Engine::publishMeters(int frames) {
     (void)frames;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < kMeterSlots; ++i) {
         m_meterHeldL[i] = std::max(m_meterBlockL[i], m_meterHeldL[i] * kMeterDecay);
         m_meterHeldR[i] = std::max(m_meterBlockR[i], m_meterHeldR[i] * kMeterDecay);
 
@@ -1308,8 +1308,9 @@ void Engine::publishMeters(int frames) {
         const uint32_t pr = uint32_t(std::clamp(m_meterHeldR[i], 0.0f, 1.0f) * 255.0f);
         const uint32_t packed = pl | (pr << 8) | (m_meterClip[i] ? (1u << 16) : 0u);
 
-        if (i < 8) m_trackLevel[i].store(packed, std::memory_order_release);
-        else       m_masterLevel.store(packed, std::memory_order_release);
+        if      (i < 8) m_trackLevel[i].store(packed, std::memory_order_release);
+        else if (i == 8) m_masterLevel.store(packed, std::memory_order_release);
+        else            m_sendLevel[i - 9].store(packed, std::memory_order_release);
 
         m_meterBlockL[i] = 0.0f;
         m_meterBlockR[i] = 0.0f;
@@ -1600,8 +1601,28 @@ void Engine::render(float* buffer, int frames) {
         float master_del = m_state.mixer.del_vol / 255.0f;
         float master_rev = m_state.mixer.rev_vol / 255.0f;
         
-        mixL += choL * master_cho + delL * master_del + revL * master_rev;
-        mixR += choR * master_cho + delR * master_del + revR * master_rev;
+        const float choOutL = choL * master_cho, choOutR = choR * master_cho;
+        const float delOutL = delL * master_del, delOutR = delR * master_del;
+        const float revOutL = revL * master_rev, revOutR = revR * master_rev;
+
+        mixL += choOutL + delOutL + revOutL;
+        mixR += choOutR + delOutR + revOutR;
+
+        // Send return meters (slots 9..11 = MX/DE/RE). Metered here, post
+        // master-send-volume, so the bar shows what each return actually adds
+        // to the mix -- turning MX down has to take its meter down with it, or
+        // the bar is describing something the listener cannot hear. Block
+        // maximum only; decay and the atomic publish happen in publishMeters().
+        const float sendOutL[3] = { choOutL, delOutL, revOutL };
+        const float sendOutR[3] = { choOutR, delOutR, revOutR };
+        for (int sIdx = 0; sIdx < 3; ++sIdx) {
+            const int slot = 9 + sIdx;
+            const float sL = std::fabs(sendOutL[sIdx]);
+            const float sR = std::fabs(sendOutR[sIdx]);
+            if (sL > m_meterBlockL[slot]) m_meterBlockL[slot] = sL;
+            if (sR > m_meterBlockR[slot]) m_meterBlockR[slot] = sR;
+            if (sL >= 1.0f || sR >= 1.0f) m_meterClip[slot] = true;
+        }
 
         // ---- Master chain, in the manual's order (MIXER_SPEC.md §4) --------
         applyOtt(mixL, mixR);
