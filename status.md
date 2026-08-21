@@ -162,6 +162,15 @@ adds to the mix and turning MX down takes its meter down with it. Pinned by `MB6
 which checks all three directions — silent with no send amount, live with the sends open, silent
 again with the master send volume at zero.
 
+**Open, and NOT a §7a violation: read the device's EFFECTS screen for units.** The two laws
+below are closed as choices, but their *endpoints* (RT60 0.5–6 s, MOD FRQ 0.05–8 Hz) are
+convention, not the M8's. If the device's EFFECTS screen prints DECAY or MOD FRQ in seconds or
+Hz rather than raw hex, those endpoints can be replaced with the device's own — and doing so is
+the **allowed** class under `AGENTS.md` §7a, because it asks what a byte *means*, not how loud
+anything is. It is a screen read (`m8drv batch`, `GOTO EFFECTS`, `CAPTURE`), not an audio
+capture. Do not treat this as reopening the acoustic-parity decision; if the screen shows only
+hex, there is nothing to learn and the choices stand as they are.
+
 **ModFX MOD FRQ → LFO rate — a CHOICE, closed (2026-08-21).** The old law was a straight
 `(byte/255) × 10 Hz`, putting the default `0x80` at **5.02 Hz**. Chorus lives around 0.3–2 Hz; at
 5 Hz it reads as warble rather than widening, and everything musical was squeezed into the bottom
