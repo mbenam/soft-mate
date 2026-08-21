@@ -24,7 +24,7 @@ assert_screen not_contains "INPUT"
 assert_screen not_contains "USB"
 
 # Top line is SPEAKER VOL — this app's own output, not the song's master volume.
-assert_screen row 3 contains "SPEAKER VOL"
+assert_screen row 4 contains "SPEAKER VOL"
 
 # Send returns.
 assert_screen contains "MX"

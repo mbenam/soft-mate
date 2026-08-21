@@ -195,11 +195,23 @@ This is the most important thing to understand. Everything else hangs off it.
 
 ### UI (`src/main.cpp`, `src/ui/**`)
 
-- `Renderer` wraps SDL3 with an 8×8-cell character grid (custom `font.h`) and —
-  crucially — mirrors every draw into a **40×30 "VRAM" shadow grid**
+- `Renderer` wraps SDL3 with an 8×8-cell character grid (`font.h`, generated
+  from monogram by `tools/gen_font.py` — do not hand-edit it) and — crucially —
+  mirrors every draw into a **40×30 "VRAM" shadow grid**
   (`VirtualCell`: char, color, bg, bracket flag, slider fill, per-frame write
   count). This is what makes headless UI assertions possible: text dumps, JSON
   dumps, overlap detection.
+- Screen content is **inset one cell** via `Renderer::setOrigin(1, 1)`, applied
+  once on the way in from the public draw calls so no screen carries the offset
+  in its own coordinates. The device does the same: its captures keep column 0
+  as a gutter and start text at column 1. Panel furniture that must stay pinned
+  regardless — the S/C/P/I/T nav map — draws through `drawStringAbs`, which
+  bypasses the origin; the tempo readout is pinned in x but follows content in
+  y, because it sits on each screen's header row.
+- `SYSTEM > FONT OPTIONS` (uppercase/lowercase) folds the **glyph lookup only**.
+  The shadow grid keeps the logical character, so dumps, goldens, captures and
+  `assert_screen contains` never swing on a cosmetic preference — and `goto`,
+  which verifies its landing by matching header text, keeps working.
 - `ViewManager` is an M8-style **Shift+Arrow map of screens** on an (x, y)
   grid: x = Song/Chain/Phrase/Instrument/Table, y layers for
   Project/Groove/Scale/Mods/Pool/Mixer/Effects, plus a modal stack used by the
@@ -691,6 +703,7 @@ src/engine/    Engine.{h,cpp}       orchestrator: rings, tick, mix, effects, dem
 src/io/        SongIO.{h,cpp}       .m8s ⇄ engine conversion, overlay save
 src/analysis/  AudioMetrics.{h,cpp}, Fft.h   objective audio measurements (kissfft)
 src/ui/        Renderer.{h,cpp}     SDL3 + 40×30 VRAM shadow grid + dumps
+               font.h               GENERATED — see tools/gen_font.py
                ViewManager.{h,cpp}  Shift+Arrow screen graph + modal stack
                ScriptRunner.{h,cpp} .m8script DSL for headless UI testing
                FileBrowser.{h,cpp}  WAV/.m8s picker + dr_wav decode

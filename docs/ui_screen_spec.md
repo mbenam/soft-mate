@@ -22,6 +22,11 @@ Both are 320x240 pixels. The row counts differ because the pitch differs.
 
 Consequences, all intended:
 
+- Clone content starts at **(1,1)**, not (0,0) — `Renderer::setOrigin`. The
+  device agrees on the column: its captures leave column 0 as a gutter (only
+  the PHRASE playhead marker sits there) and start text at column 1. The row
+  inset is a clone choice, since the pitches differ and the rows cannot line up
+  anyway.
 - Device row R does not correspond to clone row R. Text sits at different rows.
 - The constant row offset seen when diffing PHRASE against the device is
   arithmetic, not a defect. Do not fix it. Do not propose pitch as its cause.
@@ -58,9 +63,15 @@ Do not build these, and do not report them as gaps:
 **Mixer meters came off this list on 2026-08-12** and are now being built — see
 `specs/MIXER_SPEC.md`. The approach this document always specified turned out to
 be the right one and is what the spec follows: custom glyphs appended to the font
-table in `src/ui/font.h` (`struct Font { char letter; char code[7][6]; }`), seven
+table in `src/ui/font.h` (`struct Font { char letter; char code[8][6]; }`), seven
 partial-fill levels plus blank, stacked and coloured per cell. They are
 characters, not graphics.
+
+The glyph box is 8 rows in an 8-row cell, but the meter fills and the EQ curve
+glyphs deliberately stay inside rows 0..6 with row 7 blank: the seven-level
+arithmetic in `MixerScreen` and `EqScreenLayout` (12 cells x 7 = 84 steps)
+depends on it. Row 7 exists for text descenders. `font.h` is generated — edit
+`tools/gen_font.py` and re-run it, never the header.
 
 The other three stay out. The scope and the playing-note list were considered and
 deferred in the same session, not forgotten: both need live audio data crossing

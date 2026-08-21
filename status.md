@@ -127,7 +127,8 @@ Expensive to establish, not negotiable without discussion.
 ## Implemented
 
 ### UI
-Custom 5×7 font, 320×240 / 40×30. 2D navigation + minimap. `ViewManager`, modal browser.
+monogram 5×7 font (CC0, generated into `font.h` by `tools/gen_font.py`), 320×240 / 40×30,
+content inset to (1,1). 2D navigation + minimap. `ViewManager`, modal browser.
 Dictionary layouts + `NavGraph`. All screens. Edit mode on hex grids. Playhead from the atomic
 word.
 

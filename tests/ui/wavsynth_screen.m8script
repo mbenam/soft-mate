@@ -8,19 +8,19 @@ key X+UP
 key X+UP
 key X+UP
 wait 1
-assert_screen row 2 contains "WAVSYNTH"
+assert_screen row 3 contains "WAVSYNTH"
 
 # The five WavSynth-specific rows, at the coordinates measured on fw 6.5.2
-assert_screen row 6 contains "SHAPE"
-assert_screen row 6 contains "PULSE 12%"
-assert_screen row 8 contains "SIZE"
-assert_screen row 9 contains "MULT"
-assert_screen row 10 contains "WARP"
-assert_screen row 11 contains "SCAN"
-assert_screen row 12 contains "FILTER"
+assert_screen row 7 contains "SHAPE"
+assert_screen row 7 contains "PULSE 12%"
+assert_screen row 9 contains "SIZE"
+assert_screen row 10 contains "MULT"
+assert_screen row 11 contains "WARP"
+assert_screen row 12 contains "SCAN"
+assert_screen row 13 contains "FILTER"
 
 # The mixer column uses the hardware label MFX, not CHO
-assert_screen row 12 contains "MFX"
+assert_screen row 13 contains "MFX"
 
 # Navigate the left column down to SIZE (TYPE -> NAME -> TRANSP -> SHAPE -> SIZE)
 key DOWN
@@ -28,4 +28,4 @@ key DOWN
 key DOWN
 key DOWN
 wait 1
-assert_screen row 8 contains "SIZE"
+assert_screen row 9 contains "SIZE"

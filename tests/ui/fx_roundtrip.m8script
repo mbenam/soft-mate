@@ -35,7 +35,7 @@ key RIGHT
 repeat 5 {
     key X+RIGHT
 }
-assert_screen row 3 contains "TBL05"
+assert_screen row 4 contains "TBL05"
 
 save artifacts/fx_roundtrip.m8s
 assert_no_error
@@ -44,4 +44,4 @@ wait 1
 assert_no_error
 
 goto PHRASE
-assert_screen row 3 contains "TBL05"
+assert_screen row 4 contains "TBL05"

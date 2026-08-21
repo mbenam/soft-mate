@@ -17,7 +17,7 @@ key X
 wait 1
 
 # Verify the note is visible before saving
-assert_screen row 3 contains "C-4"
+assert_screen row 4 contains "C-4"
 
 # Save and reload
 save artifacts/roundtrip.m8s
@@ -27,4 +27,4 @@ wait 1
 assert_no_error
 
 # Verify the note survived the round-trip
-assert_screen row 3 contains "C-4"
+assert_screen row 4 contains "C-4"

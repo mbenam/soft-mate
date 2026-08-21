@@ -30,4 +30,4 @@ key X
 wait 1
 
 # Verify the note is visible
-assert_screen row 3 contains "C-4"
+assert_screen row 4 contains "C-4"

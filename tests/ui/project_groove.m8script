@@ -5,12 +5,12 @@ assert_screen contains "PROJECT"
 key DOWN
 key DOWN
 assert_field GROOVE 00DEFAULT
-assert_screen row 4 contains "GROOVE        00DEFAULT"
+assert_screen row 5 contains "GROOVE        00DEFAULT"
 
 # Hold X and press RIGHT (+1) -> 01
 key X+RIGHT
 assert_field GROOVE 01
-assert_screen row 4 contains "GROOVE        01"
+assert_screen row 5 contains "GROOVE        01"
 assert_screen not_contains "DEFAULT"
 
 # Hold X and press UP (+16) -> 11
@@ -20,7 +20,7 @@ assert_field GROOVE 11
 # Hold X and press UP (+16) -> clamps at 1F
 key X+UP
 assert_field GROOVE 1F
-assert_screen row 4 contains "GROOVE        1F"
+assert_screen row 5 contains "GROOVE        1F"
 
 # Hold X and press DOWN (-16) -> 0F
 key X+DOWN
@@ -29,7 +29,7 @@ assert_field GROOVE 0F
 # Hold X and press DOWN (-16) -> clamps at 00
 key X+DOWN
 assert_field GROOVE 00DEFAULT
-assert_screen row 4 contains "GROOVE        00DEFAULT"
+assert_screen row 5 contains "GROOVE        00DEFAULT"
 
 assert_no_overlap
 assert_no_error

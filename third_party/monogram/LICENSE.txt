@@ -1,0 +1,9 @@
+monogram
+by Vinicius Menezio (datagoblin) -- https://datagoblin.itch.io/monogram
+
+Released under Creative Commons Zero v1.0 Universal (CC0 1.0):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The author has waived all copyright and related rights worldwide. No
+attribution is required; this notice records provenance for the benefit
+of anyone regenerating src/ui/font.h with tools/gen_font.py.

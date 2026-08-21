@@ -90,14 +90,38 @@ void Renderer::present() {
     SDL_RenderPresent(m_renderer);
 }
 
+void Renderer::setOrigin(int cellX, int cellY) {
+    m_originX = cellX;
+    m_originY = cellY;
+}
+
 void Renderer::drawChar(char c, int gridX, int gridY, SDL_Color color) {
+    drawCharAbs(c, gridX + m_originX, gridY + m_originY, color);
+}
+
+void Renderer::drawCharAbs(char c, int gridX, int gridY, SDL_Color color) {
     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-    
+
+    // FONT OPTIONS, applied to the glyph lookup only. Only letters are folded:
+    // the meter and curve glyphs live at 0x01..0x0E and must reach the table
+    // untouched, and toupper/tolower on a negative char is undefined, hence the
+    // unsigned cast.
+    //
+    // The shadow grid below deliberately stores the ORIGINAL character, not the
+    // folded one. The setting is cosmetic, so letting it reach the grid would
+    // make every dump, golden, capture and `assert_screen contains` swing on a
+    // font preference -- and would break `goto`, which verifies its landing by
+    // matching the header text.
+    char glyph = c;
+    unsigned char uc = (unsigned char)c;
+    if (uc >= 'a' && uc <= 'z' && m_fontUppercase)  glyph = char(uc - 'a' + 'A');
+    else if (uc >= 'A' && uc <= 'Z' && !m_fontUppercase) glyph = char(uc - 'A' + 'a');
+
     // Find character in font array
     int i = 0;
     bool found = false;
     while (font[i].letter != 0) {
-        if (font[i].letter == c) {
+        if (font[i].letter == glyph) {
             found = true;
             break;
         }
@@ -108,7 +132,7 @@ void Renderer::drawChar(char c, int gridX, int gridY, SDL_Color color) {
     float px = (float)(gridX * m_cellWidth) + 1.0f;
     float py = (float)(gridY * m_cellHeight) + 0.0f;
 
-    for (int row = 0; row < 7; ++row) {
+    for (int row = 0; row < 8; ++row) {
         for (int col = 0; col < 5; ++col) {
             if (font[i].code[row][col] == '#') {
                 SDL_RenderPoint(m_renderer, px + col, py + row);
@@ -126,12 +150,20 @@ void Renderer::drawChar(char c, int gridX, int gridY, SDL_Color color) {
 
 void Renderer::drawString(const std::string& str, int gridX, int gridY, SDL_Color color) {
     for (size_t i = 0; i < str.length(); ++i) {
-        drawChar(str[i], gridX + i, gridY, color);
+        drawChar(str[i], gridX + (int)i, gridY, color);
+    }
+}
+
+void Renderer::drawStringAbs(const std::string& str, int gridX, int gridY, SDL_Color color) {
+    for (size_t i = 0; i < str.length(); ++i) {
+        drawCharAbs(str[i], gridX + (int)i, gridY, color);
     }
 }
 
 void Renderer::drawRect(int gridX, int gridY, int w, int h, SDL_Color color) {
     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+    gridX += m_originX;
+    gridY += m_originY;
     SDL_FRect rect = { 
         (float)(gridX * m_cellWidth), 
         (float)(gridY * m_cellHeight), 
@@ -143,12 +175,16 @@ void Renderer::drawRect(int gridX, int gridY, int w, int h, SDL_Color color) {
 
 void Renderer::drawRectPixel(int x, int y, int w, int h, SDL_Color color) {
     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+    x += m_originX * m_cellWidth;
+    y += m_originY * m_cellHeight;
     SDL_FRect rect = { (float)x, (float)y, (float)w, (float)h };
     SDL_RenderRect(m_renderer, &rect);
 }
 
 void Renderer::fillRectPixel(int x, int y, int w, int h, SDL_Color color) {
     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+    x += m_originX * m_cellWidth;
+    y += m_originY * m_cellHeight;
     SDL_FRect rect = { (float)x, (float)y, (float)w, (float)h };
     SDL_RenderFillRect(m_renderer, &rect);
 
@@ -181,24 +217,32 @@ void Renderer::fillRectPixel(int x, int y, int w, int h, SDL_Color color) {
 }
 
 void Renderer::drawLinePixel(int x1, int y1, int x2, int y2, SDL_Color color) {
+    const int ox = m_originX * m_cellWidth;
+    const int oy = m_originY * m_cellHeight;
+    drawLinePixelRaw(x1 + ox, y1 + oy, x2 + ox, y2 + oy, color);
+}
+
+void Renderer::drawLinePixelRaw(int x1, int y1, int x2, int y2, SDL_Color color) {
     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
     SDL_RenderLine(m_renderer, (float)x1, (float)y1, (float)x2, (float)y2);
 }
 
 void Renderer::drawBracket(int cx, int y, int cw, SDL_Color color) {
+    cx += m_originX;
+    y  += m_originY;
     int bpx = cx * 8 - 2;
     int bpy = y * 8 - 1;
     int bpw = cw * 8 + 3; 
     int bph = 8; 
     int len = 2;
-    drawLinePixel(bpx, bpy, bpx + len, bpy, color);
-    drawLinePixel(bpx, bpy, bpx, bpy + len, color);
-    drawLinePixel(bpx + bpw, bpy, bpx + bpw - len, bpy, color);
-    drawLinePixel(bpx + bpw, bpy, bpx + bpw, bpy + len, color);
-    drawLinePixel(bpx, bpy + bph, bpx + len, bpy + bph, color);
-    drawLinePixel(bpx, bpy + bph, bpx, bpy + bph - len, color);
-    drawLinePixel(bpx + bpw, bpy + bph, bpx + bpw - len, bpy + bph, color);
-    drawLinePixel(bpx + bpw, bpy + bph, bpx + bpw, bpy + bph - len, color);
+    drawLinePixelRaw(bpx, bpy, bpx + len, bpy, color);
+    drawLinePixelRaw(bpx, bpy, bpx, bpy + len, color);
+    drawLinePixelRaw(bpx + bpw, bpy, bpx + bpw - len, bpy, color);
+    drawLinePixelRaw(bpx + bpw, bpy, bpx + bpw, bpy + len, color);
+    drawLinePixelRaw(bpx, bpy + bph, bpx + len, bpy + bph, color);
+    drawLinePixelRaw(bpx, bpy + bph, bpx, bpy + bph - len, color);
+    drawLinePixelRaw(bpx + bpw, bpy + bph, bpx + bpw - len, bpy + bph, color);
+    drawLinePixelRaw(bpx + bpw, bpy + bph, bpx + bpw, bpy + bph - len, color);
 
     // Shadow grid: bracket covers logical cells [cx, cx+cw) at row y
     for (int i = 0; i < cw; ++i) {

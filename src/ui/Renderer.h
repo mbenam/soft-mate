@@ -31,11 +31,34 @@ public:
     void clear(SDL_Color color);
     void present();
     
-    // Draw character at logical cell (x, y). 
+    // Cell-space origin. Every cell- and pixel-addressed draw below is offset
+    // by this, so screen content can sit inset from the panel edge without all
+    // ~20 screens re-deriving their own coordinates. The hardware does the
+    // same: a device capture puts column 0 aside as a gutter and starts text
+    // at column 1 (tests/ui/golden/device/PHRASE.json).
+    //
+    // Panel furniture that must stay pinned regardless of the inset -- the nav
+    // map -- draws through the *Abs entry points, which bypass the origin.
+    void setOrigin(int cellX, int cellY);
+    int originX() const { return m_originX; }
+    int originY() const { return m_originY; }
+
+    // SYSTEM > FONT OPTIONS. Applied at draw time rather than at every call
+    // site, so the setting reaches every screen without any of them knowing
+    // it exists. It folds the glyph only -- the shadow grid keeps the logical
+    // character, so dumps, goldens and assertions do not swing on a cosmetic
+    // preference.
+    void setFontUppercase(bool upper) { m_fontUppercase = upper; }
+    bool fontUppercase() const { return m_fontUppercase; }
+
+    // Draw character at logical cell (x, y).
     void drawChar(char c, int x, int y, SDL_Color color);
     void drawString(const std::string& str, int x, int y, SDL_Color color);
     void drawString(const char* str, int x, int y, SDL_Color color);
     void drawRect(int x, int y, int w, int h, SDL_Color color);
+
+    // Origin-independent text, for panel furniture pinned to the physical grid.
+    void drawStringAbs(const std::string& str, int x, int y, SDL_Color color);
     
     // Pixel-level drawing
     void drawRectPixel(int x, int y, int w, int h, SDL_Color color);
@@ -88,6 +111,18 @@ private:
     
     int m_cellWidth = 8;
     int m_cellHeight = 8;
+
+    int m_originX = 0;
+    int m_originY = 0;
+    bool m_fontUppercase = true;
+
+    // Absolute-coordinate internals. The origin is applied once, on the way in
+    // from the public entry points; everything below this line is already in
+    // panel coordinates. drawBracket in particular is cell-addressed but draws
+    // through line primitives, so it needs the unshifted variant or it would
+    // pick up the offset twice.
+    void drawCharAbs(char c, int absX, int absY, SDL_Color color);
+    void drawLinePixelRaw(int x1, int y1, int x2, int y2, SDL_Color color);
 
     VirtualCell m_vram[kGridH][kGridW]{};
     StoredPlayhead m_playheads[8]{};

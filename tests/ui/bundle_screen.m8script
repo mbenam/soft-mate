@@ -11,11 +11,11 @@ key DOWN
 key DOWN
 key DOWN
 
-assert_screen row 12 contains "RENDER"
+assert_screen row 13 contains "RENDER"
 
 # Move right to BUNDLE
 key RIGHT
-assert_screen row 12 contains "BUNDLE"
+assert_screen row 13 contains "BUNDLE"
 
 # Press X (Edit) to trigger BUNDLE confirmation modal
 key X
@@ -34,7 +34,7 @@ key LEFT
 # Press Z (Option) to CANCEL and return to Project screen
 key Z
 assert_screen contains "PROJECT"
-assert_screen row 12 contains "BUNDLE"
+assert_screen row 13 contains "BUNDLE"
 
 # Open modal again and confirm with OK
 key X

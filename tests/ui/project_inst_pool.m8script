@@ -25,8 +25,8 @@ key DOWN
 key DOWN
 key DOWN
 
-assert_screen row 14 contains "INST. POOL"
-assert_screen row 14 contains "VIEW INST.POOL"
+assert_screen row 15 contains "INST. POOL"
+assert_screen row 15 contains "VIEW INST.POOL"
 
 # Tap X (edit). The action fires on RELEASE, via HandleProjectEditRelease.
 key X

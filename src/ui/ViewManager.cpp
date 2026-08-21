@@ -86,15 +86,24 @@ void ViewManager::renderChrome(Renderer& renderer, int bpm) {
     SDL_Color dim = GetThemeColor("LABEL_DIM");
     SDL_Color lite = GetThemeColor("LABEL_LITE");
 
-    renderer.drawString("T>" + std::to_string(bpm), 34, 2, dim);
+    // Chrome draws in absolute panel coordinates, bypassing the content
+    // origin (Renderer::setOrigin). The two pieces want different things:
+    //
+    //   Tempo   sits on the screen's own header row, so it follows the
+    //           content down when the content is inset -- but stays pinned
+    //           to column 34, which keeps it clear of the right edge. That
+    //           is the "one character left" of a naive whole-screen shift.
+    //   Nav map is panel furniture, not content. It holds still on both
+    //           axes so the S/C/P/I/T ladder never moves under the eye.
+    renderer.drawStringAbs("T>" + std::to_string(bpm), 34, 2 + renderer.originY(), dim);
 
     int baseX = 34;
     int baseY = 26;
-    renderer.drawString("S", baseX + 0, baseY, (m_y == 0 && m_x == 0) ? lite : dim);
-    renderer.drawString("C", baseX + 1, baseY, (m_y == 0 && m_x == 1) ? lite : dim);
-    renderer.drawString("P", baseX + 2, baseY, (m_y == 0 && m_x == 2) ? lite : dim);
-    renderer.drawString("I", baseX + 3, baseY, (m_y == 0 && m_x == 3) ? lite : dim);
-    renderer.drawString("T", baseX + 4, baseY, (m_y == 0 && m_x == 4) ? lite : dim);
+    renderer.drawStringAbs("S", baseX + 0, baseY, (m_y == 0 && m_x == 0) ? lite : dim);
+    renderer.drawStringAbs("C", baseX + 1, baseY, (m_y == 0 && m_x == 1) ? lite : dim);
+    renderer.drawStringAbs("P", baseX + 2, baseY, (m_y == 0 && m_x == 2) ? lite : dim);
+    renderer.drawStringAbs("I", baseX + 3, baseY, (m_y == 0 && m_x == 3) ? lite : dim);
+    renderer.drawStringAbs("T", baseX + 4, baseY, (m_y == 0 && m_x == 4) ? lite : dim);
 
     int activeX = baseX + m_x;
 
@@ -103,21 +112,21 @@ void ViewManager::renderChrome(Renderer& renderer, int bpm) {
         std::string label = "P";
         if (up1 == ViewType::GROOVE) label = "G";
         else if (up1 == ViewType::INST_MOD) label = "M";
-        renderer.drawString(label, activeX, baseY - 1, (m_y == 1) ? lite : dim);
+        renderer.drawStringAbs(label, activeX, baseY - 1, (m_y == 1) ? lite : dim);
     }
 
     ViewType up2 = getViewAt(m_x, 2);
     if (up2 != ViewType::NONE) {
         if (m_x == 2) {
-            renderer.drawString("S", activeX, baseY - 2, (m_y == 2) ? lite : dim);
+            renderer.drawStringAbs("S", activeX, baseY - 2, (m_y == 2) ? lite : dim);
         } else if (m_x == 3) {
-            renderer.drawString("P", activeX, baseY - 2, (m_y == 2) ? lite : dim);
+            renderer.drawStringAbs("P", activeX, baseY - 2, (m_y == 2) ? lite : dim);
         }
     }
 
-    renderer.drawString("V", activeX, baseY + 1, (m_y == -1) ? lite : dim);
+    renderer.drawStringAbs("V", activeX, baseY + 1, (m_y == -1) ? lite : dim);
     if (m_y <= -1) {
-        renderer.drawString("X", activeX, baseY + 2, (m_y == -2) ? lite : dim);
+        renderer.drawStringAbs("X", activeX, baseY + 2, (m_y == -2) ? lite : dim);
     }
 }
 

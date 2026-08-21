@@ -32,7 +32,7 @@ assert_no_error
 # at C-4 on phrase 00 row 0 (verified via dump_screen, not assumed). If this
 # ever fails, the fixture changed and the render below may go silent.
 goto PHRASE
-assert_screen row 3 contains "C-4"
+assert_screen row 4 contains "C-4"
 
 # Instrument 00: SAMPLER -> MACROSYN
 goto INSTRUMENT

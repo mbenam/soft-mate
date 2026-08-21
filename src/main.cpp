@@ -288,6 +288,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Inset the content one cell from the panel edge. The hardware does the
+    // same -- a device capture leaves column 0 as a gutter (only the phrase
+    // playhead marker lives there) and starts text at column 1. Panel
+    // furniture opts out via the Renderer *Abs entry points.
+    renderer.setOrigin(1, 1);
+
     bool running = true;
     m8::ui::ViewManager viewManager;
     
@@ -1291,6 +1297,9 @@ int main(int argc, char* argv[]) {
             recStream = nullptr;
         }
 
+        // FONT OPTIONS is read per frame so toggling it in SYSTEM takes effect
+        // immediately, without the screens knowing the setting exists.
+        renderer.setFontUppercase(m8::ui::system_settings::g_systemSettingsState.fontUppercase);
         renderer.clear(m8::ui::GetThemeColor("BACKGROUND"));
 
         if (viewManager.getCurrentView() == m8::ui::ViewType::PHRASE) {

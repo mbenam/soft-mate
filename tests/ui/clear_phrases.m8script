@@ -12,8 +12,8 @@ key DOWN
 key DOWN
 key DOWN
 
-assert_screen row 13 contains "CLEAR UNUSED"
-assert_screen row 13 contains "PHRASES"
+assert_screen row 14 contains "CLEAR UNUSED"
+assert_screen row 14 contains "PHRASES"
 
 # Press X (Edit) to trigger confirmation modal
 key X
@@ -31,7 +31,7 @@ key LEFT
 # Press Z (Option) to CANCEL and return to Project screen
 key Z
 assert_screen contains "PROJECT"
-assert_screen row 13 contains "PHRASES"
+assert_screen row 14 contains "PHRASES"
 
 # Open modal again and confirm with OK
 key X
