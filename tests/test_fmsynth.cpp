@@ -23,7 +23,7 @@ TEST_CASE("FMSynth renders all 12 algorithms without NaN", "[fmsynth]") {
             fm.ops[1].shape = 0; fm.ops[1].level = 0x80; fm.ops[1].ratio = 2;
             fm.ops[2].shape = 0; fm.ops[2].level = 0x80; fm.ops[2].ratio = 3;
             fm.ops[3].shape = 0; fm.ops[3].level = 0x80; fm.ops[3].ratio = 4;
-            fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+            fm.volume = 0x40; fm.lim = 0; fm.filter_type = 0;
             fm.dry = 0xC0; fm.pan = 0x80;
 
             g_allocCount = 0;
@@ -57,7 +57,7 @@ TEST_CASE("FMSynth different algorithms produce different output", "[fmsynth]") 
         fm.ops[1].shape = 0; fm.ops[1].level = 0x80; fm.ops[1].ratio = 2;
         fm.ops[2].shape = 0; fm.ops[2].level = 0x80; fm.ops[2].ratio = 3;
         fm.ops[3].shape = 0; fm.ops[3].level = 0x80; fm.ops[3].ratio = 4;
-        fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+        fm.volume = 0x40; fm.lim = 0; fm.filter_type = 0;
         fm.dry = 0xC0; fm.pan = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
@@ -84,7 +84,7 @@ TEST_CASE("FMSynth different shapes produce different output", "[fmsynth]") {
         fm.ops[1].shape = shape; fm.ops[1].level = 0x80; fm.ops[1].ratio = 2;
         fm.ops[2].shape = shape; fm.ops[2].level = 0x80; fm.ops[2].ratio = 3;
         fm.ops[3].shape = shape; fm.ops[3].level = 0x80; fm.ops[3].ratio = 4;
-        fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+        fm.volume = 0x40; fm.lim = 0; fm.filter_type = 0;
         fm.dry = 0xC0; fm.pan = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
@@ -112,7 +112,7 @@ TEST_CASE("FMSynth feedback increases complexity", "[fmsynth]") {
         fm.ops[1].shape = 0; fm.ops[1].level = 0x80; fm.ops[1].ratio = 2;
         fm.ops[2].shape = 0; fm.ops[2].level = 0x80; fm.ops[2].ratio = 3;
         fm.ops[3].shape = 0; fm.ops[3].level = 0x80; fm.ops[3].ratio = 4;
-        fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+        fm.volume = 0x40; fm.lim = 0; fm.filter_type = 0;
         fm.dry = 0xC0; fm.pan = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
@@ -138,7 +138,7 @@ TEST_CASE("FMSynth modulation destinations (LEV, RAT, PIT, FBK)", "[fmsynth]") {
         fm.ops[0].shape = 0; fm.ops[0].level = 0x80; fm.ops[0].ratio = 1;
         fm.ops[0].mod_a = modSlot; // e.g. 1LEV (0x01), 1RAT (0x02), 1PIT (0x03), 1FBK (0x04)
         fm.mod1 = modVal;
-        fm.amp = 0x40; fm.lim = 0; fm.filter_type = 0;
+        fm.volume = 0x40; fm.lim = 0; fm.filter_type = 0;
         fm.dry = 0xC0; fm.pan = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
@@ -169,7 +169,7 @@ TEST_CASE("FMSynth filter and limiter modes apply cleanly", "[fmsynth]") {
         fm.algo = 0x0B;
         fm.ops[0].shape = 7; fm.ops[0].level = 0x80; fm.ops[0].ratio = 1;
         fm.filter_type = filt; fm.cutoff = 0x80; fm.res = 0x80;
-        fm.amp = 0x40; fm.lim = filt % 9;
+        fm.volume = 0x40; fm.lim = filt % 9;
         fm.dry = 0xC0; fm.pan = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
@@ -188,7 +188,7 @@ TEST_CASE("FMSynth RT safety -- zero allocations", "[fmsynth]") {
     state.instruments[0].type = InstType::INST_FMSYNTH;
     auto& fm = state.instruments[0].fm;
     fm.algo = 0; fm.ops[0].shape = 0; fm.ops[0].level = 0x80;
-    fm.ops[0].ratio = 1; fm.amp = 0x40; fm.lim = 0;
+    fm.ops[0].ratio = 1; fm.volume = 0x40; fm.lim = 0;
     fm.filter_type = 0; fm.dry = 0xC0; fm.pan = 0x80;
 
     g_allocCount = 0;

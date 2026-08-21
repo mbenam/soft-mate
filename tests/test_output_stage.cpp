@@ -43,9 +43,13 @@ float renderSum(const std::vector<float>& audio) {
 // control that this engine does not apply, so these tests must drive `volume`
 // or they measure nothing. The assertions below are unchanged.
 //
-// Other suites still set `.amp` as a rough 'make it audible' knob. They pass
-// because they assert on presence, not level; only the tests here and in
-// test_macrosynth.cpp depend on the gain's magnitude.
+// The other suites' 'make it audible' knobs were repointed at `.volume` on
+// 2026-08-20 (test_audio, test_eq, test_fmsynth, test_hypersynth,
+// test_macrosynth, test_mixer_bus). They had gone inert -- setting `.amp`
+// applies nothing -- and would have shifted under them the moment AMP is
+// modelled as a drive. The `.amp = 0x00` sites were left as they are: zero is
+// 'no drive', which stays correct under either model. Persistence and IO tests
+// set `.amp` on purpose -- they check the byte map, not the level.
 
 // A 4-operator patch loud enough that the limiter genuinely engages, which is
 // what makes the AMP/LIM/FILTER ordering observable at all.

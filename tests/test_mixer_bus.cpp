@@ -41,7 +41,7 @@ Rendered renderWithMixer(void (*tweak)(MixerState&), int frames = 6000) {
     m.shape = 0x00;
     m.timbre = 0xC0;
     m.color = 0xC0;
-    m.amp = 0x40;
+    m.volume = 0x40;
     m.lim = 0;
     m.filter_type = 0;
     m.dry = 0xFF;
@@ -177,7 +177,7 @@ TEST_CASE("MB4 meters report level and decay back to silence", "[mixer]") {
     state.instruments[0].type = InstType::INST_MACROSYN;
     state.instruments[0].macrosyn.dry = 0xFF;
     state.instruments[0].macrosyn.pan = 0x80;
-    state.instruments[0].macrosyn.amp = 0x40;
+    state.instruments[0].macrosyn.volume = 0x40;
     state.mixer.mix_vol = 0xFF;
     state.mixer.out_vol = 0xFF;
 

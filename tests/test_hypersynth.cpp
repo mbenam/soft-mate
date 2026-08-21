@@ -26,7 +26,7 @@ TEST_CASE("HyperSynth renders chord intervals without NaN/Inf", "[hypersynth]") 
     h.swarm = 0x40;
     h.width = 0x80;
     h.subosc = 0x80;
-    h.amp = 0x40;
+    h.volume = 0x40;
     h.lim = 0;
     h.filter_type = 0;
     h.dry = 0xC0;
@@ -60,7 +60,7 @@ TEST_CASE("HyperSynth SHIFT cross-fades lower and upper intervals", "[hypersynth
         h.swarm = 0;
         h.width = 0;
         h.subosc = 0;
-        h.amp = 0x40;
+        h.volume = 0x40;
         h.lim = 0;
         h.filter_type = 0;
         h.dry = 0xC0;
@@ -96,7 +96,7 @@ TEST_CASE("HyperSynth SUBOSC octave toggle and level", "[hypersynth]") {
         h.swarm = 0;
         h.width = 0;
         h.subosc = subVal;
-        h.amp = 0x40;
+        h.volume = 0x40;
         h.lim = 0;
         h.filter_type = 0;
         h.dry = 0xC0;
@@ -137,7 +137,7 @@ TEST_CASE("HyperSynth filter and limiter modes apply cleanly", "[hypersynth]") {
         h.filter_type = filt;
         h.cutoff = 0x80;
         h.res = 0x80;
-        h.amp = 0x40;
+        h.volume = 0x40;
         h.lim = filt % 9;
         h.dry = 0xC0;
         h.pan = 0x80;
@@ -162,7 +162,7 @@ TEST_CASE("HyperSynth RT safety -- zero audio-thread allocations", "[hypersynth]
     h.swarm = 0x80;
     h.width = 0x80;
     h.subosc = 0x80;
-    h.amp = 0x40;
+    h.volume = 0x40;
     h.dry = 0xC0;
 
     g_allocCount = 0;

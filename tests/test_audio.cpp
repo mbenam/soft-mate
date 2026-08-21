@@ -621,7 +621,7 @@ TEST_CASE("S-LIM-POST POST:AD soft-clips after the filter, bounded and distinct 
         state.instruments[0].sampler.dry = 0xFF;
         state.instruments[0].sampler.filter_type = 1; // LP present so POST ordering matters
         state.instruments[0].sampler.cutoff = 0xFF;   // wide open — passes the tone
-        state.instruments[0].sampler.amp = 0xFF;      // drive hard into the limiter
+        state.instruments[0].sampler.volume = 0xFF;      // drive hard into the limiter
         state.instruments[0].sampler.lim = lim;
         state.instruments[0].mods[0] = {0, 1, 0xFF, 0, 0, 4, 0};
         state.instruments[0].mods[1] = {0, 0, 0x80, 0, 0, 0, 0};

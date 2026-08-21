@@ -18,7 +18,7 @@ TEST_CASE("Macrosynth Phase 2 exhaustive shape checks", "[macrosynth]") {
             state.instruments[0].macrosyn.shape = shapeIdx;
             state.instruments[0].macrosyn.timbre = 0x80;
             state.instruments[0].macrosyn.color = 0x80;
-            state.instruments[0].macrosyn.amp = 0x40; // normal amplitude
+            state.instruments[0].macrosyn.volume = 0x40; // normal amplitude
             state.instruments[0].macrosyn.lim = 0; // CLIP
             state.instruments[0].macrosyn.filter_type = 0; // OFF
 
@@ -64,7 +64,7 @@ TEST_CASE("Macrosynth timbre and color affect rendered audio", "[macrosynth]") {
         m.filter_type = filter;
         m.cutoff = cutoff;
         m.lim = lim;
-        m.amp = 0x40;
+        m.volume = 0x40;
         m.pan = 0x80;
         m.dry = 0xC0;
 
@@ -100,8 +100,9 @@ TEST_CASE("Macrosynth degrade and redux modify audio signal", "[macrosynth]") {
         // difference this test looks for is scaled by that gain. Driving `amp`
         // stopped working when the byte map was corrected (AGENTS.md 7) -- the
         // gain reads `volume` now, and at unity the redux delta falls under the
-        // 0.01 threshold. The two other m.amp assignments in this file are left
-        // alone: their tests assert on presence, not level. Assertions unchanged.
+        // 0.01 threshold. Every other level knob in this file was repointed at
+        // `volume` too (2026-08-20); `amp` is inert, so setting it measured
+        // nothing. Assertions unchanged.
         m.volume = 0x40;
         m.pan = 0x80;
         m.dry = 0xC0;
@@ -141,7 +142,7 @@ TEST_CASE("Macrosynth filter modes and lim modes render finite output", "[macros
         m.filter_type = filt;
         m.cutoff = 0x80;
         m.res = 0x80;
-        m.amp = 0x40;
+        m.volume = 0x40;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
         host.push(playPhrase(0, 0, 0));
@@ -163,7 +164,7 @@ TEST_CASE("Macrosynth filter modes and lim modes render finite output", "[macros
         m.timbre = 0x80;
         m.color = 0x80;
         m.lim = lim;
-        m.amp = 0x80;
+        m.volume = 0x80;
 
         setStep(host.sequencer(), 0, 0, 60, 100, 0);
         host.push(playPhrase(0, 0, 0));
@@ -190,7 +191,7 @@ TEST_CASE("HyperSynth renders supersaw chord without NaN/clipping", "[hypersynth
     h.width = 0x80;
     h.subosc = 0x80;
     for (int c = 0; c < 7; ++c) h.default_chord[c] = 0x3C;
-    h.amp = 0x40;
+    h.volume = 0x40;
     h.filter_type = 0;
     h.cutoff = 0xFF;
     h.res = 0x00;
@@ -229,7 +230,7 @@ TEST_CASE("HyperSynth different swarm/width settings produce different output", 
         h.width = width;
         h.subosc = 0x00;
         for (int c = 0; c < 7; ++c) h.default_chord[c] = 0x3C;
-        h.amp = 0x40;
+        h.volume = 0x40;
         h.lim = 0;
         h.pan = 0x80;
         h.dry = 0xC0;

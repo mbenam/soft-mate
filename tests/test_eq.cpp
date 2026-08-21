@@ -281,7 +281,7 @@ std::vector<float> renderWithInstrumentEq(int bank, const EqBank* bankContents) 
     m.shape = 0x00;
     m.timbre = 0xC0;
     m.color = 0xC0;
-    m.amp = 0x20;
+    m.volume = 0x20;
     m.lim = 0;
     m.filter_type = 0;
     m.dry = 0xFF;
@@ -565,7 +565,7 @@ TEST_CASE("EQ22 the mix EQ is applied to the master bus", "[eq]") {
         state.instruments[0].type = InstType::INST_MACROSYN;
         state.instruments[0].macrosyn.dry = 0xFF;
         state.instruments[0].macrosyn.pan = 0x80;
-        state.instruments[0].macrosyn.amp = 0x20;
+        state.instruments[0].macrosyn.volume = 0x20;
         if (withEq)  // cut everything below 2 kHz on the whole mix
             state.eqs[kEqMix].low = EqBand{ 0 /*LOWCUT*/, 0, 2000, 0, 50, 0x00 };  // Q 1.0
 
@@ -593,7 +593,7 @@ TEST_CASE("EQ23 sends are stereo and carry pan", "[eq]") {
     m.dry = 0x00;          // reverb return only, so the dry path can't mask it
     m.rev = 0xFF;
     m.pan = 0x00;          // hard left
-    m.amp = 0x20;
+    m.volume = 0x20;
     state.mixer.rev_vol = 0xFF;
 
     setStep(host.sequencer(), 0, 0, 60, 127, 0);
@@ -627,7 +627,7 @@ TEST_CASE("EQ24 a send's input EQ shapes that send only", "[eq]") {
         m.dry = 0x00;          // reverb return only
         m.rev = 0xFF;
         m.pan = 0x80;
-        m.amp = 0x20;
+        m.volume = 0x20;
         state.mixer.rev_vol = 0xFF;
         if (killReverbSend)    // the reverb's INPUT EQ, not the delay's or the mix's
             state.eqs[kEqReverb].low = EqBand{ 5 /*HICUT*/, 0, 30, 0, 50, 0x00 };
