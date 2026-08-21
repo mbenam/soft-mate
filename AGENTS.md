@@ -301,6 +301,15 @@ should not be able to publish an empty window.
   by STEPS in `s.detune`. What is still open is the absolute constant, not the modes.
 - **`LIM` 06-08** (`POST:W1..W3`) alias to plain `POST` — `applyLimiter`'s `default:` branch
   is a hard clamp, identical to `CLIP`. Folding curves unknown and not hardware-verified.
+- **Reverb FREEZE is inert, and does not survive a save.** `FxCmd::XRZ` sets
+  `effects.rev_freeze` (`Engine.cpp:761`) and **nothing reads it** — the reverb never checks the
+  flag, so the command is a no-op you cannot hear. It is also absent from `SongIO`, which
+  round-trips `rev_size`, `rev_decay`, `rev_mod_depth`, `rev_mod_freq` and `rev_width` but has no
+  byte for freeze, so the flag is lost on save. There is no EFFECTS-screen control for it either;
+  `XRZ` is the only way to set it. Note this is a *feature gap*, not a curve — the decay law
+  above it is a closed CHOICE under §7a, but freeze is genuinely unimplemented, and implementing
+  it means holding the feedback path at unity while muting the input, plus finding it a home in
+  the saved effects block.
   *(Corrected 2026-08-19: this entry said 05-08. `LIM 05` POST:AD has been implemented as
   `std::tanh(x)` for some time — genuinely distinct from `04`'s hard clamp — and `status.md`
   line 680 already said so. Verified against `SynthVoice::applyLimiter` before editing.)*

@@ -124,7 +124,8 @@ enum class FxCmd : uint8_t {
 | DJC/DJR/DJT | yes | -- | preserved | yes | **Implemented** |
 | XMT/XMM/XMF/XMW/XMR | yes | -- | preserved | yes | **Implemented** |
 | XDT/XDF/XDW/XDR | yes | -- | preserved | yes | **Implemented** |
-| XRS/XRD/XRM/XRF/XRW/XRZ | yes | -- | preserved | yes | **Implemented** |
+| XRS/XRD/XRM/XRF/XRW | yes | -- | preserved | yes | **Implemented** |
+| XRZ | yes | -- | **not preserved** | **no** | **INERT** — writes `effects.rev_freeze`, which nothing reads and `SongIO` does not save. See below. |
 | IVO/IMX/IDE/IRV | yes | -- | preserved | yes | **Implemented** |
 | IV2/IM2/ID2/IR2 | yes | -- | preserved | yes | **Implemented** |
 | USB | yes | -- | preserved | yes | **Implemented** |
@@ -1014,7 +1015,7 @@ These commands directly modify `EngineState.mixer` and `EngineState.effects`.
 | XRM XX | `effects.rev_mod_depth` | val |
 | XRF XX | `effects.rev_mod_freq` | val |
 | XRW XX | `effects.rev_width` | val |
-| XRZ XX | `effects.rev_freeze` | val > 0 |
+| XRZ XX | `effects.rev_freeze` | val > 0 — **stored only; the flag is never read and never saved** |
 | EQM XX | mixer EQ slot | val |
 | EQI XX | instrument EQ slot | val |
 | DJC XX | `mixer.djf_freq` | val |

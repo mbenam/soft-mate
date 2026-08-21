@@ -897,6 +897,13 @@ is implemented and verified.
 
 - **MIDIOut, ExternalInst** — preserved on save, silent on play. (WavSynth, FMSynth,
   HyperSynth are now **implemented** — see Synth engines above.)
+- **Reverb FREEZE (`XRZ`)** — the FX command sets `effects.rev_freeze` (`Engine.cpp:761`) and
+  nothing reads it, so it is silent. `SongIO` has no byte for it either — `rev_size`,
+  `rev_decay`, `rev_mod_depth`, `rev_mod_freq` and `rev_width` all round-trip, freeze does not —
+  so the flag is also lost on save. No EFFECTS-screen control exposes it; `XRZ` is the only way
+  to reach it. `FX_COMMANDS_SPEC.md` used to list it as Implemented alongside its working
+  row-mates; corrected 2026-08-21. Implementing it means holding the reverb's feedback at unity
+  while muting its input, and finding it a home in the saved effects block.
 - **`SLICE` playback** — the byte is stored and saved, and the engine reads it only to
   *suppress* loop-point setup when it is non-zero (`SynthVoice.cpp:497`). It never selects a
   slice region, so playback ignores it. (**Scales are now read** — `Engine.cpp:796` applies
