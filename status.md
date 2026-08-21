@@ -181,6 +181,28 @@ LEAD `48`→`7C`, ARP `38`→`64`, HAT `14`→`24`, PAD cho `40`→`68`). Reverb
 from 22.7 dB below the mix to 14.7 dB below it. The reverb DSP itself was never in question — an
 isolated tail measures ~1.5 s of decay, and the delay ~4 s.
 
+**Reverb DECAY -> RT60 — a CHOICE, closed (2026-08-21).** `SetFeedback` used to take the DECAY
+byte directly, and measured on this engine that distributed the control badly:
+
+| DECAY | `0x40` | `0x80` | `0xB0` | `0xC0` | `0xE0` | `0xF0` | `0xFF` |
+|---|---|---|---|---|---|---|---|
+| RT60 (old) | 0.78 s | 0.88 s | 1.30 s | 1.68 s | 3.53 s | 7.65 s | never decays |
+
+Three quarters of the range sat between 0.8 s and 1.7 s — all small room, barely
+distinguishable — and the last eighth ran away to a tail that never decayed. Every committed
+song loads DECAY `0xB0`, so every song had a 1.3 s room, which is why raising REV read as "a bit
+more of something" rather than putting the mix in a hall.
+
+This network's decay follows **RT60 ≈ 0.42 / (1 − feedback)**, fitted across that table to within
+7%. `Engine.cpp` now inverts it so the byte picks an RT60 directly, mapped geometrically because
+decay reads to the ear proportionally: **0.5 s at `0x00`, 1.7 s at mid, 2.95 s at `0xB0`, 6.5 s
+at `0xFF`**, with the top clamped to a long hall rather than a freeze (freeze is `rev_freeze`,
+stored but not applied). Combined with the return trim, reverb in NEON DUSK went from 22.7 dB
+below the mix to **10.1 dB** below it.
+
+Both of these are modelling choices per `AGENTS.md` §7a, derived from this engine's own output,
+not from the device. Do not reopen them as measurement campaigns.
+
 **The send bars are pure meters; the track bars are not.** This asymmetry is deliberate. A track
 bar underlays its volume setting as a dim bar, and `DrawGlyphBar` only brightens a cell the live
 level fills at least as far as the setting does — fine for a track volume that sits mid-scale.

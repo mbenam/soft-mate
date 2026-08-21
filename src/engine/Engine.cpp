@@ -1560,7 +1560,36 @@ void Engine::render(float* buffer, int frames) {
             sendRevR += m_shimmerFeed;
         }
 
-        float fb = m_state.effects.rev_decay / 255.0f; if(fb > 0.98f) fb = 0.98f; m_reverb.SetFeedback(fb);
+        // DECAY -> RT60. A CHOICE, not a measurement (AGENTS.md 7a).
+        //
+        // The old law fed the byte straight in as feedback, and measured on this
+        // engine that distributed the control badly:
+        //
+        //   DECAY  0x40 0x80 0xB0 0xC0 0xE0 0xF0 0xFF
+        //   RT60   0.78 0.88 1.30 1.68 3.53 7.65 never
+        //
+        // Three quarters of the range sat between 0.8 s and 1.7 s -- all small
+        // room, barely distinguishable -- and then the last eighth ran away to a
+        // tail that never decayed at all. A song loading DECAY 0xB0 got 1.3 s,
+        // which is why turning REV up read as "a bit more of something" rather
+        // than putting the mix in a hall.
+        //
+        // This network's decay follows RT60 ~= kRevRt60K / (1 - feedback), fitted
+        // across the table above to within 7%. Inverting that lets the byte pick
+        // an RT60 directly, and the byte is mapped geometrically because decay
+        // reads to the ear proportionally: 0.5 s at 0x00, ~1.7 s at mid, ~2.8 s
+        // at 0xB0, 6 s at 0xFF. The clamp keeps the top a long hall instead of a
+        // freeze -- freeze is a separate control (rev_freeze), currently stored
+        // but not applied.
+        constexpr float kRevRt60K   = 0.42f;   // seconds, fitted to this network
+        constexpr float kRevRt60Min = 0.5f;    // seconds at DECAY 0x00
+        constexpr float kRevRt60Max = 6.0f;    // seconds at DECAY 0xFF
+        const float decayX  = m_state.effects.rev_decay / 255.0f;
+        const float targetRt = kRevRt60Min *
+            std::pow(kRevRt60Max / kRevRt60Min, decayX);
+        float fb = 1.0f - kRevRt60K / targetRt;
+        fb = std::clamp(fb, 0.0f, 0.95f);
+        m_reverb.SetFeedback(fb);
         m_reverb.SetLpFreq(10000.0f);
         // ROOM SIZE / MOD DEPTH / MOD FREQ. These went from silent to live on
         // 2026-08-14, once ReverbSc was vendored and given setters for them.
