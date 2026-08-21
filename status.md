@@ -162,6 +162,13 @@ adds to the mix and turning MX down takes its meter down with it. Pinned by `MB6
 which checks all three directions — silent with no send amount, live with the sends open, silent
 again with the master send volume at zero.
 
+**ModFX MOD FRQ → LFO rate — a CHOICE, closed (2026-08-21).** The old law was a straight
+`(byte/255) × 10 Hz`, putting the default `0x80` at **5.02 Hz**. Chorus lives around 0.3–2 Hz; at
+5 Hz it reads as warble rather than widening, and everything musical was squeezed into the bottom
+sixth of the control — the same distribution problem DECAY had. Mapped geometrically instead:
+**0.05 Hz at `0x00`, 0.64 Hz at mid, 8 Hz at `0xFF`**, so the top still reaches the fast rates a
+flanger wants.
+
 **Send return trim — a CHOICE, closed (2026-08-21).** Each processor returned below the dry
 it was fed, and by a different amount: measured against a macrosynth at full send with the soft
 clip off, CHO came back at −8.10 dB, DEL at −1.74 dB, REV at −4.52 dB. A send value therefore did
@@ -169,17 +176,37 @@ not mean the same thing from one effect to the next, and REV in particular sat l
 `0x70` send on a pad was inaudible in a dense mix — reported as "changing RE does nothing", which
 was a fair description of the result even though the routing was correct end to end.
 
-`Engine.cpp` now trims each return (`kChoReturnTrim` 2.54, `kDelReturnTrim` 1.22,
-`kRevReturnTrim` 1.68) so that **a send at `0xFF` with its master return at `0xFF` puts the wet
-signal at the level the dry would have been**. All three now land within ~1 dB of unity. This is
-a modelling choice per `AGENTS.md` §7a, derived from this engine's own output — *not* from the
-device, and not to be "corrected" against a hardware capture. The constants depend mildly on
-source spectrum, since both the chorus and the reverb are frequency-dependent.
+`Engine.cpp` now trims each return so that **a send at `0xFF` with its master return at `0xFF`
+puts the wet signal at the level the dry would have been**. Calibrated with the returns
+untrimmed, against a source quiet enough that nothing clips — a first pass measured at full
+level, where every wet render pinned at 1.0, and the saturated RMS produced constants wrong in
+both directions:
 
-NEON DUSK's own sends were raised to match (PAD rev `70`→`B4`, CLAP `60`→`94`, SNARE `54`→`80`,
-LEAD `48`→`7C`, ARP `38`→`64`, HAT `14`→`24`, PAD cho `40`→`68`). Reverb in the boot song went
-from 22.7 dB below the mix to 14.7 dB below it. The reverb DSP itself was never in question — an
-isolated tail measures ~1.5 s of decay, and the delay ~4 s.
+| return | untrimmed | trim |
+|---|---|---|
+| CHORUS | −8.23 dB | ×2.58 |
+| PHASER | **+1.73 dB** | ×0.82 |
+| FLANGER | −4.83 dB | ×1.74 |
+| DELAY | −0.16 dB | ×1.02 |
+| REVERB | −0.32 dB | ×1.04 |
+
+All five now land within 0.03 dB of unity. Two things this exposed: delay and reverb already
+arrived at unity once DECAY stopped being a 1.3 s room (the RT60 law above did that work), and
+**ModFX is a slot of three processors whose levels differ by 10 dB end to end** — one shared trim
+put the phaser 7.6 dB hot and tripped `A14`'s runaway guard, so `kChoReturnTrim` is indexed by
+`modfx_type`.
+
+A modelling choice per `AGENTS.md` §7a, derived from this engine's own output — *not* from the
+device, and not to be "corrected" against a hardware capture. The constants depend mildly on
+source spectrum, since the chorus and the reverb are frequency-dependent.
+
+**Loudness lives in the song, not the trim.** The returns are a unity reference; how wet a piece
+sounds is its own send values. NEON DUSK carries deliberately high sends so the boot song
+demonstrates all three engines — isolated, MX sits 14.0 dB under the mix, DE 12.8 and RE 10.4,
+against 25.4 / — / 22.7 before any of this work.
+
+The reverb DSP itself was never in question — isolated after a stop it decays over ~3 s at the
+song's DECAY, and the delay over ~4 s.
 
 **Reverb DECAY -> RT60 — a CHOICE, closed (2026-08-21).** `SetFeedback` used to take the DECAY
 byte directly, and measured on this engine that distributed the control badly:

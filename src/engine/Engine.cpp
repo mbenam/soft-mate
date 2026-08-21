@@ -1483,7 +1483,20 @@ void Engine::render(float* buffer, int frames) {
         // settle for the instrument EQ, and it wants the same treatment: mute
         // the dry path, drive one send, and compare captures.
 
-        m_smoothChoFreq += ((m_state.effects.cho_mod_freq / 255.0f) * 10.0f - m_smoothChoFreq) * 0.005f;
+        // MOD FRQ -> LFO rate. A CHOICE (AGENTS.md 7a), and the same distribution
+        // problem the reverb's DECAY byte had: the old law was a straight
+        // (byte/255) * 10 Hz, which put the default 0x80 at 5.02 Hz. Chorus
+        // lives at roughly 0.3-2 Hz; at 5 Hz it reads as warble or vibrato, not
+        // widening, and everything musical was squeezed into the bottom sixth of
+        // the control. Mapped geometrically instead, because rate reads to the
+        // ear proportionally: 0.05 Hz at 0x00, ~0.63 Hz at mid, 8 Hz at 0xFF --
+        // so the top of the range still reaches the fast rates a flanger wants.
+        constexpr float kModFxHzMin = 0.05f;
+        constexpr float kModFxHzMax = 8.0f;
+        const float modfxX = m_state.effects.cho_mod_freq / 255.0f;
+        const float targetHz = kModFxHzMin *
+            std::pow(kModFxHzMax / kModFxHzMin, modfxX);
+        m_smoothChoFreq += (targetHz - m_smoothChoFreq) * 0.005f;
         m_smoothChoDepth += (m_state.effects.cho_mod_depth / 255.0f - m_smoothChoDepth) * 0.005f;
         m_chorusL.SetLfoFreq(m_smoothChoFreq);
         m_chorusR.SetLfoFreq(m_smoothChoFreq);
@@ -1648,11 +1661,33 @@ void Engine::render(float* buffer, int frames) {
         // (both the chorus and the reverb are frequency-dependent), so treat
         // them as a sensible staging choice rather than an exact law. Do not
         // "correct" them against a hardware capture.
-        constexpr float kChoReturnTrim = 2.54f;   // +8.10 dB
-        constexpr float kDelReturnTrim = 1.22f;   // +1.74 dB
-        constexpr float kRevReturnTrim = 1.68f;   // +4.52 dB
+        // ModFX is a slot with three processors and they do NOT return at the
+        // same level, so one trim cannot serve all three: with a single 2.54
+        // the chorus landed at -0.74 dB but the phaser at +2.19 dB, hot enough
+        // to push A14's runaway guard over its ceiling. Trimmed per algorithm.
+        // Calibrated with the returns UNTRIMMED, against a source quiet enough
+        // that neither the dry reference nor any return clips -- an earlier pass
+        // measured at full level, where every wet render pinned at 1.0, and the
+        // saturated RMS gave constants that were wrong in both directions.
+        //
+        //   CHORUS -8.23 dB   PHASER +1.73 dB   FLANGER -4.83 dB
+        //   DELAY  -0.16 dB   REVERB -0.32 dB
+        //
+        // Delay and reverb already arrive at unity, so they need almost nothing;
+        // the reverb only got there once DECAY stopped being a 1.3 s room (see
+        // the RT60 law above). ModFX is the outlier, and it is a slot of three
+        // processors whose levels differ by 10 dB end to end -- a single trim
+        // there put the phaser 7.6 dB hot and tripped A14's runaway guard.
+        constexpr float kChoReturnTrim[3] = {
+            2.58f,   // 00 CHORUS   -- the quiet one
+            0.82f,   // 01 PHASER   -- the only return that is hot untrimmed
+            1.74f,   // 02 FLANGER
+        };
+        constexpr float kDelReturnTrim = 1.02f;
+        constexpr float kRevReturnTrim = 1.04f;
 
-        float master_cho = (m_state.mixer.cho_vol / 255.0f) * kChoReturnTrim;
+        const int modfxIdx = std::clamp(m_state.effects.modfx_type, 0, 2);
+        float master_cho = (m_state.mixer.cho_vol / 255.0f) * kChoReturnTrim[modfxIdx];
         float master_del = (m_state.mixer.del_vol / 255.0f) * kDelReturnTrim;
         float master_rev = (m_state.mixer.rev_vol / 255.0f) * kRevReturnTrim;
         
