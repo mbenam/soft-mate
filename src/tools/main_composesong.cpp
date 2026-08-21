@@ -230,7 +230,7 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.sampler.amp         = 0x1C;
         in.sampler.dry         = 0xC8;
         in.sampler.del         = 0x20;
-        in.sampler.rev         = 0x54;
+        in.sampler.rev         = 0x80;
         in.sampler.pan         = 0x8A;
         amp(I_SNARE, 0, 0x30, 0x18);
     }
@@ -252,7 +252,7 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.wav.res         = 0x18;
         in.wav.amp         = 0x18;
         in.wav.dry         = 0xC0;
-        in.wav.rev         = 0x14;
+        in.wav.rev         = 0x24;
         in.wav.pan         = 0x72;       // opposite the snare
         amp(I_HAT, 0, 0x06, 0x08);       // very short -- a tick, not a wash
     }
@@ -304,8 +304,8 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.hyper.res         = 0x10;
         in.hyper.amp         = 0x14;
         in.hyper.dry         = 0xA0;
-        in.hyper.cho         = 0x40;
-        in.hyper.rev         = 0x70;
+        in.hyper.cho         = 0x68;
+        in.hyper.rev         = 0xB4;
         amp(I_PAD, 0x50, 0xC0, 0x90);    // slow swell, long tail
     }
 
@@ -329,7 +329,7 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.wav.pan         = 0x94;
         in.wav.dry         = 0xB0;
         in.wav.del         = 0x48;
-        in.wav.rev         = 0x38;
+        in.wav.rev         = 0x64;
         amp(I_ARP, 0x02, 0x14, 0x2C);
     }
 
@@ -350,7 +350,7 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.macrosyn.pan         = 0x6C;
         in.macrosyn.dry         = 0xB8;
         in.macrosyn.del         = 0x58;
-        in.macrosyn.rev         = 0x48;
+        in.macrosyn.rev         = 0x7C;
         amp(I_LEAD, 0x00, 0x28, 0x44);
     }
 
@@ -368,7 +368,7 @@ static void composeNeonDusk(engine::Sequencer& seq, engine::EngineState& st) {
         in.sampler.cutoff      = 0x24;
         in.sampler.amp         = 0x20;
         in.sampler.dry         = 0xC0;
-        in.sampler.rev         = 0x60;
+        in.sampler.rev         = 0x94;
         in.sampler.pan         = 0x78;
         amp(I_CLAP, 0, 0x28, 0x20);
     }

@@ -162,6 +162,25 @@ adds to the mix and turning MX down takes its meter down with it. Pinned by `MB6
 which checks all three directions — silent with no send amount, live with the sends open, silent
 again with the master send volume at zero.
 
+**Send return trim — a CHOICE, closed (2026-08-21).** Each processor returned below the dry
+it was fed, and by a different amount: measured against a macrosynth at full send with the soft
+clip off, CHO came back at −8.10 dB, DEL at −1.74 dB, REV at −4.52 dB. A send value therefore did
+not mean the same thing from one effect to the next, and REV in particular sat low enough that a
+`0x70` send on a pad was inaudible in a dense mix — reported as "changing RE does nothing", which
+was a fair description of the result even though the routing was correct end to end.
+
+`Engine.cpp` now trims each return (`kChoReturnTrim` 2.54, `kDelReturnTrim` 1.22,
+`kRevReturnTrim` 1.68) so that **a send at `0xFF` with its master return at `0xFF` puts the wet
+signal at the level the dry would have been**. All three now land within ~1 dB of unity. This is
+a modelling choice per `AGENTS.md` §7a, derived from this engine's own output — *not* from the
+device, and not to be "corrected" against a hardware capture. The constants depend mildly on
+source spectrum, since both the chorus and the reverb are frequency-dependent.
+
+NEON DUSK's own sends were raised to match (PAD rev `70`→`B4`, CLAP `60`→`94`, SNARE `54`→`80`,
+LEAD `48`→`7C`, ARP `38`→`64`, HAT `14`→`24`, PAD cho `40`→`68`). Reverb in the boot song went
+from 22.7 dB below the mix to 14.7 dB below it. The reverb DSP itself was never in question — an
+isolated tail measures ~1.5 s of decay, and the delay ~4 s.
+
 **The send bars are pure meters; the track bars are not.** This asymmetry is deliberate. A track
 bar underlays its volume setting as a dim bar, and `DrawGlyphBar` only brightens a cell the live
 level fills at least as far as the setting does — fine for a track volume that sits mid-scale.

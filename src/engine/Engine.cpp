@@ -1597,9 +1597,35 @@ void Engine::render(float* buffer, int frames) {
 
         applyStereoWidth(revL, revR, m_state.effects.rev_width);
 
-        float master_cho = m_state.mixer.cho_vol / 255.0f;
-        float master_del = m_state.mixer.del_vol / 255.0f;
-        float master_rev = m_state.mixer.rev_vol / 255.0f;
+        // Send return trim -- a CHOICE, not a measurement (AGENTS.md 7a).
+        //
+        // Each processor returns below the dry it was fed: measured against a
+        // macrosynth at full send with the soft clip off, CHO came back at
+        // -8.10 dB, DEL at -1.74 dB and REV at -4.52 dB. Three different
+        // answers, so a send value did not mean the same thing from one effect
+        // to the next, and the reverb in particular sat far enough down that a
+        // 0x70 send on a pad was inaudible in a dense mix -- which is what
+        // prompted this.
+        //
+        // The model chosen: a send at 0xFF with its master return at 0xFF puts
+        // the wet signal at the level the dry would have been. That is the
+        // mental model the control implies, it makes mid-range sends behave
+        // predictably, and it makes one send value mean one thing across all
+        // three effects.
+        //
+        // These are calibration constants for THIS engine, derived from its own
+        // output, not from the device -- 7a is explicit that levels are not a
+        // question to put to hardware. They depend mildly on source spectrum
+        // (both the chorus and the reverb are frequency-dependent), so treat
+        // them as a sensible staging choice rather than an exact law. Do not
+        // "correct" them against a hardware capture.
+        constexpr float kChoReturnTrim = 2.54f;   // +8.10 dB
+        constexpr float kDelReturnTrim = 1.22f;   // +1.74 dB
+        constexpr float kRevReturnTrim = 1.68f;   // +4.52 dB
+
+        float master_cho = (m_state.mixer.cho_vol / 255.0f) * kChoReturnTrim;
+        float master_del = (m_state.mixer.del_vol / 255.0f) * kDelReturnTrim;
+        float master_rev = (m_state.mixer.rev_vol / 255.0f) * kRevReturnTrim;
         
         const float choOutL = choL * master_cho, choOutR = choR * master_cho;
         const float delOutL = delL * master_del, delOutR = delR * master_del;

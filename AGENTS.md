@@ -292,10 +292,13 @@ should not be able to publish an empty window.
 
 ## 8. Known placeholders — do not mistake these for finished work
 
-- **`INST_MACROSYN` is a POLYBLEP saw**, not Braids. The oscillator models are not
-  implemented. `shape`, `timbre`, `color`, `redux` are stored and ignored.
-- **`PLAY` modes 09-0E** (REPITCH, BPM families) fall back to their non-repitched
-  equivalents. They need SLICE first.
+- ~~`INST_MACROSYN` is a POLYBLEP saw~~ — **stale, corrected 2026-08-21.** It is a real Braids
+  port: `SynthVoice.cpp:548` drives `m_braidsOsc` from `shape` for the whole named range
+  `0x00`–`0x2B`. Shapes **above `0x2B`** still fall back to the polyBLEP saw, and that part
+  stands.
+- ~~`PLAY` modes 09-0E fall back~~ — **stale, corrected 2026-08-21.** Both families are
+  implemented: REPITCH 09–0B at `SynthVoice.cpp:465`, BPM 0C–0E at `SynthVoice.cpp:476`, driven
+  by STEPS in `s.detune`. What is still open is the absolute constant, not the modes.
 - **`LIM` 06-08** (`POST:W1..W3`) alias to plain `POST` — `applyLimiter`'s `default:` branch
   is a hard clamp, identical to `CLIP`. Folding curves unknown and not hardware-verified.
   *(Corrected 2026-08-19: this entry said 05-08. `LIM 05` POST:AD has been implemented as
