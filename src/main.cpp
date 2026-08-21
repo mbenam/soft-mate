@@ -652,7 +652,7 @@ int main(int argc, char* argv[]) {
     {
         std::string startupSong, startupRoot;
         bool loaded = false;
-        if (findStartupSong("sunrise.m8s", startupSong, startupRoot)) {
+        if (findStartupSong("neondusk.m8s", startupSong, startupRoot)) {
             sampleRoot = startupRoot;
             m8::ui::project::setSampleRoot(sampleRoot);
             loaded = loadSongIntoEngine(startupSong, sampleRoot, commandRing, uiSequencer,

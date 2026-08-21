@@ -18,10 +18,12 @@ assert_cell_color row 1 col 1 is F82040FF
 
 # 3. assert_row_matches: row 3 (raw vram index, i.e. SONG row "00"'s chain-ref
 #    line) should start with hex chain refs.
-#    NOTE: this is the boot-loaded startup song's data (songs/sunrise.m8s as of
-#    2026-07-17, previously the in-code "Night Drive" demo) -- it WILL drift again
-#    if the startup song changes. Confirmed from dump_json vram[3] = "00 00 -- 02 03 04 -- -- --"
-assert_row_matches 4 "^ 00 00 -- 02 03 04"
+#    NOTE: this is the boot-loaded startup song's data (songs/neondusk.m8s as
+#    of 2026-08-21; before that sunrise.m8s, and before that the in-code "Night
+#    Drive" demo) -- it WILL drift again if the startup song changes. NEON DUSK
+#    opens on pad and arp alone, so song row 00 rests every lane but 4 and 5.
+#    Confirmed from dump_screen: " 00 -- -- -- -- 04 05 -- --"
+assert_row_matches 4 "^ 00 -- -- -- -- 04 05"
 
 # === Navigate to Instrument screen for slider test ===
 key SHIFT+RIGHT

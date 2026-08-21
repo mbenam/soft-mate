@@ -1,15 +1,52 @@
 # m8_composesong
 
-**Source:** [`src/tools/main_composesong.cpp`](../../src/tools/main_composesong.cpp) (191 lines)
+**Source:** [`src/tools/main_composesong.cpp`](../../src/tools/main_composesong.cpp) (520 lines)
 **Build target:** `m8_composesong` (CMakeLists.txt)
 **Category:** song-authoring tool (special-purpose, not a generic CLI utility)
 
 ## What it does
 
-Authors the app's **startup song**, "SUNRISE," and writes it to `songs/sunrise.m8s`. Unlike
+Authors the app's **startup songs** and writes them to `songs/`. Unlike
 [`m8_makesong`](m8_makesong.md) (which re-exports the pre-existing in-code demo), this tool
-composes an entirely new arrangement from scratch, directly in C++, using the engine's data
+composes entire arrangements from scratch, directly in C++, using the engine's data
 structures (`seq.phrases`, `seq.chains`, `seq.song`) as the authoring surface.
+
+Two songs live here, picked with `--song`:
+
+| `--song` | song | writes | notes |
+|---|---|---|---|
+| `neondusk` *(default)* | **NEON DUSK**, 112 BPM, Dm - Gm - Bb - Am | `songs/neondusk.m8s` | The current startup song. |
+| `sunrise` | **SUNRISE**, 128 BPM, Am - F - C - G | `songs/sunrise.m8s` | The previous startup song, kept reproducible because tests load it by name. |
+
+### NEON DUSK
+
+Written once FMSynth, WavSynth and HyperSynth existed, and built to put all of them
+on screen at boot — SUNRISE predates them and is entirely MacroSynth and samplers:
+
+| # | name | engine | notes |
+|---|---|---|---|
+| 00 | KICK | Sampler | `/samples/kick.wav`, LP + SIN limiting |
+| 01 | SNARE | Sampler | `/samples/snare.wav`, high-passed clear of the kick |
+| 02 | HAT | **WavSynth** | shape 8 NOISE — a hat with no sample behind it |
+| 03 | BASS | **FMSynth** | algo 0, ops A/B silent so it reduces to 2-op: C modulates carrier D |
+| 04 | PAD | **HyperSynth** | fifth-stack chord bank, swarm + width |
+| 05 | ARP | **WavSynth** | shape 16 WT-OSC:LIQUID, MULT/WARP/SCAN for movement |
+| 06 | LEAD | **MacroSynth** | shape 28 PLUCKED |
+| 07 | CLAP | Sampler | `/samples/clap.wav`, once a bar on the 4 |
+
+Four song rows of four bars each, and the build is expressed as empty song cells rather
+than extra chains. It opens on **pad and arp alone** for four bars, which is the clearest
+way to hear that the pad is a HyperSynth and not a saw; kick/hat/bass enter at row 1, the
+lead and backbeat at row 2, and the lead drops out at row 3 before the loop.
+
+**Chord quality is the trap** in a transpose-driven progression: the pad's chord bank is a
+fixed set of intervals, so a minor voicing transposed onto a major chord fights it. The pad
+and arp are therefore quality-neutral — roots, fifths and octaves, no third anywhere — and
+the lead is D-minor pentatonic with `TRANSP OFF` so it holds still while the harmony moves.
+The four transposes `{0, -7, -4, -5}` all descend, which keeps the bass in its register
+instead of climbing away over the cycle.
+
+### SUNRISE
 
 SUNRISE is deliberately distinct from the older "Night Drive" demo:
 - 128 BPM, four-on-the-floor house feel, straight timing (no swing/groove).
@@ -26,8 +63,13 @@ It reuses the demo's *instrument patches* (the tuned envelopes and filter settin
 material, and clears the sequencer first (`seq.clear()`) so nothing of the old arrangement
 survives.
 
-The app loads this `.m8s` at startup (`songs/sunrise.m8s` — see `status.md`'s "Startup / demo
-songs" section) — nothing about the song's content lives in the app binary itself.
+The app loads the startup `.m8s` from disk (`songs/neondusk.m8s` — see `status.md`'s "Startup /
+demo songs" section) — nothing about either song's content lives in the app binary itself.
+
+> **Regenerating `sunrise.m8s` does not currently reproduce the committed file byte for byte.**
+> The engine has drifted since it was last written (instrument `AMP`/`VOLUME` handling, among
+> other things), so the bytes differ even from the pre-`--song` version of this tool. The
+> committed file is what the tests load; leave it alone unless you mean to re-baseline it.
 
 ## Musical/data design (useful context for editing it)
 
@@ -51,7 +93,8 @@ songs" section) — nothing about the song's content lives in the app binary its
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--out <path>` | `songs/sunrise.m8s` | Where to write the song file. |
+| `--song <name>` | `neondusk` | Which song to author: `neondusk` or `sunrise`. Any other value exits 2. |
+| `--out <path>` | `songs/<song>.m8s` | Where to write the song file. |
 | `--template <path>` | `third_party/m8-files-cxx/examples/songs/V4EMPTY.m8s` | Empty-song template `io::saveNewSong` overlays onto. |
 
 ## Exit codes

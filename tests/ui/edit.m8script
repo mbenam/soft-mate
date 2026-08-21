@@ -7,7 +7,8 @@
 # see M8_APP_AUTOMATION_SPEC.md Tier 4 notes).
 #
 # Explicit `load` added 2026-07-17: this script previously had none, relying
-# on the ambient boot song (songs/sunrise.m8s). Since sunrise.m8s already has
+# on the ambient boot song (songs/sunrise.m8s, the startup song at the time).
+# Since sunrise.m8s already has
 # C-4 at phrase 00 row 0, the assertion below passed regardless of whether
 # the edit sequence did anything at all -- confirmed by tracing dump_screen
 # after each keypress, which showed "C-4" present *before* any key was

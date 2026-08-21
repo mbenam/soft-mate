@@ -215,6 +215,9 @@ static void printTrackInfo(Engine& engine) {
         if (inst.type == InstType::INST_SAMPLER) typeName = "SAMPLER";
         else if (inst.type == InstType::INST_MACROSYN) typeName = "MACROSYN";
         else if (inst.type == InstType::INST_HYPERSYN) typeName = "HYPERSYN";
+        else if (inst.type == InstType::INST_FMSYNTH) typeName = "FMSYNTH";
+        else if (inst.type == InstType::INST_WAVSYNTH) typeName = "WAVSYNTH";
+        else if (inst.type == InstType::INST_MIDI)     typeName = "MIDI";
         else if (inst.type == InstType::INST_MIDI) typeName = "MIDI";
         else if (inst.type == InstType::INST_NONE) typeName = "NONE (unimplemented — silent)";
 

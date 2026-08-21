@@ -33,7 +33,7 @@ scripting harness.
 | `m8_render` | `src/tools/main_render.cpp` | `m8_engine` | Offline WAV renderer + event-CSV logger. Headless ground truth. |
 | `m8_analyze` | `src/tools/main_analyze.cpp` | `m8_engine` | WAV metrics checker (peak/DC/crest/clip/silence), `--diff` mode. |
 | `m8_makeprobe` | `src/tools/main_makeprobe.cpp` | `m8_files_cpp` only | Generates minimal `.m8s` probe songs (one instrument, one note). |
-| `m8_composesong` / `m8_makesong` | `src/tools/main_composesong.cpp` / `main_makesong.cpp` | `m8_engine` | Author songs to `.m8s` as data. `m8_composesong` writes `songs/sunrise.m8s` (the startup song). |
+| `m8_composesong` / `m8_makesong` | `src/tools/main_composesong.cpp` / `main_makesong.cpp` | `m8_engine` | Author songs to `.m8s` as data. `m8_composesong` writes `songs/neondusk.m8s` (the startup song) and, with `--song sunrise`, the previous one. |
 | `m8_capture` | `src/tools/main_capture.cpp` | miniaudio (header-only) | Records real M8 hardware over serial + USB audio, for A/B reference. `--batch`, `--keyjazz`. |
 | `m8_nav` | `src/tools/main_nav.cpp` | none (Win32 serial only) | Decodes the M8 SLIP **display** stream into a text grid and drives the headless closed-loop. **Use `--serve` for anything multi-step**, via `tools/m8drv/m8drv.py` — one-shot invocations pay a ~1 s handshake each and hid a real bug for months (`M8_DRIVER_BUGS.md` #24). |
 | `m8_tests` | `tests/*` | Catch2 v3 + `m8_engine` | 269 test cases across 32 files (static `TEST_CASE` count, 2026-08-12 — see `status.md` "Tests" for provenance; last recorded *run* was 147/147 on 2026-07-17's tree). |

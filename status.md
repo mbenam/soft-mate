@@ -54,7 +54,8 @@ Targets:
 - `m8_spectrum` — A/B spectral comparison against a hardware reference (fundamental, harmonic/
   sideband table, centroid, log-spectral distance); `--json` for a render→compare→adjust loop
 - `m8_makeprobe` — generates probe `.m8s` files (one instrument, one note; `--sweep`)
-- `m8_composesong` — authors the startup song "SUNRISE" and writes `songs/sunrise.m8s` (data,
+- `m8_composesong` — authors the startup song "NEON DUSK" and writes `songs/neondusk.m8s`
+  (`--song sunrise` still writes the previous startup song). (data,
   not hard-coded into the app); the app loads it at startup, falling back to the in-code
   "Night Drive" demo if the file is missing. Also `m8_makesong`.
 - `m8_capture` — drives the headless over serial + records USB audio → trimmed WAV;
@@ -498,11 +499,17 @@ the load/save symmetry a round-trip test cannot), L26 (unmodelled bytes preserve
   proof that our sampler is faithful. This is the honest timbre gate MacroSynth can't be yet.
 
 ### Startup / demo songs
-The app loads **`songs/sunrise.m8s`** at startup (authored by the `m8_composesong` tool —
-"SUNRISE", 128 BPM four-on-the-floor, A-minor, sampler drum kit + MacroSynth, 16-bar build).
-It is committed data, not baked into the binary. If the file is missing, the app falls back to
-`loadDemoSong()` — the in-code "Night Drive" demo (16 bars, C minor, 124 BPM, swing, drums
-synthesized at startup). `songs/opening.m8s` is an earlier committed song kept alongside it.
+The app loads **`songs/neondusk.m8s`** at startup (authored by the `m8_composesong` tool —
+"NEON DUSK", 112 BPM, D minor Dm-Gm-Bb-Am, 16-bar build). It is the first startup song to use
+every synth engine: samplers for kick/snare/clap, **WavSynth** for the hat (shape 8 NOISE, no
+sample behind it) and the arp (WT-OSC:LIQUID), **FMSynth** for the bass, **HyperSynth** for the
+pad, **MacroSynth** for the lead. It opens on pad and arp alone for four bars before the drums
+enter. It is committed data, not baked into the binary.
+
+If the file is missing, the app falls back to `loadDemoSong()` — the in-code "Night Drive" demo
+(16 bars, C minor, 124 BPM, swing, drums synthesized at startup). `songs/sunrise.m8s` (the
+previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
+are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
 ### Tests — 321 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]

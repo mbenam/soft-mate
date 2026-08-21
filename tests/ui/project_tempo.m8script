@@ -1,7 +1,15 @@
+# Every assertion below is the baseline tempo plus or minus a step, so the whole
+# file moves if the boot song's tempo changes -- which it did when the startup
+# song became NEON DUSK at 112 BPM. Pin the baseline with an explicit load
+# instead of tracking it, the same fix edit.m8script and playhead.m8script took
+# after drifting on ambient boot state. sunrise.m8s is 128 BPM.
+load songs/sunrise.m8s
+wait 1
+
 goto PROJECT
 assert_screen contains "PROJECT"
 
-# Check baseline whole tempo (Sunrise defaults to 128.00)
+# Check baseline whole tempo (sunrise.m8s is 128.00)
 assert_field TEMPO 128.00 < >
 
 # 1. Adjust whole tempo by 10s with X+UP and X+DOWN

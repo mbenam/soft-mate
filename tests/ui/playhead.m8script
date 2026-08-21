@@ -2,7 +2,7 @@
 # playback, not just that the transport flag is set (Tier 2,
 # M8_APP_AUTOMATION_SPEC.md).
 #
-# Uses songs/sunrise.m8s (the startup song, real 16-bar content, no missing
+# Uses songs/sunrise.m8s (real 16-bar content, no missing
 # samples), loaded explicitly rather than relying on ambient boot state (see
 # task6_test.m8script, which had to be fixed after silently drifting when the
 # boot song changed). Two songs were tried and rejected first:
