@@ -733,29 +733,73 @@ is implemented and verified.
   `test_fmsynth` and `test_hypersynth` still set `.amp = 0x40` as a rough "make it audible" knob.
   They pass because they assert presence, not level — but that field is inert now, so they will
   shift if AMP is ever modelled as a drive. Noted in `test_output_stage.cpp`.
-- **`AMP` is modelled wrong in KIND, not just in curve — MEASURED 2026-08-19 (fw 6.5.2, COM3).**
+- **`AMP` is inert, and that is now a DECISION rather than an open measurement (2026-08-20).**
+  See AGENTS.md §7a. The engine applies nothing for AMP; it is not going to be characterised
+  against the device, because chasing acoustic parity is not what this project is for. If AMP
+  should *do* something musically, that is a design call to make on musical grounds — pick a
+  drive, say in the code that it is a choice, and pin it with a test. Do not open another
+  capture campaign. What was measured before the line was drawn is kept below because it is
+  the justification for leaving AMP inert, not a to-do list.
   `SynthVoice::applyAmpLimFilter` treats AMP as an output gain, `1 + (byte/255)*7`, i.e. up to
   **+18 dB**. Hardware, WavSynth at instrument volume `0x7F` (peak 0.36, so ~30 dB of signal —
   the earlier low-level attempts were noise-limited and inconclusive):
 
-  | `LIM` mode | AMP `0x00` → `0xFF`, measured |
-  |---|---|
-  | `00 CLIP` | **−0.02 dB** — peak 0.3561→0.3539, crest 18.14→18.11. No effect at all. |
-  | `08 POST:W3` | **−23.09 dB** — peak 0.3261→0.0317, crest 18.20→21.05. |
+  **The −23 dB half of this was RETRACTED 2026-08-20. It was an empty capture.**
+  `hwtest_out/fit/PFF.wav`, the `LIM 08 AMP FF` point, contains no note: every 0.1 s bin is
+  below 0.01 and the 0.0317 "peak" is ringing. `tools/wav_envelope.py` shows it at a glance.
+  Its manifest says `check_level.enabled: false` next to `passed: true`, so nothing flagged it.
+  `PLAY` is a toggle, and one dropped or doubled press records the silence between notes — the
+  same failure recurred twice in eighteen captures the next day, which is what exposed it.
 
-  So the device does *nothing* in one mode and *attenuates* by 23 dB in another, where we
-  amplify by 18 dB in both. **Interpretation, not measurement:** this is the shape of a
-  gain-compensated **drive into the LIM stage** — unity until the saturator engages, and in a
-  wavefolder mode (`POST:W1–W3`) driving it hard folds the signal into something quieter and
-  spikier, which the rising crest supports. Our model is a plain multiply, which is a different
-  thing.
+  | `LIM` mode | AMP `0x00` → `0xFF`, measured | n |
+  |---|---|---|
+  | `00 CLIP` | −0.07 dB | 2026-08-20 |
+  | `01 SIN` | −0.18 dB | |
+  | `02 FOLD` | +0.13 dB | |
+  | `03 WRAP` | −0.12 dB (mode itself runs +2.2 dB hotter than the rest, at both AMP values) | |
+  | `04 POST` | +0.01 dB | |
+  | `05 POST:AD` | **+3.86 dB** | candidate, unconfirmed |
+  | `06 POST:W1` | contaminated — the `FF` capture held no note | |
+  | `07 POST:W2` | contaminated — the `00` capture was trimmed to 0.89 s | |
+  | `08 POST:W3` | **+0.83 dB** | candidate, unconfirmed |
 
-  **Not fixed, deliberately.** Correcting it is not a curve tweak: it needs AMP characterised
-  against all 9 `LIM` modes and across instrument types, and a wrong-but-precise curve is worse
-  than a known-wrong one (AGENTS.md §7). Four points on one type is not that. Whatever replaces
-  it must also explain why `LIM 00` shows no level change at all. Captures:
-  `hwtest_out/fit/W00,WFF,P00,PFF.wav` (gitignored). The AMP sweep that led here is in
-  `docs/ui_screen_spec.md`.
+  Scatter across the five null modes is ±0.2 dB, so `05` and `08` are outside the noise but
+  neither is repeated yet. **What survives from the earlier round is the important half:** AMP
+  is not the ±18 dB output gain `applyAmpLimFilter` used to apply — it does nothing at all in
+  five of nine modes. Applying nothing stays strictly less wrong. The sign of the effect in the
+  POST family is now *positive*, i.e. the opposite of what the retracted point claimed, so no
+  "drives the saturator into something quieter" story is supported by anything measured.
+
+  **Crest is 18.1–18.2 dB in every valid capture, in all nine modes, at both AMP values.**
+  Nothing is being shaped at this level — the probe's note is a ~0.3 s transient peaking at
+  0.36, and no LIM mode visibly bends it. A curve fitted to peaks alone would be describing a
+  gain, not a saturator.
+
+  **Why inert is the right resting place.** In five of nine `LIM` modes the device moves the
+  output by less than the ±0.2 dB scatter of the rig — applying nothing reproduces that
+  exactly. The two candidate effects are small, unrepeated, and in the POST family only. A
+  precise-but-wrong curve is worse than a known-wrong one (AGENTS.md §7), and the alternative
+  costs hours of hardware time this project has decided not to spend. Captures:
+  `hwtest_out/triage/` and `hwtest_out/fit/` (gitignored). The rig, if it is ever wanted for a
+  *data* question, is `tools/hw_amp_triage.py`.
+
+  **`hw_measure.py` now refuses a capture that holds no note** (exit 4, kept as `.NONOTE`),
+  checks the trimmed duration against the requested window, and stops the transport before
+  capturing. It verified device state meticulously and never once asked whether the audio
+  contained anything — which is how a silent window passed as a −23 dB measurement. It also
+  reads all its fields through one connection now instead of a daemon per field.
+  `tools/wav_envelope.py` prints a capture as a one-line envelope, which is what made the
+  empty window obvious. These are kept so nobody can publish a silent capture again, not
+  because more captures are planned.
+
+  **Postscript, same day: the device went silent to the rig entirely.** After eighteen good
+  captures the M8 stopped producing a note in *any* window — transport verified stopped,
+  cursor parked at song 00/00, `TYPE WAVSYNTH`, `OUTPUT VOL F0`, `MIX E0`, capture peak 0.03.
+  Two hypotheses (an inverted PLAY toggle, then a stale play position) were both tested and
+  both wrong. Not diagnosed further: the owner is reflashing and reformatting the card. The
+  relevant lesson is in AGENTS.md §7a — this is the third session where the audio-capture path
+  produced more retractions than findings, while screen reads produced every constant that
+  held up.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
@@ -1058,6 +1102,14 @@ Future captures use the C++ `m8_capture`.
   or both of two reasons still to be separated: the loaded instrument's own level, or the
   Windows recording level for the M8 input. Settle it by checking whether peak scales with
   keyjazz velocity before trusting any capture-versus-render distance.
+  **CLOSED 2026-08-20, unresolved and deliberately so.** On 2026-08-20 the device stopped
+  returning a note to *any* capture — WavSynth included, not just samplers — with every
+  precondition reading healthy. Whatever "sampler probes are silent on hardware" was, it was
+  most likely this same rig-or-device failure rather than anything about Sampler instruments:
+  the earlier evidence had already ruled out the sample, the WAV format, the trigger path and
+  the files themselves. No further hardware A/B parity work is planned (AGENTS.md §7a), so
+  this stops being a blocker rather than being fixed. The sampler's own behaviour is covered
+  offline by `[sampler]`.
   **Still open, and independent of the above:** the probe's amp is an AHD→VOLUME mod that
   **decays to zero** and the single sequenced note doesn't retrigger fast enough, so captures
   are a ~0.5 s blip rather than a sustained tone — which is also why the mis-volumed captures

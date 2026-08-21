@@ -253,6 +253,43 @@ red, the fix is one line in `SamplerEngine::computeRegion()` — do not redesign
 
 ---
 
+## 7a. Ask hardware what a byte MEANS. Never how loud it is.
+
+**Decided 2026-08-20. Do not reopen this without saying you are reopening it.**
+
+soft-mate is not aiming at acoustic parity with the M8. Songs written here are not going
+to be carried back to the device, so "our saturator's curve differs from theirs" costs
+nothing a musician will notice. Sounding good and behaving sensibly beats matching a
+number we cannot measure reliably.
+
+The record is one-sided and it is worth knowing why. Everything in §7 that has held up
+came from **reading the screen**: the instrument byte map, the 46-byte scale record, the
+MIXER/EFFECTS columns, every enum table, bug #32. Everything retracted came from
+**capturing audio**: the AMP curve twice over, the "−23 dB at `LIM 08`" that turned out to
+be an empty WAV, and most likely "sampler probes are silent on hardware" — the WavSynth
+went silent with the same signature on 2026-08-20, so that was the rig, not the sampler.
+`status.md` had already recorded "the capture rig is not yet fit for A/B parity work" on
+2026-08-18, and the next two sessions measured anyway.
+
+So:
+
+- **Byte maps, enum tables, field layouts, record sizes — ask the device.** Cheap, reliable,
+  and this is the class where being wrong corrupts data silently instead of merely sounding
+  different. That is what the rig is for.
+- **Levels, curves, transfer functions, tone — do not.** A capture campaign to pin a
+  parameter's exact shape is not work this project needs.
+- **An unmeasured curve is a CHOICE, not a TODO.** Model it, say plainly that it is a
+  choice and why, and close it — the way §8 already does for the ModFX chorus's stereo
+  spread. Do not leave "its real curve is still unmeasured" lying in `status.md` where the
+  next session reads it as an invitation.
+
+`tools/hw_measure.py` keeps its three guards (state verified before and after, transport
+stopped, and the capture must actually contain a note) and `tools/wav_envelope.py` keeps
+existing — not because more captures are planned, but because the next person to take one
+should not be able to publish an empty window.
+
+---
+
 ## 8. Known placeholders — do not mistake these for finished work
 
 - **`INST_MACROSYN` is a POLYBLEP saw**, not Braids. The oscillator models are not

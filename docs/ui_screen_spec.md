@@ -160,11 +160,16 @@ the mechanism.
   **Follow-up 2026-08-19, and it changes the engine's problem.** Sweeping the
   on-screen `AMP` field itself (not the file byte) on a WavSynth probe at
   instrument volume `0x7F` — 30 dB more signal than the sweep above — found AMP
-  does **nothing** with `LIM = 00 CLIP` (−0.02 dB across its whole range) and
-  **−23 dB** with `LIM = 08 POST:W3`. Our engine amplifies by +18 dB in both.
-  So the fidelity gap is not the curve, it is the kind of thing AMP is; recorded
-  under Placeholders in `status.md`. It also means the "our curve is too steep"
-  reading of the table above was itself too generous.
+  does **nothing** with `LIM = 00 CLIP` (−0.02 dB across its whole range), where
+  our engine amplifies by +18 dB. So the fidelity gap is not the curve, it is the
+  kind of thing AMP is; recorded under Placeholders in `status.md`. It also means
+  the "our curve is too steep" reading of the table above was itself too generous.
+
+  **The `−23 dB at LIM 08 POST:W3` that stood here is RETRACTED (2026-08-20).**
+  Its capture, `hwtest_out/fit/PFF.wav`, holds no note at all — see
+  `tools/wav_envelope.py` and the AMP entry in `status.md`. A full 9-mode
+  re-triage put `LIM 08` at **+0.83 dB**, the opposite sign. Five of the nine
+  modes measure flat to within ±0.2 dB.
 
 - `HandleTableInput` takes no data reference — TABLE moves a cursor but cannot
   edit anything.
