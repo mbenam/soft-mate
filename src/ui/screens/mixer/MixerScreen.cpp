@@ -118,16 +118,25 @@ void RenderMixerScreen(Renderer& renderer,
                      lv.peakR, mx.track_vol[i], lv.clipped);
     }
 
-    // Send returns, metered like the tracks: the live level over the dim
-    // setting bar. These used to pass a hardcoded 0 peak, so the bars showed
-    // the MX/DE/RE setting and never moved no matter what was playing.
-    const int sendVals[3] = { mx.cho_vol, mx.del_vol, mx.rev_vol };
+    // Send returns: PURE meters, setting deliberately not drawn underneath.
+    //
+    // The track bars underlay the volume setting as a dim bar, which works
+    // because a track volume sits mid-scale and the live level regularly rises
+    // past it. The sends default to 0xE0 -- 28 of a 4-cell bar's 32 steps -- so
+    // the underlay fills almost the whole bar, and DrawGlyphBar only brightens a
+    // cell the live level fills at least as far as the setting does. The result
+    // was a bar that looked permanently full, permanently dim, and never moved.
+    //
+    // Measured returns for a dry-dominant mix are MX 19, DE 65, RE 139 out of
+    // 255 (see [sendprobe]); against an 0xE0 underlay none of those can light a
+    // single cell. The device draws these as meters too -- its MX/DE/RE bars
+    // move independently of the E0 numbers printed under them.
     for (int i = 0; i < 3; ++i) {
         const auto& sv = levels.send[i];
         DrawGlyphBar(renderer, kSendCol(i),     kSendMeterTop, kSendMeterBottom,
-                     sv.peakL, sendVals[i], sv.clipped);
+                     sv.peakL, 0, sv.clipped);
         DrawGlyphBar(renderer, kSendCol(i) + 1, kSendMeterTop, kSendMeterBottom,
-                     sv.peakR, sendVals[i], sv.clipped);
+                     sv.peakR, 0, sv.clipped);
     }
 
     // Master meter: the actual bus output, after every stage.

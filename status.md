@@ -158,11 +158,22 @@ packed atomics (same wait-free route as the playhead) and are drawn as font glyp
 levels at `0x01`–`0x07`, stacked, 8 levels per cell, coloured by level with red at clip. Volume
 settings show through as a dim bar under the live level, so a stopped mixer still shows the mix.
 The send meters are taken *after* the master send volume, so they show what each return actually
-adds to the mix and turning MX down takes its meter down with it. (Until 2026-08-21 the three
-send bars were drawn with a hardcoded zero peak: they rendered the MX/DE/RE *setting* and never
-moved, however loud the returns got. Pinned now by `MB6` (`[mixer]`), which checks all three
-directions — silent with no send amount, live with the sends open, silent again with the master
-send volume at zero.)
+adds to the mix and turning MX down takes its meter down with it. Pinned by `MB6` (`[mixer]`),
+which checks all three directions — silent with no send amount, live with the sends open, silent
+again with the master send volume at zero.
+
+**The send bars are pure meters; the track bars are not.** This asymmetry is deliberate. A track
+bar underlays its volume setting as a dim bar, and `DrawGlyphBar` only brightens a cell the live
+level fills at least as far as the setting does — fine for a track volume that sits mid-scale.
+The sends default to `0xE0`, which is 28 of a 4-cell bar's 32 steps, so the underlay filled
+almost the whole bar and the live level could never reach past it. Measured returns for a
+dry-dominant mix are MX 19, DE 65, RE 139 out of 255 against a track peak of 168, so *none* of
+them could light a cell. Passing the setting as 0 makes them behave like the device's, whose
+MX/DE/RE bars move independently of the `E0` numbers printed under them.
+
+Two separate defects produced the same symptom and were fixed in that order (2026-08-21): the
+bars were first drawn with a hardcoded zero peak (no per-send metering existed at all), and then,
+once metered, the setting underlay still masked the result. Only the second fix made them move.
 **Model corrections:** the file's `master_volume` is MIX (was loading into the top-of-screen
 volume, which is why MIX was always a hardcoded default); SPEAKER VOL is app-level and never
 persisted; INPUT/USB are gone from the UI and no longer written on save (which also stops
