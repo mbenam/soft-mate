@@ -79,8 +79,9 @@ unclaimed_stops:  15 — including all eight track volumes on row 9,
 
 The artifact is committed at [`tests/fixtures/crawl/mixer_fw652.json`](../../tests/fixtures/crawl/mixer_fw652.json)
 and [`tests/test_crawl_check.cpp`](../../tests/test_crawl_check.cpp) runs the comparison offline in
-CI. That test currently asserts the disagreement **still exists** — when the map is corrected it
-will fail, and that is the intended signal to flip it to `CHECK(r.ok())`.
+CI. That test asserted the disagreement **still existed** for exactly one commit; `kMixerFields`
+was then rebuilt from this artifact and the assertion flipped to `CHECK(r.ok())`. Keeping a gate
+red on purpose, rather than leaving a TODO, is what made that happen the same day.
 
 ## The artifacts are used at runtime, not just checked
 
