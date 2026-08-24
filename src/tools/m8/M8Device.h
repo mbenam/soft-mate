@@ -238,11 +238,26 @@ struct ReadStats {
     int  framesSeen  = 0;      // complete SLIP frames decoded this read
     bool settled     = false;  // true = exited via the settle branch
     bool timedOut    = false;  // true = exited via the maxMs branch
+    // True = the read never touched the port, because a LiveReader owns it.
+    // A pull read draining the same port as the live thread would interleave
+    // bytes into one SlipDecoder and desync it -- which is indistinguishable
+    // from the garbled stream of #32, and would be blamed on the device. The
+    // pull path refuses instead of racing.
+    bool liveConflict = false;
     // Mirrors ScreenGrid's decode counters at the end of the read, so a caller
     // holding only the stats can still tell a clean read from a corrupt one.
     int  offPanelCells = 0;
     int  offPitchCells = 0;
     int  shortFrames   = 0;
+};
+
+// One turn of the drain loop: what came off the wire and what it decoded to.
+// Returned by pumpOnce() so a caller running its own loop can track liveness
+// (bytes) separately from progress (frames) -- during playback the M8 sends
+// bytes constantly, so only the frame count says the picture actually moved.
+struct PumpResult {
+    size_t bytes  = 0;   // raw bytes taken off the port this turn
+    int    frames = 0;   // complete SLIP frames decoded from them
 };
 
 class M8Device {
@@ -325,6 +340,30 @@ public:
     void setRawTap(std::vector<uint8_t>* sink) { m_rawTap = sink; }
     const ReadStats& lastRead() const { return m_lastRead; }
 
+    // ---- Live (continuous) reading ----------------------------------------
+    //
+    // The pull model above answers "show me a settled screen" and pays 250 ms+
+    // to do it. It cannot answer "what is on screen right now, while the
+    // transport runs", because during playback the M8 redraws the playhead
+    // continuously: sinceData never reaches settleMs, so every read burns to
+    // maxMs and returns timedOut. That is correct behaviour for a settle-based
+    // read and it makes watching playback structurally impossible.
+    //
+    // LiveReader (LiveReader.h) drives these two on its own thread to keep a
+    // grid continuously up to date. They are public only for its benefit --
+    // prefer LiveReader over calling them by hand, and see its header for the
+    // concurrency contract. Nothing else in this class is thread-safe.
+
+    // Drain whatever bytes are already buffered into the grid and return
+    // immediately. Never blocks: SerialPort::recv is opened with
+    // ReadIntervalTimeout = MAXDWORD and zero total timeout, the Win32 idiom
+    // for "return what you have".
+    PumpResult pumpOnce();
+
+    // While a LiveReader owns the port, pull reads refuse rather than race.
+    void setLiveOwned(bool owned) { m_liveOwned = owned; }
+    bool liveOwned() const { return m_liveOwned; }
+
 private:
     void readInto(int minMs, int settleMs, int maxMs);
 
@@ -335,6 +374,7 @@ private:
     std::vector<uint8_t>* m_rawTap = nullptr;
     ReadStats m_lastRead;
     bool m_open = false;
+    bool m_liveOwned = false;
 };
 
 } // namespace dev

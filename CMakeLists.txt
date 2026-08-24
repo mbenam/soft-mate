@@ -182,12 +182,19 @@ target_include_directories(m8_composesong PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sr
 # -------------------------------------------------------------------
 # Hardware capture tool (miniaudio header-only, no engine, no SDL)
 # -------------------------------------------------------------------
-add_executable(m8_capture src/tools/main_capture.cpp)
-target_include_directories(m8_capture PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
+# The USB-audio half of m8_capture, extracted so m8_watchcapture can share it
+# rather than grow a second WAV writer and device picker. Audio only -- it is
+# deliberately NOT part of m8_device, which is committed to "no audio".
+add_library(m8_audiocap STATIC src/tools/audio/CaptureCore.cpp)
+target_include_directories(m8_audiocap PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
 if(WIN32)
-    target_link_libraries(m8_capture PRIVATE winmm ole32)
+    target_link_libraries(m8_audiocap PUBLIC winmm ole32)
 endif()
+
+add_executable(m8_capture src/tools/main_capture.cpp)
+target_link_libraries(m8_capture PRIVATE m8_audiocap)
 
 # -------------------------------------------------------------------
 # M8 device control library (serial + SLIP + ScreenGrid + primitives).
@@ -195,6 +202,7 @@ endif()
 # -------------------------------------------------------------------
 add_library(m8_device STATIC
     src/tools/m8/M8Device.cpp
+    src/tools/m8/LiveReader.cpp
     src/tools/m8/Primitives.cpp
     src/tools/m8/Gestures.cpp
     src/tools/m8/DeviceTheme.cpp
@@ -204,6 +212,10 @@ add_library(m8_device STATIC
     src/tools/m8/UiCapture.cpp
 )
 target_include_directories(m8_device PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
+# LiveReader runs the drain on its own thread. Still no engine, no SDL, no
+# audio -- the invariant this library is held to is about those, not threads.
+find_package(Threads REQUIRED)
+target_link_libraries(m8_device PUBLIC Threads::Threads)
 
 # -------------------------------------------------------------------
 # Serial display decoder / browser navigator (M8_HARDWARE_TEST_SPEC.md
@@ -211,6 +223,23 @@ target_include_directories(m8_device PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/tool
 # -------------------------------------------------------------------
 add_executable(m8_nav src/tools/main_nav.cpp)
 target_link_libraries(m8_nav PRIVATE m8_device)
+
+# ---------------------------------------------------------------------------
+# Watched audio capture: records USB audio while decoding the screen, and
+# aborts on transport inversion or field drift instead of producing a number
+# that has to be thrown away later. Links both halves -- m8_device for the
+# display, m8_audiocap for the audio.
+# ---------------------------------------------------------------------------
+add_executable(m8_watchcapture src/tools/main_watchcapture.cpp)
+target_link_libraries(m8_watchcapture PRIVATE m8_device m8_audiocap)
+
+# ---------------------------------------------------------------------------
+# Live-read hardware diagnostic. Proves on the device what
+# tests/test_live_reader.cpp proves against a fake: a settle-gated read cannot
+# complete while the transport runs, and the live reader can. Serial only.
+# ---------------------------------------------------------------------------
+add_executable(m8_livecheck src/tools/main_livecheck.cpp)
+target_link_libraries(m8_livecheck PRIVATE m8_device)
 
 # ---------------------------------------------------------------------------
 # Device-vs-golden diff checker. Runs a script on the device, dumps the
@@ -243,6 +272,8 @@ add_executable(m8_tests
     tests/test_audio.cpp
     tests/test_ui_scripts.cpp
     tests/test_device_fake.cpp
+    tests/test_live_reader.cpp
+    tests/test_field_guard.cpp
     tests/test_macrosynth.cpp
     tests/test_instrument_io.cpp
     tests/test_fmsynth.cpp

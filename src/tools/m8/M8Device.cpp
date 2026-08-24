@@ -621,8 +621,34 @@ void M8Device::close() {
     }
 }
 
+// Drain what is already buffered, decode it, return. See the header for why
+// this never blocks.
+PumpResult M8Device::pumpOnce() {
+    PumpResult r;
+    uint8_t buf[4096];
+    std::vector<uint8_t> frame;
+    size_t n = m_port->recv(buf, sizeof(buf));
+    if (n == 0) return r;
+    r.bytes = n;
+    if (m_rawTap) m_rawTap->insert(m_rawTap->end(), buf, buf + n);
+    for (size_t i = 0; i < n; ++i)
+        if (m_slip.feed(buf[i], frame)) {
+            m_grid.handleFrame(frame);
+            ++r.frames;
+        }
+    return r;
+}
+
 void M8Device::readInto(int minMs, int settleMs, int maxMs) {
     m_lastRead = ReadStats{};
+    // Refuse rather than race a live reader for the same port. Two drains
+    // feeding one SlipDecoder desync it, and a desynced stream is decoded as
+    // a plausible-looking screen with drifting rows (#32) -- a failure that
+    // reads as a device fault. Loud and empty beats quietly wrong.
+    if (m_liveOwned) {
+        m_lastRead.liveConflict = true;
+        return;
+    }
     uint8_t buf[4096];
     std::vector<uint8_t> frame;
     auto start    = std::chrono::steady_clock::now();
