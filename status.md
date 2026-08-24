@@ -436,8 +436,9 @@ SVF (Cytomic/Zavalishin reference, `ZdfFilter.h`; tests S-ZDF1/2/3 — pass/stop
 stability). LIM 04/05 (POST / POST:AD) implemented: for these modes the AMP gain and its clipping
 apply *after* the filter (hard clip / `tanh` soft clip; test S-LIM-POST). All offline math-reference
 tests, no hardware needed.
-Remaining sampler *behavior* (not screen coverage): SLICE playback, REPITCH/BPM play modes 09–0E,
-sample REC/EDIT, FILTER 05 (LP>HP), LIM 06–08 (POST:W1–W3) — see the notes below and
+Remaining sampler *behavior* (not screen coverage): sample REC/EDIT, FILTER 05 (LP>HP), LIM 06–08
+(POST:W1–W3). SLICE playback and the REPITCH/BPM play modes 09–0E are **implemented** — verified
+against the code 2026-08-24, see the Placeholders notes — see the notes below and
 `M8_SAMPLER_COMPLETION_SPEC.md` Phases 2–4.
 
 ### Modulation (`M8_MODULATION_SPEC.md`, hardware-verified)
@@ -955,8 +956,12 @@ is implemented and verified.
   `02`-`80` divides the sample into that many equal parts and plays the one the note selects.
   `SynthVoice.cpp:497`'s `s.slice == 0` test is the loop-point suppression that reads as
   "the byte is only used to suppress", but the slicing itself happens a layer down. What
-  remains is the note-base/START interaction and the REPITCH/BPM play modes, still blocked on
-  a device capture for the tempo formula. (**Scales are now read** — `Engine.cpp:796` applies
+  remains is the note-base/START interaction. **The REPITCH/BPM play modes 09–0E are implemented**
+  (`SynthVoice.cpp:496-514`, verified 2026-08-24): `09`–`0B` read `detune` as STEPS and scale the
+  loop period by it against `samplesPerTick`; `0C`–`0E` read it as the sample's base BPM and scale
+  by song-BPM over sample-BPM. Both then apply pitch modulation on top. The formulas are in the
+  code and were not blocked after all — but they are **unverified against hardware**, so treat the
+  exact STEPS scaling (the `* 0.25f`) as the part most likely to be wrong. (**Scales are now read** — `Engine.cpp:796` applies
   `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
   `Engine.cpp:47`. **Tables are executed** — see Tables above.)
 - **FX `REV` in phrase steps — IMPLEMENTED 2026-08-24.** `REV 01` overrides the sampler's play
@@ -1312,10 +1317,10 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
    WavSynth wavetable data is in -- `src/engine/data/WavetableBank.h` holds **61** tables, and
    shapes 9..69 read them (`SynthVoice.cpp:179`). Shapes above that still fall back to sine.
    A/B (item 6). See `FMSYNTH_IMPLEMENTATION.md` / `WAVSYNTH_IMPLEMENTATION.md` §10 caveats.
-4. **SLICE** (equal-division encoding now hardware-verified — implementable; FILE-marker mode and
-   the note-base/START-interaction confirm remain), then the REPITCH / BPM play modes, which are
-   still **blocked on a device capture** for the STEPS/BPM byte + tempo formula (see Placeholders);
-   do not guess the formula.
+4. **SLICE — DONE**, both modes (`SamplerEngine.cpp`). **REPITCH / BPM play modes — DONE**
+   (`SynthVoice.cpp:496-514`). Neither is hardware-verified: the note-base/START interaction and
+   the STEPS scaling constant remain open, and a capture would settle both. *Remaining here:*
+   sample preview/audition and live recording, neither of which exists at all.
 5. **Scales** (note→frequency), **stereo voice path**, FILTER 05 (LP>HP), the aliased LIM 06–08 /
    LFO modes, FX `VOL`/`PIT`/`REV`, project EQ/limiter/DJF — quality/coverage cleanups. (ZDF
    filters and LIM POST/POST:AD are **done** — 2026-07-17.)
