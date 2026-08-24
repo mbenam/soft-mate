@@ -41,3 +41,9 @@ manual/
 third_party/eurorack/
 __pycache__/
 *.pyc
+
+# Working copy of the m8c fork that exposes an AI TCP server
+# (github.com/mbenam/auto-mate). Prebuilt binaries -- m8c.exe, SDL3.dll,
+# libserialport -- plus its own docs and logs. It has its own repo; keep the
+# clone local rather than vendoring 3.7MB of executables here.
+tools/auto-mate/
