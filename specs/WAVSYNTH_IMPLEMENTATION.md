@@ -7,6 +7,10 @@
 
 A wavetable synthesizer that generates waveforms in real-time from 9 basic shapes, with size/mult/warp/scan controls. Wavetables (shapes 9+) deferred to a later phase.
 
+> **That deferral is spent.** Phase 1's "later phase" landed: `src/engine/data/WavetableBank.h`
+> holds 61 wavetables and `SynthVoice.cpp:179` selects them for shapes 9..69. This document
+> describes Phase 1 only -- read it as history, not as current scope. Verified 2026-08-24.
+
 Based on the M8 WavSynth manual section.
 
 ---

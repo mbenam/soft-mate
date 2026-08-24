@@ -1281,13 +1281,20 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
 1. **MacroSynth → Braids — DONE (2026-07-17).** Ported Mutable Instruments **Braids** (MIT):
    shapes `0x00–0x2B` render through `braids::MacroOscillator`; `shape`/`timbre`/`color` drive
    the model. `[macrosynth]` test covers all 44 shapes. *Remaining:* per-model spectral parity
-   against captured hardware (acceptance gate, item 6), and `redux`/shapes above `0x2B`.
+   against captured hardware (acceptance gate, item 6), and shapes above `0x2B`
+   (`SynthVoice.cpp:548` still caps there). **`redux` is done** -- `SynthVoice.cpp:762`
+   applies bit reduction from the byte; verified 2026-08-24.
 2. **Tables — DONE (2026-07-17).** `Engine::tickTable()` executes assigned tables (transpose/
    volume + HOP/TIC/VOL/PIT), TBL/GRV/TIC phrase FX wired. `[tables]` tests. See
    `TABLE_IMPLEMENTATION.md`.
 3. **WavSynth / FMSynth / HyperSynth — DONE (2026-07-17), approximation-grade.** All three make
    sound and load/save (`[wavsynth]`/`[fmsynth]`/`[hypersynth]` tests). *Remaining:* fidelity —
-   FM mod-routing/index tuning, WavSynth wavetable data (shapes 9+ alias to sine), and hardware
+   FM `PIT` per-operator destination (still a TODO in the decode -- needs semitone-to-frequency,
+   `FMSYNTH_IMPLEMENTATION.md:842`) and hardware
+   **Done since this was written, verified 2026-08-24:** FM mod routing is complete -- all 12
+   algorithms with per-operator feedback and wavetable operators (`SynthVoice.cpp:711-726`).
+   WavSynth wavetable data is in -- `src/engine/data/WavetableBank.h` holds **61** tables, and
+   shapes 9..69 read them (`SynthVoice.cpp:179`). Shapes above that still fall back to sine.
    A/B (item 6). See `FMSYNTH_IMPLEMENTATION.md` / `WAVSYNTH_IMPLEMENTATION.md` §10 caveats.
 4. **SLICE** (equal-division encoding now hardware-verified — implementable; FILE-marker mode and
    the note-base/START-interaction confirm remain), then the REPITCH / BPM play modes, which are
