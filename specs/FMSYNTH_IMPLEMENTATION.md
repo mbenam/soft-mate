@@ -839,4 +839,8 @@ cmake --build build --config Release --target m8_tests
 - **Mod macro 1-4 values**: The engine's standard modulator slots produce these. The file's `mod1-mod4` are the same outputs stored redundantly. On load, we use the file values; at runtime, the engine's mod processing overwrites them.
 - **Level scaling for modulation**: Uses a fixed modulation index constant (`kFMModIndex = 6.0f`). May need tuning against hardware recordings.
 - **Dual mod slots (mod_a + mod_b)**: Merged by averaging level and maxing feedback. A more precise model would apply both slots independently to their respective destinations.
-- **PIT per-operator destination**: Not fully implemented in the decode function -- marked as a TODO in the code. Needs semitone-to-frequency conversion.
+- **PIT per-operator destination**: ~~Not fully implemented~~ **IMPLEMENTED — this note was stale,
+  corrected 2026-08-24.** `SynthVoice.cpp`'s `applyMod` accumulates `mod_val * 24.0f` semitones for
+  destination 3, and `opFreq` converts it with `pow(2, offset/12)`. There is no TODO left in the
+  file. `[fmpit]` pins the behaviour in three directions -- up, down, and unchanged at the bipolar
+  centre -- so the claim cannot drift back. The 24-semitone scale is still a CHOICE, not measured.

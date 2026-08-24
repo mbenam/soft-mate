@@ -300,6 +300,7 @@ add_executable(m8_tests
     tests/test_macrosynth.cpp
     tests/test_instrument_io.cpp
     tests/test_fmsynth.cpp
+    tests/test_fm_pit.cpp
     tests/test_hypersynth.cpp
     tests/test_wavsynth.cpp
     tests/test_tables.cpp

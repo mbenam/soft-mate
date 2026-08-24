@@ -784,10 +784,34 @@ is implemented and verified.
   START `00` vs `40` correlates 0.948). Equal-division playback is now fully specified — see
   `SAMPLER_EDITOR_SPEC.md` §3. FILE-marker mode is a separate feature. See memory
   `sampler-slice-repitch-hw`.
-- **`FILTER` 05** (LP>HP) passes through (not modeled). **`LIM` 06–08** (POST:W1–W3) fall back to
-  post-filter hard clip — the "folding distortion" curves are not hardware-verified. **`LFO`
-  0x0D–0x16** alias to simpler forms. **`MOD BINV`** a guess. **DRUM ENV** duck curve approximated.
-  (`FILTER` 06/07 ZDF and `LIM` 04/05 POST/POST:AD are now implemented — see Sampler above.)
+- **`FILTER` 05 (LP>HP) — measured on hardware 2026-08-24, still UNRESOLVED, still passing
+  through.** The device's own label is `05 LP>HP`. Two sweeps on a real M8 (fw 6.5.2, MacroSynth
+  0F), comparing type 05 against a plain LOWPASS and HIGHPASS at matched cutoffs, measured as
+  low/mid/high band-energy ratios:
+
+  | config | <400 Hz | 400 Hz–2.5 k | >2.5 k |
+  |---|---|---|---|
+  | OFF | 0.78 | 0.49 | 0.20 |
+  | LOWPASS @30 | 0.74 | 0.54 | 0.19 |
+  | **LP>HP @30** | 0.67 | 0.59 | 0.22 |
+  | **LP>HP @80** | 0.70 | 0.53 | 0.30 |
+  | LOWPASS @D0 | 0.72 | 0.53 | 0.25 |
+  | **LP>HP @D0** | 0.73 | 0.53 | 0.24 |
+  | HIGHPASS @D0 | 0.35 | 0.57 | **0.56** |
+
+  **What this settles:** LP>HP is *not* a highpass at high cutoff. The real highpass reaches 0.56
+  high-band energy; every LP>HP capture stays at or below 0.30, and at both extremes it tracks the
+  LOWPASS closely. So the "sweeps from lowpass to highpass as CUTOFF rises" reading is wrong, at
+  least at RES 00.
+
+  **What it does not settle: the actual law.** Differences between LP>HP and LOWPASS are 0.02–0.07
+  against roughly 0.08 run-to-run noise on identical settings, so the method cannot resolve them.
+  The saw source is too low-heavy and MacroSynth's FILTERED NOISE (0x29) is worse — it is
+  pre-filtered, and *no* filter type moved its ratios, including a real HIGHPASS.
+
+  **Not implemented, deliberately.** Per AGENTS.md §4, guessed hardware behaviour does not get
+  built, and "close to a lowpass" is not a law. Settling it wants a spectrally flat source and
+  `m8_spectrum` rather than one-pole band ratios, plus a RES sweep to sharpen the corner.
 - **`SongIO` read AMP and LIM from the WRONG BYTES — FIXED 2026-08-19 (fw 6.5.2, COM3).**
   `SongIO.cpp:888` does `s.amp = sp.volume` and `s.lim = sp.amp_type`. Both are shifted by one
   field. Measured by loading a probe carrying a distinct signature byte in every parameter slot
