@@ -33,6 +33,9 @@ reports whether the restore verified.
 | `--sample-ms <n>` | no (`5`) | Cursor sampling interval between presses. |
 | `--gap-ms <n>` | no (`60`) | Wait between presses. |
 | `--soak <minutes>` | no (`0`) | Repeat the walk up and back down for this long, stopping the instant anything moves. `0` runs a single walk. |
+| `--drive` | no | Soak the **real `editValue`** instead of replaying its gesture. See below. |
+| `--target-lo <hex>` | no (`00`) | Low target for `--drive`. |
+| `--target-hi <hex>` | no (`FF`) | High target for `--drive`. |
 | `--allow-mutation` | **yes** | Required; the tool edits a field. |
 | `--help` | no | Print usage and exit 0. |
 
@@ -76,6 +79,26 @@ The [flight recorder](../../src/tools/m8/FlightRecorder.h) runs throughout: ever
 
 The raw bytes are the point: they separate "we sent a bad mask" from "the device did something else" from "our decode is wrong", which are indistinguishable once decoded. #32 is the precedent.
 
+## `--drive`: soaking the real `editValue`
+
+The default soak replays the *gesture* `editValue` sends. About **7,200 coarse presses** across an
+8–40 ms hold range and a 12–60 ms gap range produced zero cursor slips, which rules the gesture
+itself out and leaves only what `editValue` does on top:
+
+- a `readSettled(120, 200, 1200)` between every press
+- the fine-step phase as it closes on the target
+- the direction flips its convergence check produces
+
+#34's original event was `set AMP FF` — a real `editValue` call mid-sweep. `--drive` runs exactly
+that, alternating between `--target-lo` and `--target-hi`, with the guard armed and the recorder
+running. `editValue` dumps `editvalue_drift.json` itself if the cursor leaves the field; this
+additionally watches the **neighbour**, which is what #34 actually damaged, and writes
+`editvalue_soak_drift.json`.
+
+**It is slow, and that is the point.** Each call carries a settle-gated read per press, so it runs
+about **3 calls a minute** — roughly 180 an hour. A 9-minute run managed 27, which proves nothing.
+This wants an overnight run, not a coffee break.
+
 ## Gotchas
 
 - **Run it from the repo root.** Gestures load from the bare relative path `hw_buttons.json`.
@@ -87,6 +110,10 @@ The raw bytes are the point: they separate "we sent a bad mask" from "the device
 - **If the restore does not verify**, nothing was written to the card — reloading the project
   restores it losslessly.
 - **COM3 is exclusive.** Let any m8drv daemon exit first.
+- **Row lookup goes through the field map, not a text search.** `ScreenGrid::findField` matches a
+  canonicalised substring, and short labels collide: watching `AMP` matched the **TYPE** row,
+  because "TYPE SAMPLER LOAD SAVE" contains "AMP" inside SAMPLER. Found by reading this tool's own
+  baseline output on 2026-08-24. Same family as `BPM` matching `REP.BPM`.
 
 ## Example
 

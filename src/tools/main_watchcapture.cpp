@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
     const bool wasPlaying = playheadVisible(dev.grid());
 
     for (Watch& w : watches) {
-        const std::string row = rowTextFor(dev.grid(), w.label);
+        const std::string row = rowTextFor(dev.grid(), w.label, screen);
         if (row.empty()) {
             std::fprintf(stderr, "watchcapture: --watch %s not found on this screen\n",
                          w.label.c_str());

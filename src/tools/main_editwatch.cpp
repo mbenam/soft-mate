@@ -82,6 +82,8 @@ int main(int argc, char** argv) {
     int steps = 16, holdMs = 40, sampleMs = 5, gapMs = 60;
     bool allowMutation = false;
     int soakMinutes = 0;
+    bool drive = false;
+    std::string targetLo = "00", targetHi = "FF";
 
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
@@ -95,6 +97,9 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--gap-ms")    && i + 1 < argc) gapMs = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--allow-mutation")) allowMutation = true;
         else if (!std::strcmp(a, "--soak") && i + 1 < argc) soakMinutes = std::atoi(argv[++i]);
+        else if (!std::strcmp(a, "--drive")) drive = true;
+        else if (!std::strcmp(a, "--target-lo") && i + 1 < argc) targetLo = argv[++i];
+        else if (!std::strcmp(a, "--target-hi") && i + 1 < argc) targetHi = argv[++i];
         else if (!std::strcmp(a, "--help")) {
             std::printf("usage: m8_editwatch --port COM3 --field AMP --neighbour LIM\n"
                         "                    [--gesture coarse-up|coarse-down|fine-up|fine-down]\n"
@@ -136,8 +141,8 @@ int main(int argc, char** argv) {
 
     dev.readSettled(0, 250, 2000);
     const int  homeRowY   = dev.grid().cursorRowY();
-    const std::string fieldBase = canonRow(rowTextFor(dev.grid(), field));
-    const std::string neighBase = canonRow(rowTextFor(dev.grid(), neighbour));
+    const std::string fieldBase = canonRow(rowTextFor(dev.grid(), field, Screen::INSTRUMENT));
+    const std::string neighBase = canonRow(rowTextFor(dev.grid(), neighbour, Screen::INSTRUMENT));
     if (homeRowY < 0 || fieldBase.empty()) {
         std::fprintf(stderr, "could not establish a baseline for %s\n", field.c_str());
         dev.close();
@@ -148,6 +153,71 @@ int main(int argc, char** argv) {
                 neighbour.c_str(), neighBase.c_str());
     std::printf("gesture : 0x%02X  %s   x%d steps, hold %d ms, gap %d ms\n",
                 mask, gestureName(mask), steps, holdMs, gapMs);
+
+    // ---- drive mode: soak the REAL editValue ------------------------------
+    //
+    // Everything measured so far replayed the GESTURE editValue sends. About
+    // 7,200 coarse presses across an 8-40 ms hold range and a 12-60 ms gap
+    // range produced zero cursor slips, which rules the gesture itself out and
+    // leaves the parts only editValue does:
+    //
+    //   - a readSettled(120, 200, 1200) between every press
+    //   - the fine-step phase as it closes on the target
+    //   - the direction flips its convergence check produces
+    //
+    // #34's original event was `set AMP FF` -- a real editValue call in the
+    // middle of a measurement sweep. This drives exactly that, alternating
+    // between two targets, with the guard armed and the recorder running.
+    // editValue dumps editvalue_drift.json itself the moment the cursor leaves
+    // the field; this additionally watches the NEIGHBOUR, which is what #34
+    // actually damaged.
+    if (drive) {
+        getFlightRecorder().start();
+        getFlightRecorder().recordNote("editvalue soak start");
+        const auto until = clk::now() + std::chrono::minutes(soakMinutes > 0 ? soakMinutes : 1);
+        int calls = 0, failures = 0;
+        std::string lastError;
+
+        while (clk::now() < until) {
+            const std::string want = (calls % 2 == 0) ? targetHi : targetLo;
+            auto res = editValue(dev, field, want, holdMs);
+            ++calls;
+            if (!res.ok) {
+                ++failures;
+                lastError = res.error;
+                std::fprintf(stderr, "\n! editValue failed on call %d: %s\n", calls,
+                             res.error.c_str());
+                break;
+            }
+            dev.readSettled(0, 200, 1200);
+            const std::string nb = canonRow(rowTextFor(dev.grid(), neighbour, Screen::INSTRUMENT));
+            if (!nb.empty() && !neighBase.empty() && nb != neighBase) {
+                getFlightRecorder().recordNote("neighbour changed");
+                getFlightRecorder().dump("editvalue_soak_drift.json",
+                    "neighbour changed during an editValue soak (#34)");
+                std::fprintf(stderr,
+                    "\n! CAUGHT IT: %s moved from [%s] to [%s] after %d calls\n"
+                    "!   flight recorder -> editvalue_soak_drift.json\n\n",
+                    neighbour.c_str(), neighBase.c_str(), nb.c_str(), calls);
+                ++failures;
+                break;
+            }
+            if (calls % 10 == 0)
+                std::fprintf(stderr, "  %d editValue calls, %s still [%s]\n",
+                             calls, neighbour.c_str(), nb.c_str());
+        }
+
+        getFlightRecorder().stop();
+        std::printf("{\n  \"mode\": \"drive\",\n  \"field\": \"%s\",\n"
+                    "  \"neighbour\": \"%s\",\n  \"calls\": %d,\n  \"failures\": %d,\n"
+                    "  \"reproduced_34\": %s\n}\n",
+                    field.c_str(), neighbour.c_str(), calls, failures,
+                    failures ? "true" : "false");
+        if (!lastError.empty())
+            std::fprintf(stderr, "last error: %s\n", lastError.c_str());
+        dev.close();
+        return failures ? 1 : 0;
+    }
 
     // ---- the walk, watched -----------------------------------------------
     LiveReader live(dev);
@@ -200,7 +270,7 @@ int main(int argc, char** argv) {
                 sl.expectedRowY = homeRowY;
                 slips.push_back(sl);
             }
-            const std::string n = canonRow(rowTextFor(s.grid, neighbour));
+            const std::string n = canonRow(rowTextFor(s.grid, neighbour, Screen::INSTRUMENT));
             if (!n.empty() && !neighBase.empty() && n != neighBase && !neighbourMoved) {
                 neighbourMoved = true;
                 neighSaw = n;
@@ -224,8 +294,8 @@ int main(int argc, char** argv) {
     live.stop();
 
     dev.readSettled(0, 250, 2000);
-    const std::string fieldAfter = canonRow(rowTextFor(dev.grid(), field));
-    const std::string neighAfter = canonRow(rowTextFor(dev.grid(), neighbour));
+    const std::string fieldAfter = canonRow(rowTextFor(dev.grid(), field, Screen::INSTRUMENT));
+    const std::string neighAfter = canonRow(rowTextFor(dev.grid(), neighbour, Screen::INSTRUMENT));
     const int rowAfter = dev.grid().cursorRowY();
 
     // ---- put it back ------------------------------------------------------
@@ -235,8 +305,8 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(gapMs));
     }
     dev.readSettled(0, 250, 2000);
-    const std::string fieldRestored = canonRow(rowTextFor(dev.grid(), field));
-    const std::string neighRestored = canonRow(rowTextFor(dev.grid(), neighbour));
+    const std::string fieldRestored = canonRow(rowTextFor(dev.grid(), field, Screen::INSTRUMENT));
+    const std::string neighRestored = canonRow(rowTextFor(dev.grid(), neighbour, Screen::INSTRUMENT));
     const bool restored = (fieldRestored == fieldBase) && (neighRestored == neighBase);
 
     const bool reproduced = !slips.empty() || neighbourMoved;

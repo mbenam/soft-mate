@@ -21,6 +21,7 @@
 // ===========================================================================
 
 #include "M8Device.h"
+#include "ScreenModel.h"
 
 #include <cctype>
 #include <string>
@@ -54,7 +55,28 @@ inline std::string canonRow(const std::string& s) {
 // label ends, and the guard wants the stricter test regardless: #34 moved a
 // *neighbouring* field, so a check scoped to the field being set would have
 // missed it entirely.
-inline std::string rowTextFor(const ScreenGrid& grid, const std::string& label) {
+inline std::string rowTextFor(const ScreenGrid& grid, const std::string& label,
+                              Screen screen = Screen::UNKNOWN,
+                              const std::string& typeHint = "") {
+    // Prefer the FIELD MAP over a text search when the screen is known.
+    //
+    // ScreenGrid::findField matches a canonicalised SUBSTRING, and short labels
+    // collide badly: watching "AMP" on the instrument screen matched the TYPE
+    // row, because "TYPE SAMPLER LOAD SAVE" canonicalises to a string
+    // containing "AMP" (inside SAMPLER). The baseline was then the wrong row
+    // entirely. Same family as "BPM" matching "REP.BPM" on the PLAY row, which
+    // cost a reset play mode during the sampler verification.
+    //
+    // The map gives the row outright, and after the crawl work those
+    // coordinates are measured. Text search stays as the fallback for callers
+    // that do not know the screen.
+    if (screen != Screen::UNKNOWN) {
+        if (const FieldInfo* info = findFieldInfo(screen, label, typeHint)) {
+            const int wantY = fieldStopRow(*info);
+            for (const auto& entry : grid.mainRows())
+                if (entry.first / 10 - 3 == wantY) return entry.second;
+        }
+    }
     auto f = grid.findField(label);
     if (!f) return std::string();
     for (const auto& entry : grid.mainRows())
