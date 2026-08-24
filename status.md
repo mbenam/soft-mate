@@ -1131,7 +1131,10 @@ Future captures use the C++ `m8_capture`.
   loads **zero samples** — the last part matters because the manifest's `diff` policy has no
   `--sample-root` field, so any sample-using song would render silent too. The manifest header now
   states both requirements.
-- **Scales reach the audio as of 2026-08-14, and the OFFSET encoding is the open question.**
+- **Scales reach the audio as of 2026-08-14; the OFFSET encoding was settled the same day.**
+  (The headline used to read "the OFFSET encoding is the open question", which its own entry
+  contradicts twenty lines down — it is MEASURED and implemented. Reworded 2026-08-24 after the
+  stale headline sent someone off to re-verify a closed question.)
   The 16 scales had loaded, saved and edited for months while `note→frequency` was a hardcoded
   `440.0f * pow(2, (midi-69)/12)` that never consulted them. Now `quantizeToScale`
   (`Engine.h`, beside the `Scale` data) runs at that site, gated by the instrument's TRANSP

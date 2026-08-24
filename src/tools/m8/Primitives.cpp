@@ -61,6 +61,39 @@ static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur)
     // narrower than the 22 that caused the misidentification.
     constexpr int kMaxFieldSpan = 16;
 
+    // On a row carrying MORE THAN ONE mapped field, take the accent's RIGHT
+    // edge instead of its left.
+    //
+    // M8_DRIVER_BUGS.md #21. dev.cursorField() reports the leftmost accent cell
+    // on the row, and the M8 accents the row's LABEL as well as the selected
+    // widget -- so on the instrument TYPE row the leftmost accent is "TYPE"
+    // whether the cursor sits on TYPE's value, on LOAD or on SAVE. gridCol came
+    // back as 1 in all three cases, the "col <= gridCol, greatest wins" rule
+    // could only ever answer TYPE, and the mapped LOAD/SAVE columns (22 and 27,
+    // added by #31) were unreachable. Confirmed on hardware 2026-08-24: parked
+    // on SAVE, m8_nav reported cursor_text "TYPE" -- and SAVE overwrites the
+    // instrument file.
+    //
+    // Deliberately scoped to ambiguous rows. A row with one mapped field has
+    // nothing to disambiguate, and the left edge is what every existing caller
+    // has been verified against -- so single-field rows keep the old answer
+    // exactly. This changes behaviour only where the old answer could not be
+    // right.
+    int fieldsOnRow = 0;
+    for (size_t i = 0; i < map.count; ++i)
+        if (map.fields[i].row == gridRow) ++fieldsOnRow;
+
+    if (fieldsOnRow > 1) {
+        int rightmostX = cf->col;
+        for (const auto& entry : dev.grid().cells) {
+            if (entry.first.first != cf->row) continue;
+            if (entry.first.second >= ScreenGrid::MAIN_X_MAX) continue;
+            if (!dev.grid().isCursor(entry.second)) continue;
+            if (entry.first.second > rightmostX) rightmostX = entry.first.second;
+        }
+        gridCol = rightmostX / 8;
+    }
+
     const FieldInfo* best = nullptr;
     for (size_t i = 0; i < map.count; ++i) {
         if (map.fields[i].row == gridRow && map.fields[i].col <= gridCol) {
