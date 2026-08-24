@@ -73,9 +73,11 @@ TEST_CASE("the gate flags a real stop no field claims", "[crawl][hwdecode]") {
     // with confidence -- #31, and #21. A partial map is worse than an empty
     // one, which is why this direction is checked at all.
     //
-    // Row 9 is MIXER's track-volume row and kMixerFields has no entry for it,
-    // so every stop on it must come back unclaimed.
-    std::set<CrawlStop> stops = { {9, 1}, {9, 4}, {9, 7} };
+    // Row 9 WAS the example here -- MIXER's eight track volumes, unmapped, which
+    // is precisely what this gate found and what got fixed. They are mapped now,
+    // so the test moved to coordinates that are genuinely on no field: row 20 is
+    // below every MIXER entry.
+    std::set<CrawlStop> stops = { {20, 1}, {20, 4}, {20, 7} };
     const auto r = checkCrawl(Screen::MIXER, stops);
 
     REQUIRE(r.checkable);
@@ -108,19 +110,19 @@ TEST_CASE("grid screens are reported as not checkable, not as clean",
     CHECK_FALSE(r.ok());
 }
 
-TEST_CASE("the recorded MIXER crawl still disagrees with kMixerFields",
+TEST_CASE("the recorded MIXER crawl agrees with kMixerFields",
           "[crawl][hwdecode]") {
     // The real artifact, crawled off a device on fw 6.5.2 (22 stops, 82 edges).
     //
-    // This is RED ON PURPOSE and asserts the disagreement rather than its
-    // absence, because the map has not been corrected yet -- see #20. Two
-    // phantoms (MST_REV, DJF_TYP) and fifteen unclaimed stops, including all
-    // eight track volumes on row 9, which kMixerFields does not model at all.
+    // This was RED on purpose for exactly one commit: the crawl found 2 phantom
+    // fields and 15 unclaimed stops, including all eight track volumes, which
+    // kMixerFields did not model at all. The map was then corrected FROM this
+    // artifact -- stop columns, measured, not typed -- and the assertion
+    // flipped, which is the whole point of keeping a red gate rather than a
+    // TODO.
     //
-    // When the map is fixed, this test fails, and that is the intended signal:
-    // flip it to `CHECK(r.ok())` then. Asserting "still broken" keeps the gate
-    // exercised in the meantime instead of leaving it dormant until someone
-    // remembers to run the crawler.
+    // If this goes red again, either the map drifted or the device layout did.
+    // Re-crawl before editing either.
     bool ok = false;
     const auto stops = loadStops("tests/fixtures/crawl/mixer_fw652.json", ok);
     if (!ok || stops.empty()) {
@@ -130,9 +132,11 @@ TEST_CASE("the recorded MIXER crawl still disagrees with kMixerFields",
 
     const auto r = checkCrawl(Screen::MIXER, stops);
     REQUIRE(r.checkable);
-    INFO("phantoms=" << r.phantomFields.size()
-         << " unclaimed=" << r.unclaimedStops.size());
+    for (const auto& n : r.phantomFields) INFO("phantom: " << n);
+    for (const auto& u : r.unclaimedStops)
+        INFO("unclaimed: row " << u.gridRow << " col " << u.gridCol);
     CHECK(stops.size() == 22);
-    CHECK_FALSE(r.phantomFields.empty());
-    CHECK_FALSE(r.unclaimedStops.empty());
+    CHECK(r.phantomFields.empty());
+    CHECK(r.unclaimedStops.empty());
+    CHECK(r.ok());
 }

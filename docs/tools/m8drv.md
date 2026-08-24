@@ -165,6 +165,10 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   which runs the lot through one connection. Timing defaults here (250/200/1500) are
   already lower than `m8_nav`'s own (700/250/2000); raise them if reads come back
   unsettled.
+- **`FENCED_FIELDS` is empty as of 2026-08-24**, so `--unfence` currently changes nothing. Every
+  field on the list turned out to be a map aimed at a cell the cursor never visits rather than an
+  unreachable field -- see bug #20 and [`m8_crawl`](m8_crawl.md). The flag and the mechanism are
+  kept: the next screen to be crawled may well earn new entries.
 - **`--unfence` is for diagnosis only.** It attempts the `FENCED_FIELDS` anyway. The
   fence records fields a fixed key sequence could not reach reliably, and re-testing
   it was worthwhile — `MIX_VOL` came off the list that way — but the remainder are

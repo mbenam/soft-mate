@@ -207,12 +207,14 @@ DEFAULT_TIMEOUT = 30
 # MIXER's cursor order is a linear chain, not a 2D grid, and moveCursorTo drives
 # it as a grid (UP/DOWN for rows, LEFT/RIGHT for columns). That chain never
 # visits col 10, which is where MX/DE/RE live.
-FENCED_FIELDS = {
-    "MST_CHO": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
-    "MST_DEL": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
-    "MST_REV": "MIXER MX/DE/RE column: linear cursor chain, not a 2D grid (bug #20)",
-    "DJF_TYP": "never located on-device (bug #20, OPEN)",
-}
+# Empty as of 2026-08-24, and that is the point: the fence recorded fields a
+# fixed key sequence could not reach, and every one of them turned out to be a
+# map aimed at a cell the cursor never visits rather than an unreachable field.
+# m8_crawl walked the MIXER chain (22 stops, 82 edges), kMixerFields was
+# corrected from it, and MST_CHO/MST_DEL/MST_REV navigate normally. DJF_TYP was
+# dropped from the map entirely -- it was never located on any device, so "field
+# not found" is the honest answer rather than a fenced phantom. See bug #20.
+FENCED_FIELDS = {}
 
 # M8_DRIVER_BUGS.md #21, status OPEN. TYPE's row also carries an unmapped
 # LOAD/SAVE button pair at a higher column. If the cursor is ALREADY parked on

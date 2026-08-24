@@ -280,10 +280,30 @@ inline std::vector<NavStep> computeRoute(Screen from, Screen to) {
 
 struct FieldInfo {
     const char* name;     // canonical name, e.g. "TEMPO", "CUTOFF"
-    const char* label;    // on-screen label text to match
-    int col;              // text grid column of the label
-    int row;              // text grid row
+    const char* label;    // on-screen label text to match ("" = unlabelled)
+    int col;              // text grid column of the LABEL
+    int row;              // text grid row of the LABEL
+
+    // Where the CURSOR actually stops, when that is not "to the right of the
+    // label on the same row". -1 means it is, which is true almost everywhere
+    // and keeps every existing map entry valid unchanged.
+    //
+    // MIXER is why this exists. Its send-return values sit one row ABOVE the
+    // "MX DE RE" labels that name them, and its eight track volumes have no
+    // label at all -- neither of which the label-plus-span model can express.
+    // Pretending otherwise is M8_DRIVER_BUGS.md #20: the map pointed at a cell
+    // the cursor never visits, and the field was called unreachable.
+    //
+    // The two coordinates have different consumers and that is the point:
+    // checkMapPlacement and layoutMatchRatio read the LABEL (is the screen the
+    // one we think it is?), while identifyCursorField and moveCursorTo read the
+    // STOP (where does the cursor go?). Conflating them is what hid this.
+    int stopCol = -1;
+    int stopRow = -1;
 };
+
+inline int fieldStopCol(const FieldInfo& f) { return f.stopCol < 0 ? f.col : f.stopCol; }
+inline int fieldStopRow(const FieldInfo& f) { return f.stopRow < 0 ? f.row : f.stopRow; }
 
 // Project screen fields (from ProjectScreenLayout.h).
 inline const FieldInfo kProjectFields[] = {
@@ -594,19 +614,83 @@ inline const FieldInfo kEffectsFields[] = {
 // DJF_TYP is deliberately NOT shifted. It was never located on the device, so
 // it is a guess either way, and moving a guess by a correction derived from
 // verified fields would only make it look measured.
+// MEASURED, not typed. Every coordinate below is a cursor stop `m8_crawl`
+// actually landed on (fw 6.5.2, 2026-08-24: 22 stops, 82 edges, BFS closed) --
+// so these are stop columns, not label columns, and the span between the two is
+// zero. That matters: `identifyCursorField` picks the greatest mapped column at
+// or left of the cursor, so an UNMAPPED stop gets handed to whatever mapped
+// field lies to its left and reported with confidence. Mapping every stop
+// exactly is what stops that. See M8_DRIVER_BUGS.md #20 and #31, and
+// docs/tools/m8_crawl.md.
+//
+// What this replaced, and why it was wrong:
+//   MST_CHO/DEL/REV sat at col 9, rows 16-18 -- the "MX DE RE" column HEADER,
+//   which the cursor never visits. The send-return values they name are one row
+//   ABOVE, at row 14 cols 1/4/7. That is the whole of #20: not hidden state, a
+//   map aimed at nothing.
+//   The eight track volumes were not modelled at all, so all eight stops were
+//   unclaimed and fell to OUT_VOL by the rule above.
+//   DJF_TYP was never located on any device and is dropped rather than left as
+//   a phantom -- "field not found" is a better answer than a confident wrong
+//   one.
+//
+// Rows 16-18 carry a visible INPUT/USB send block (MX/DE/RE 00 00) that the
+// crawl found NO stops on, and DOWN from row 15 does not move. Consistent with
+// the device having no input configured; re-crawl on a device that does before
+// assuming those cells are unreachable in general.
 inline const FieldInfo kMixerFields[] = {
-    {"OUT_VOL",  "OUTPUT VOL", 0, 2},
-    {"MST_CHO",  "MX",         9, 16},
-    {"MST_DEL",  "DE",         9, 17},
-    {"MST_REV",  "RE",         9, 18},
-    {"IN_VOL",   "INPUT",      12, 15},
-    {"USB_VOL",  "USB",        18, 15},
-    {"MIX_VOL",  "MIX",        23, 14},
-    {"LIM_VAL",  "LIM",        23, 15},
-    {"DJF_FREQ", "DJF",        23, 16},
-    {"DJF_RES",  "OTT",        23, 17},
-    {"DJF_TYP",  "TYP",        34, 12},  // UNVERIFIED — not found on-device, see comment above
+    // Labels follow the usual convention (the text at row+3, col+1). STOPS are
+    // where m8_crawl actually landed on fw 6.5.2, 2026-08-24 -- 22 stops, 82
+    // edges, BFS closed. Where the two differ, both are given.
+    //
+    // What was wrong before: MST_CHO/DEL/REV named the "MX DE RE" labels on
+    // rows 16-18, which label the INPUT/USB send block. The RETURN levels they
+    // are meant to address are the row-14 values, under the OTHER "MX DE RE"
+    // labels on row 15. Two identical label triplets on one screen, and the map
+    // picked the wrong one -- that is the whole of #20. The eight track volumes
+    // were not modelled at all, leaving eight unclaimed stops for
+    // identifyCursorField to hand to OUT_VOL. DJF_TYP is dropped: never located
+    // on any device, so "field not found" beats a confident wrong answer.
+    //
+    //  name          label         col row   stopCol stopRow
+    {"OUT_VOL",     "OUTPUT VOL",   0,  2},
+
+    // Unlabelled: row 9 is eight bare values. Empty label = skipped by the
+    // label-placement checks, which have nothing to check.
+    {"TRACK1_VOL",  "",             1,  9},
+    {"TRACK2_VOL",  "",             4,  9},
+    {"TRACK3_VOL",  "",             7,  9},
+    {"TRACK4_VOL",  "",            10,  9},
+    {"TRACK5_VOL",  "",            13,  9},
+    {"TRACK6_VOL",  "",            16,  9},
+    {"TRACK7_VOL",  "",            19,  9},
+    {"TRACK8_VOL",  "",            22,  9},
+
+    {"MIX_EQ",      "",            28, 13},
+
+    // Send RETURNS: labels on row 15, values on row 14 above them.
+    {"MST_CHO",     "MX",           0, 15,    1, 14},
+    {"MST_DEL",     "DE",           3, 15,    4, 14},
+    {"MST_REV",     "RE",           6, 15,    7, 14},
+
+    // INPUT / USB. The row-14 stops carry values and the row-15 stops accent
+    // the header text, so the volumes are the row-14 pair. IN_LIMIT/IN_SRC/
+    // USB_SRC are POSITION-verified and NAME-unverified: the stops are measured,
+    // what the device calls them is not. Mapped regardless, so they cannot be
+    // misassigned to MST_REV on their left.
+    {"IN_VOL",      "INPUT",       12, 15,   13, 14},
+    {"IN_LIMIT",    "",            16, 14},          // name UNVERIFIED
+    {"USB_VOL",     "USB",         18, 15,   19, 14},
+    {"MIX_VOL",     "MIX",         23, 14,   24, 14},
+
+    {"IN_SRC",      "",            13, 15},          // name UNVERIFIED
+    {"USB_SRC",     "",            19, 15},          // name UNVERIFIED
+    {"LIM_VAL",     "LIM",         23, 15,   24, 15},
+
+    {"DJF_FREQ",    "DJF",         23, 16,   24, 16},
+    {"DJF_RES",     "OTT",         23, 17,   24, 17},
 };
+
 
 // Scale screen fields (from ScaleScreenLayout.h).
 // Hardware-confirmed (2026-07-18, real M8 fw 6.5.2): LOAD/SAVE's columns were
@@ -795,9 +879,18 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
     constexpr int kColTol = 2;
 
     int hits = 0;
+    int scored = 0;
     for (size_t i = 0; i < map.count; ++i) {
         const FieldInfo& f = map.fields[i];
         const std::string label = f.label;
+        // Unlabelled fields are not scored either way. MIXER's eight track
+        // volumes are bare values with no text naming them -- real cursor stops
+        // that this check has nothing to look for. Counting them as misses
+        // would drag a healthy screen's score down and make the one check that
+        // detects a displaced framebuffer (#32) cry wolf, which is exactly the
+        // failure the empty-instrument case already taught us (see getFieldMap).
+        if (label.empty()) continue;
+        ++scored;
         // Map coordinates are (device col - 1, device row - 3); cells are keyed
         // by pixel, at the 8x10 character pitch.
         const int y = (f.row + 3) * 10;
@@ -815,7 +908,7 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
         }
         if (found) ++hits;
     }
-    return static_cast<double>(hits) / static_cast<double>(map.count);
+    return scored > 0 ? static_cast<double>(hits) / static_cast<double>(scored) : -1.0;
 }
 
 // Look up a field by name in a screen's field map.
@@ -823,6 +916,14 @@ inline double layoutMatchRatio(const ScreenGrid& grid, Screen s,
 // ends with name) > substring. This prevents short names like "AMP" from
 // falsely matching longer names like "SAMPLE" (which contains "AMP" as a
 // substring). The first match at the highest priority level is returned.
+// Returns the field's STOP position, not its label's.
+//
+// FieldRef is a navigation target -- moveCursorTo drives to its col/row -- so
+// it must carry where the cursor can actually land. Those are the same thing
+// almost everywhere; where they are not, handing back the label sends the
+// walker chasing a cell it can never reach, which is M8_DRIVER_BUGS.md #20.
+// The label stays available through the field map for the checks that want it
+// (checkMapPlacement, layoutMatchRatio).
 inline std::optional<FieldRef> findFieldOnScreen(Screen s, const std::string& name) {
     auto map = getFieldMap(s);
     if (map.isGrid || !map.fields) return std::nullopt;
@@ -834,16 +935,16 @@ inline std::optional<FieldRef> findFieldOnScreen(Screen s, const std::string& na
         std::string fn = map.fields[i].name;
         for (auto& c : fn) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (fn == upper)
-            return FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            return FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!prefixMatch && fn.find(upper) == 0)
-            prefixMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            prefixMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!suffixMatch && upper.size() >= 3 && fn.size() >= 3
             && fn.size() > upper.size()
             && fn.substr(fn.size() - upper.size()) == upper)
-            suffixMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            suffixMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!substringMatch
             && (fn.find(upper) != std::string::npos || upper.find(fn) != std::string::npos))
-            substringMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            substringMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
     }
     if (prefixMatch) return prefixMatch;
     if (suffixMatch) return suffixMatch;
@@ -863,16 +964,16 @@ inline std::optional<FieldRef> findFieldOnScreen(Screen s, const std::string& na
         std::string fn = map.fields[i].name;
         for (auto& c : fn) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (fn == upper)
-            return FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            return FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!prefixMatch && fn.find(upper) == 0)
-            prefixMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            prefixMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!suffixMatch && upper.size() >= 3 && fn.size() >= 3
             && fn.size() > upper.size()
             && fn.substr(fn.size() - upper.size()) == upper)
-            suffixMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            suffixMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
         if (!substringMatch
             && (fn.find(upper) != std::string::npos || upper.find(fn) != std::string::npos))
-            substringMatch = FieldRef{map.fields[i].name, map.fields[i].col, map.fields[i].row};
+            substringMatch = FieldRef{map.fields[i].name, fieldStopCol(map.fields[i]), fieldStopRow(map.fields[i])};
     }
     if (prefixMatch) return prefixMatch;
     if (suffixMatch) return suffixMatch;

@@ -82,7 +82,7 @@ static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur)
     // right.
     int fieldsOnRow = 0;
     for (size_t i = 0; i < map.count; ++i)
-        if (map.fields[i].row == gridRow) ++fieldsOnRow;
+        if (fieldStopRow(map.fields[i]) == gridRow) ++fieldsOnRow;
 
     if (fieldsOnRow > 1) {
         int rightmostX = cf->col;
@@ -97,14 +97,15 @@ static std::optional<std::string> identifyCursorField(M8Device& dev, Screen cur)
 
     const FieldInfo* best = nullptr;
     for (size_t i = 0; i < map.count; ++i) {
-        if (map.fields[i].row == gridRow && map.fields[i].col <= gridCol) {
-            if (!best || map.fields[i].col > best->col) {
+        if (fieldStopRow(map.fields[i]) == gridRow
+            && fieldStopCol(map.fields[i]) <= gridCol) {
+            if (!best || fieldStopCol(map.fields[i]) > fieldStopCol(*best)) {
                 best = &map.fields[i];
             }
         }
     }
 
-    if (best && (gridCol - best->col) <= kMaxFieldSpan) return best->name;
+    if (best && (gridCol - fieldStopCol(*best)) <= kMaxFieldSpan) return best->name;
     return std::nullopt;
 }
 
@@ -430,7 +431,16 @@ JsonResult moveCursorTo(M8Device& dev, const std::string& fieldName,
     }
 
     // Navigate: use the target field's Y display row directly from the field map coordinates.
-    int targetDisplayRow = target->row;
+    // Navigate to the STOP, not the label. They are the same almost everywhere
+    // (stopRow/stopCol default to -1), and differ where a screen puts the label
+    // somewhere the cursor never goes -- MIXER's send returns sit a row above
+    // the "MX DE RE" that names them. Aiming at the label there is #20: the
+    // walker chases a cell it can never land on, and identifyCursorField (which
+    // reads the stop) never agrees that it arrived.
+    // findFieldOnScreen already returns the stop position -- see its comment.
+    const int targetStopCol = target->col;
+    const int targetStopRow = target->row;
+    int targetDisplayRow = targetStopRow;
 
     // Tracks the previous iteration's row, to detect when vertical movement
     // has stopped making progress (see the stuck-on-row fallback below).
@@ -484,21 +494,21 @@ JsonResult moveCursorTo(M8Device& dev, const std::string& fieldName,
         // vertical press is merely slow to register (as happened searching
         // for SAMPLEROOT from SYSTEM, a plain single-column list with no
         // column-crossing involved at all).
-        bool colMismatch = curCol >= 0 && std::abs(curCol - target->col) > 1;
+        bool colMismatch = curCol >= 0 && std::abs(curCol - targetStopCol) > 1;
         bool rowStuck = (curY >= 0 && curY == prevY && curY != targetDisplayRow);
         prevY = curY;
 
         if (curY < 0) {
             dev.press(Key::DOWN, holdMs);
         } else if (rowStuck && colMismatch) {
-            uint8_t dir = (curCol > target->col) ? Key::LEFT : Key::RIGHT;
+            uint8_t dir = (curCol > targetStopCol) ? Key::LEFT : Key::RIGHT;
             dev.press(dir, holdMs);
             prevY = -999;  // give the vertical direction another chance next iteration
         } else if (curY < targetDisplayRow) {
             dev.press(Key::DOWN, holdMs);
         } else if (curY > targetDisplayRow) {
             dev.press(Key::UP, holdMs);
-        } else if (curCol >= 0 && curCol > target->col) {
+        } else if (curCol >= 0 && curCol > targetStopCol) {
             // Same row, target field is to the left (e.g. landed on a right-column
             // field like AMP via DOWN, but the target is the left-column field on
             // that same row, e.g. SLICE). Hardware-confirmed (2026-07-18, real M8

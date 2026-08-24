@@ -61,9 +61,12 @@ struct CrawlCheckResult {
 inline constexpr int kCrawlFieldSpan = 16;
 
 inline bool stopBelongsTo(const CrawlStop& s, const FieldInfo& f) {
-    return s.gridRow == f.row
-        && s.gridCol >= f.col
-        && s.gridCol - f.col <= kCrawlFieldSpan;
+    // The STOP coordinates, not the label's. A field may declare where the
+    // cursor actually lands when that is not "right of the label on the same
+    // row" -- see FieldInfo in ScreenModel.h, and #20 for what happens when the
+    // two are conflated.
+    const int fr = fieldStopRow(f), fc = fieldStopCol(f);
+    return s.gridRow == fr && s.gridCol >= fc && s.gridCol - fc <= kCrawlFieldSpan;
 }
 
 inline CrawlCheckResult checkCrawl(Screen screen, const std::set<CrawlStop>& stops,

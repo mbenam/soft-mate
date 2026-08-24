@@ -1119,6 +1119,11 @@ static void checkMapPlacement(const ScreenGrid& grid, const FieldInfo* fields,
         const FieldInfo& f = fields[i];
         if (skip && std::string(f.name) == skip) continue;
         const std::string label = f.label;
+        // An unlabelled field has no label to place. MIXER's eight track
+        // volumes are eight bare values on one row -- real cursor stops with no
+        // text naming them, which is exactly why FieldInfo grew a separate stop
+        // position. Nothing to check here; the crawl gate covers them instead.
+        if (label.empty()) continue;
         const int y = (f.row + 3) * 10;
         std::string got;
         for (size_t k = 0; k < label.size(); ++k) {
@@ -1208,10 +1213,14 @@ TEST_CASE("layoutMatchRatio scores corrected maps at full marks", "[hwdecode]") 
     // this drops below 1.0 whatever the window is.
     CHECK(layoutMatchRatio(makeEffectsGrid(), Screen::EFFECTS) == 1.0);
     CHECK(layoutMatchRatio(makeProjectLayoutGrid(), Screen::PROJECT) == 1.0);
-    // MIXER carries the one unverified entry, so it cannot reach 1.0.
-    const double mixer = layoutMatchRatio(makeMixerGrid(), Screen::MIXER);
-    CHECK(mixer > 0.9);
-    CHECK(mixer < 1.0);
+    // MIXER reaches 1.0 as of 2026-08-24. It could not before, because the map
+    // carried DJF_TYP -- a field never located on any device, whose coordinates
+    // were a guess and whose label therefore never matched. The map was
+    // rebuilt from an m8_crawl artifact and DJF_TYP dropped, so every LABELLED
+    // entry now names text that is really there. The unlabelled entries (the
+    // eight track volumes, MIX_EQ, and the name-unverified INPUT/USB stops) are
+    // not scored: they are real cursor stops with no text to look for.
+    CHECK(layoutMatchRatio(makeMixerGrid(), Screen::MIXER) == 1.0);
 }
 
 TEST_CASE("findFieldOnScreen: every field in kScaleFields is findable", "[hwdecode]") {
