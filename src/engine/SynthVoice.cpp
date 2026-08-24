@@ -498,7 +498,21 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             // s.detune stores STEPS (1..255, default 0x80 = 128).
             // Loop period scales proportionally with STEPS and inversely with tempo.
             float steps = (s.detune > 0) ? float(s.detune) : 128.0f;
-            float loopSamples = steps * (float(ctx.samplesPerTick) * 0.25f);
+            // MEASURED on hardware 2026-08-24 (fw 6.5.2, COM3, instrument 09
+            // in REPITCH, keyjazz C-4, period averaged over ~20 repeats):
+            //
+            //   STEPS  BPM   period       in beats
+            //   0x40   140   5140.4 smp   0.2499
+            //   0x40    90   7996.0 smp   0.2499
+            //   0x80   140  10157.8 smp   0.4938
+            //
+            // Linear in STEPS, inversely proportional to BPM, and the loop is
+            // STEPS/256 of a BEAT -- so 0x80, the default, is an eighth note.
+            // At 48 kHz a beat is 24 * samplesPerTick, so the constant is
+            // 24/256 = 3/32. It was 0.25, which ran 2.67x long; predictions with
+            // 3/32 land within 0.05% of the two clean measurements.
+            constexpr float kRepitchStepsPerTick = 3.0f / 32.0f;
+            float loopSamples = steps * (float(ctx.samplesPerTick) * kRepitchStepsPerTick);
             if (loopSamples < 1.0f) loopSamples = 1.0f;
             float sampleFrames = sd ? float(sd->frames) : 1.0f;
             ratio = (sampleFrames / loopSamples) * srRatio;

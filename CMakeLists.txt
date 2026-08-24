@@ -274,6 +274,7 @@ add_executable(m8_tests
     tests/test_commands.cpp
     tests/test_sample_pool.cpp
     tests/test_sample_preview.cpp
+    tests/test_repitch.cpp
     tests/test_sampler.cpp
     tests/test_modulation.cpp
     tests/test_rt_safety.cpp

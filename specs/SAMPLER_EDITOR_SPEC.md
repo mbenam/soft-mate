@@ -48,7 +48,9 @@ that is "see what is already implemented".
 - **PLAY `09`–`0E`** — **implemented 2026-08-24** (`SynthVoice.cpp:496-514`): `09`-`0B` read
   `detune` as STEPS and scale the loop period against `samplesPerTick`; `0C`-`0E` read it as the
   sample's base BPM and scale by song-BPM over sample-BPM. Both apply pitch modulation on top.
-  Unverified against hardware -- the STEPS scaling constant is the likeliest thing to be wrong.
+  **Hardware-verified 2026-08-24**: the loop is STEPS/256 of a beat (linear in STEPS, inverse in
+  BPM), so the constant is 3/32 of `samplesPerTick`. It had been 0.25 -- 2.67x long. The BPM
+  modes 0C-0E are a separate law and remain unverified.
 
 ### 1.3 Absent entirely
 

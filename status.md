@@ -39,7 +39,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only) — `m8_audiocap` only; `m8_capture` and
   `m8_watchcapture` link that, not miniaudio directly
-- **Tests**: Catch2 v3 — 432 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- **Tests**: Catch2 v3 — 434 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -105,7 +105,7 @@ Targets:
   bug #20, which remains **OPEN**. See Known issues. *Instrument `TYPE` is NOT fenced* — this
   line claimed it was until 2026-08-15, but `FENCED_FIELDS` holds only the four MIXER entries
   and cycling TYPE from `m8drv` works (verified on fw 6.5.2, NONE → WAVSYNTH → MACROSYN).
-- `m8_tests` — 432 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- `m8_tests` — 434 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -611,7 +611,7 @@ If the file is missing, the app falls back to `loadDemoSong()` — the in-code "
 previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
 are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
-### Tests — 432 cases
+### Tests — 434 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -954,14 +954,30 @@ is implemented and verified.
 - **`SLICE` playback — IMPLEMENTED, verified 2026-08-24.** Both modes are live in
   `SamplerEngine.cpp:15-40`: `01` selects from the file's own markers (`sliceMarkers`), and
   `02`-`80` divides the sample into that many equal parts and plays the one the note selects.
+  **Hardware-verified 2026-08-24**: with SLICE `04` on a decaying kick, MIDI notes 0/1/2/3 captured
+  at peaks 0.566 / 0.486 / 0.023 / 0.001 — four consecutive pieces of a decaying sample — and
+  notes 4 and 5 captured at exactly 0.000. So the slice index IS the MIDI note number and notes at
+  or past the count are silent, which is what `SamplerEngine.cpp` already did.
   `SynthVoice.cpp:497`'s `s.slice == 0` test is the loop-point suppression that reads as
   "the byte is only used to suppress", but the slicing itself happens a layer down. What
   remains is the note-base/START interaction. **The REPITCH/BPM play modes 09–0E are implemented**
   (`SynthVoice.cpp:496-514`, verified 2026-08-24): `09`–`0B` read `detune` as STEPS and scale the
   loop period by it against `samplesPerTick`; `0C`–`0E` read it as the sample's base BPM and scale
   by song-BPM over sample-BPM. Both then apply pitch modulation on top. The formulas are in the
-  code and were not blocked after all — but they are **unverified against hardware**, so treat the
-  exact STEPS scaling (the `* 0.25f`) as the part most likely to be wrong. (**Scales are now read** — `Engine.cpp:796` applies
+  code, and as of 2026-08-24 they are **hardware-verified**. Measured on fw 6.5.2 (instrument 09
+  in REPITCH, keyjazz C-4, `m8_capture`, period averaged over ~20 repeats):
+
+  | STEPS | BPM | period | in beats |
+  |---|---|---|---|
+  | `0x40` | 140 | 5140.4 smp | 0.2499 |
+  | `0x40` | 90 | 7996.0 smp | 0.2499 |
+  | `0x80` | 140 | 10157.8 smp | 0.4938 |
+
+  Linear in STEPS, inversely proportional to BPM, and **the loop is STEPS/256 of a beat** — so
+  the default `0x80` is an eighth note. The constant was `0.25`, which ran **2.67x long**; it is
+  now `3/32` and predictions land within 0.05% of the two clean measurements. `[repitch]` pins it.
+  The BPM modes `0C`–`0E` are a different law (playback rate, not loop length) and remain
+  unverified. (**Scales are now read** — `Engine.cpp:796` applies
   `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
   `Engine.cpp:47`. **Tables are executed** — see Tables above.)
 - **FX `REV` in phrase steps — IMPLEMENTED 2026-08-24.** `REV 01` overrides the sampler's play
