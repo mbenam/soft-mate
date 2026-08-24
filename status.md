@@ -39,7 +39,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only) — `m8_audiocap` only; `m8_capture` and
   `m8_watchcapture` link that, not miniaudio directly
-- **Tests**: Catch2 v3 — 321 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- **Tests**: Catch2 v3 — 425 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -105,7 +105,7 @@ Targets:
   bug #20, which remains **OPEN**. See Known issues. *Instrument `TYPE` is NOT fenced* — this
   line claimed it was until 2026-08-15, but `FENCED_FIELDS` holds only the four MIXER entries
   and cycling TYPE from `m8drv` works (verified on fw 6.5.2, NONE → WAVSYNTH → MACROSYN).
-- `m8_tests` — 321 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
+- `m8_tests` — 425 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -610,7 +610,7 @@ If the file is missing, the app falls back to `loadDemoSong()` — the in-code "
 previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
 are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
-### Tests — 412 cases
+### Tests — 425 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -1184,6 +1184,13 @@ Future captures use the C++ `m8_capture`.
   a refused port triggers a stale-daemon reap.
   *Still open:* `set` on decimal fields thrashes (bug #26 already flags that decimal targets need
   per-field base handling and were deliberately not attempted).
+- **Braids' RNG was process-global and never reset on load — FIXED 2026-08-24.** stmlib's
+  `Random::rng_state_` is a static, shared by every MacroSynth voice and owned by none, so
+  `resetOscillator()` could not reach it. Left running it made the in-app render diverge from a
+  fresh engine for every model that draws on it — invariant 11. Latent only because the demo
+  song's shape sat in `0x2C`–`0x2F` and rendered silently under the old `0x2B` cap; raising the
+  cap to the device's real ceiling made it audible and `L9` caught it the same hour. `LOAD_SONG`
+  now seeds it alongside the effects buffers and master chain.
 - **Shared song row**: the first track whose chain ends advances the row for all tracks.
   Different per-track chain lengths get dragged mid-bar. Not yet triggered in practice.
 - **Bus attenuation 1.0** — headroom is from mixer defaults, not the engine; eight cranked
