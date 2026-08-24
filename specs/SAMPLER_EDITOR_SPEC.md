@@ -42,13 +42,13 @@ that is "see what is already implemented".
 
 ### 1.2 Present but inert
 
-- **`SLICE`** — the byte loads, renders on screen and saves. Playback ignores it
-  completely; `grep slice src/engine/` finds it only in `SongCleanup` and the
-  param updater. The encoding *is* hardware-verified (§3).
-- **PLAY `09`–`0E`** (REPITCH / REP.REV / REP.PP / REP.BPM / BPM.REV / BPM.PP) —
-  `SamplePlayMode` names them and `isReverseMode`/`isPingPongMode` include them,
-  so they inherit direction and ping-pong. Nothing repitches to tempo and
-  nothing time-stretches; `isLoopMode` excludes them, so they play once.
+- **`SLICE`** — **implemented 2026-08-24** (`SamplerEngine.cpp:15-40`): `01` selects from the
+  file's own markers, `02`-`80` divides into equal parts. The encoding is hardware-verified
+  (§3). The text below described the state before that and is kept as the design record.
+- **PLAY `09`–`0E`** — **implemented 2026-08-24** (`SynthVoice.cpp:496-514`): `09`-`0B` read
+  `detune` as STEPS and scale the loop period against `samplesPerTick`; `0C`-`0E` read it as the
+  sample's base BPM and scale by song-BPM over sample-BPM. Both apply pitch modulation on top.
+  Unverified against hardware -- the STEPS scaling constant is the likeliest thing to be wrong.
 
 ### 1.3 Absent entirely
 

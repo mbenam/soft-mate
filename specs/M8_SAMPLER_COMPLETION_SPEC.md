@@ -263,6 +263,12 @@ That means a byte you re-serialised differs from the original. Debug procedure:
 
 ## 2. PHASE 2 — SLICE playback + REPITCH / BPM play modes (feature, medium size)
 
+> **DONE, verified against the code 2026-08-24.** Both halves shipped: SLICE in
+> `SamplerEngine.cpp:15-40` (mode `01` from the file's own markers, `02`-`80` equal divisions),
+> and PLAY `09`-`0E` in `SynthVoice.cpp:496-514`. What this phase describes as missing is no
+> longer missing. Still owed: hardware verification of the STEPS scaling constant and the
+> note-base/START interaction. Read the rest as the design record.
+
 Today the sampler renders PLAY modes `00`–`08` (FWD/REV/loops/ping-pong/osc-region — see
 `SamplerEngine`). It does **not** implement:
 - **SLICE** (the `slice` byte + the slice table): the value loads and saves (after Phase 1) but

@@ -543,6 +543,44 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    // Audition the highlighted .wav without committing to it.
+    //
+    // Only fires when the highlight actually moves, and only in the .wav
+    // browser -- decoding a file on every keypress in an .m8s or .m8i list
+    // would be pure waste. Large files are skipped rather than decoded on the
+    // UI thread: an audition that stutters the whole app is worse than no
+    // audition, and the cap is generous next to anything a tracker sample is.
+    int lastPreviewedIndex = -1;
+    auto previewHighlightedSample = [&]() {
+        if (fileBrowser.getMode() != ::FileBrowser::Mode::FILES) return;
+        const auto& entries = fileBrowser.getEntries();
+        const int idx = fileBrowser.getCursorIndex();
+        if (idx < 0 || idx >= (int)entries.size()) return;
+        if (idx == lastPreviewedIndex) return;
+        lastPreviewedIndex = idx;
+
+        const auto& e = entries[idx];
+        if (e.isDirectory) return;
+        if (e.path.size() < 4) return;
+        std::string ext = e.path.substr(e.path.size() - 4);
+        for (char& c : ext) c = static_cast<char>(std::tolower((unsigned char)c));
+        if (ext != ".wav") return;
+
+        constexpr uintmax_t kMaxPreviewBytes = 16u * 1024u * 1024u;
+        std::error_code ec;
+        const uintmax_t sz = std::filesystem::file_size(e.path, ec);
+        if (ec || sz > kMaxPreviewBytes) return;
+
+        m8::engine::SampleData buf;
+        if (!::FileBrowser::loadWavFile(e.path, buf)) return;
+        std::strncpy(buf.path, e.path.c_str(), 127);
+        buf.path[127] = '\0';
+        EngineCommand cmd;
+        cmd.type = CommandType::PREVIEW_SAMPLE;
+        cmd.u.sample = buf;
+        if (!commandSink.send(cmd)) ::FileBrowser::freeWavFile(buf);
+    };
+
     auto handleFileBrowserSelection = [&](const std::string& path) {
         if (instrumentBrowserMode == m8::ui::instrument::InstrumentBrowserMode::LOAD) {
             m8::engine::Instrument loadedInst;
@@ -852,6 +890,7 @@ int main(int argc, char* argv[]) {
 
                 if (viewManager.getCurrentView() == m8::ui::ViewType::FILE_BROWSER) {
                     auto result = fileBrowser.handleInput(event, editHeld);
+                    if (result == FileBrowser::Result::NONE) previewHighlightedSample();
                     if (result == FileBrowser::Result::SELECTED) {
                         std::string path = fileBrowser.getSelectedPath();
                         if (!path.empty()) {

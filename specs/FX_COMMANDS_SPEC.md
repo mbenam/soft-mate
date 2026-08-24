@@ -39,7 +39,10 @@ This document mixes three confidence levels now, and they must not be treated th
   inspection or a device capture of the raw bytes before it can round-trip at all.
 
 **Project rule (AGENTS.md §4 / `status.md`): do not implement guessed hardware behavior.**
-The REPITCH/BPM sampler modes were deliberately deferred for exactly this reason. The bar for
+The REPITCH/BPM sampler modes were deliberately deferred for exactly this reason. (**They have
+since been built** -- `SynthVoice.cpp:496-514`, confirmed 2026-08-24 -- and remain unverified
+against hardware, so they now illustrate the *next* stage of the rule rather than the deferral:
+implemented from a reference reading, still owed a capture.) The bar for
 Tier 2 above is unchanged: confirm via capture or device before building. **Tier 1.5 has cleared
 that bar for its stated scope** (semantic behavior) — implement from it, but don't assume it's
 pixel/byte-perfect until spot-checked on real hardware. Until each command is actually

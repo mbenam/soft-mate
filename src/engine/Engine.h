@@ -936,6 +936,13 @@ private:
     SamplePool m_samplePool;
     Sequencer m_sequencer;
     SynthVoice m_voices[8];
+    // Sample audition: a 9th voice, outside the eight tracks on purpose.
+    // Borrowing a track voice would cut whatever it was playing, and assigning
+    // the sample to a real instrument slot to hear it would edit the song --
+    // the browser must be able to preview without committing anything.
+    SynthVoice   m_previewVoice;
+    Instrument   m_previewInst;
+    SampleHandle m_previewHandle = -1;
     EngineState m_state;
     EnvContext m_envCtx;
     std::atomic<uint32_t> m_playheadState[8]{0};

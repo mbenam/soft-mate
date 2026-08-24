@@ -39,7 +39,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only) — `m8_audiocap` only; `m8_capture` and
   `m8_watchcapture` link that, not miniaudio directly
-- **Tests**: Catch2 v3 — 425 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- **Tests**: Catch2 v3 — 432 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -105,7 +105,7 @@ Targets:
   bug #20, which remains **OPEN**. See Known issues. *Instrument `TYPE` is NOT fenced* — this
   line claimed it was until 2026-08-15, but `FENCED_FIELDS` holds only the four MIXER entries
   and cycling TYPE from `m8drv` works (verified on fw 6.5.2, NONE → WAVSYNTH → MACROSYN).
-- `m8_tests` — 425 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- `m8_tests` — 432 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -611,7 +611,7 @@ If the file is missing, the app falls back to `loadDemoSong()` — the in-code "
 previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
 are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
-### Tests — 425 cases
+### Tests — 432 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -976,11 +976,15 @@ is implemented and verified.
   implemented** on the master bus — see the Mixer entry under Implemented. **Input/USB mixer**
   is deliberately not implemented and never will be: soft-mate has no analog or USB input. Its
   values still load and are preserved on save.)
-- **Sample preview/audition** (the browser lists and loads `.wav`s but cannot play one before
-  you commit to it) and **live recording**. (**The sample browser itself is implemented** —
-  `InstrumentScreen.cpp:631`/`659` open a `.wav`-filtered `FileBrowser` on the Samples dir.
-  **`.m8i` save is implemented** — `io::saveInstrument` (`InstrumentIO.cpp:513`), wired to the
-  UI at `main.cpp:562`, with load at `main.cpp:551`.)
+- **Sample preview — IMPLEMENTED 2026-08-24.** The `.wav` browser auditions the highlighted
+  file as you scroll: `CommandType::PREVIEW_SAMPLE` installs it in the sample pool and plays it on
+  a dedicated ninth voice, dry and unprocessed. It deliberately writes no instrument slot, steals
+  no track voice and starts no transport — a preview that edited the song would be worse than
+  none, and `[preview]` asserts all three. The previous preview's pool handle is released each
+  time, so scrolling a directory cannot fill the pool (covered with a 300-file scroll). Files over
+  16 MB are skipped rather than decoded on the UI thread, and only the `.wav` browser previews at
+  all. **Live recording is still absent** — the sample editor draws a RECORD row with nothing
+  behind it, and soft-mate has no audio input, so it is a larger job than the empty screen looks.
 - **On-screen keyboard — deliberately out, not pending.** It sits on the same never-build list
   as the currently-playing-note display and the piano-keyboard minimap overlay; see
   `docs/ui_screen_spec.md`. Do not implement it.
@@ -1319,8 +1323,8 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
    A/B (item 6). See `FMSYNTH_IMPLEMENTATION.md` / `WAVSYNTH_IMPLEMENTATION.md` §10 caveats.
 4. **SLICE — DONE**, both modes (`SamplerEngine.cpp`). **REPITCH / BPM play modes — DONE**
    (`SynthVoice.cpp:496-514`). Neither is hardware-verified: the note-base/START interaction and
-   the STEPS scaling constant remain open, and a capture would settle both. *Remaining here:*
-   sample preview/audition and live recording, neither of which exists at all.
+   the STEPS scaling constant remain open, and a capture would settle both. *Remaining here:* live recording, which does not exist at all
+   (sample preview shipped 2026-08-24).
 5. **Scales** (note→frequency), **stereo voice path**, FILTER 05 (LP>HP), the aliased LIM 06–08 /
    LFO modes, FX `VOL`/`PIT`/`REV`, project EQ/limiter/DJF — quality/coverage cleanups. (ZDF
    filters and LIM POST/POST:AD are **done** — 2026-07-17.)

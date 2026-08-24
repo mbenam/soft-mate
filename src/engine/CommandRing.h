@@ -16,6 +16,7 @@ enum class CommandType {
     PLAY_START,
     PLAY_STOP,
     LOAD_SAMPLE,
+    PREVIEW_SAMPLE,   // audition a .wav without assigning it to an instrument
     UPDATE_PARAM,
     SET_STEP,
     SET_CHAIN_STEP,

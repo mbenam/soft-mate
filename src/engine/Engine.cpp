@@ -124,6 +124,47 @@ void Engine::processCommands() {
                 m_tableState[t] = {};   // reset table state
                 publishPlayhead(t);
             }
+        } else if (cmd.type == CommandType::PREVIEW_SAMPLE) {
+            // Audition, and deliberately nothing more: no instrument slot is
+            // written, no track voice is stolen, no send or EQ is applied. The
+            // browser has to be able to hear a file before committing to it,
+            // and committing is exactly what it must not do.
+            //
+            // The pool is shared with LOAD_SAMPLE, so previewing a file the song
+            // already uses costs nothing and previewing a new one installs it
+            // normally -- and the previous preview's handle is released here, so
+            // scrolling a directory does not fill the pool.
+            SampleHandle existing = m_samplePool.find(cmd.u.sample.path);
+            SampleHandle newHandle = -1;
+            if (existing >= 0) {
+                m_samplePool.addRef(existing);
+                newHandle = existing;
+                if (cmd.u.sample.data) m_gcRing.push(cmd.u.sample);
+            } else {
+                newHandle = m_samplePool.install(cmd.u.sample);
+                if (newHandle < 0 && cmd.u.sample.data) m_gcRing.push(cmd.u.sample);
+            }
+
+            const SampleHandle oldPreview = m_previewHandle;
+            if (newHandle >= 0) {
+                m_previewHandle = newHandle;
+                m_previewInst.type = InstType::INST_SAMPLER;
+                m_previewInst.sampler = SamplerState{};      // neutral: no filter, no fx
+                m_previewInst.sampler.sample = newHandle;
+                m_previewInst.sampler.volume = 0x40;
+                m_previewInst.sampler.dry    = 0xFF;
+                m_previewInst.sampler.pan    = 0x80;
+                m_previewVoice.setSample(m_samplePool.get(newHandle));
+                // C-4 is the sampler's own root, so the file plays at its
+                // recorded pitch rather than transposed.
+                // 440 * 2^((60-69)/12) -- C-4, the sampler's own root.
+                constexpr float kPreviewRootHz = 440.0f * 0.5946035575f;
+                m_previewVoice.noteOn(kPreviewRootHz, 1.0f, &m_previewInst, 60);
+            }
+            if (oldPreview >= 0 && oldPreview != newHandle) {
+                SampleData freed = m_samplePool.release(oldPreview);
+                if (freed.data) m_gcRing.push(freed);
+            }
         } else if (cmd.type == CommandType::LOAD_SAMPLE) {
             if (cmd.targetId < 0 || cmd.targetId >= (int)m_state.instruments.size()) {
                 // GC ring overflow leaks one buffer. m_gcRing.push() ignores its return value.
@@ -1496,6 +1537,16 @@ void Engine::render(float* buffer, int frames) {
             sendChoL += sigL * cho;  sendChoR += sigR * cho;
             sendDelL += sigL * del;  sendDelR += sigR * del;
             sendRevL += sigL * rev;  sendRevR += sigR * rev;
+        }
+
+        // The preview voice, dry and unprocessed. Outside the track loop because
+        // it belongs to no track: no track volume, no instrument EQ, no sends.
+        // An audition should sound like the file, not like the song's routing.
+        {
+            float pFrame[2] = {0.0f, 0.0f};
+            m_previewVoice.renderFrame(m_envCtx, pFrame);
+            mixL += pFrame[0];
+            mixR += pFrame[1];
         }
 
         // Each send's INPUT EQ, applied to the send bus before its effect --
