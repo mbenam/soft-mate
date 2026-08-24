@@ -94,9 +94,12 @@ m8_diffcheck --script foo.m8script --golden ref.txt  →  same, diffed against a
 - **None of these tools validate their own numeric CLI args beyond `strtol`/`atof`** — a
   malformed number silently becomes `0`, not a parse error. This is consistent across all of
   them; don't expect strict validation anywhere in this set.
-- **The two hardware-facing tools (`m8_nav`, `m8_capture`) each have their own independent serial
-  port implementation** — they are not sharing a `SerialPort` class, despite speaking the same
-  underlying M8 protocol. `m8_diffcheck` shares `m8_nav`'s implementation (both link `m8_device`).
+- **There are two independent serial port implementations, not one per tool.** `m8_capture` has
+  its own Win32 `SerialPort`; everything else — `m8_nav`, `m8_diffcheck`, `m8_livecheck`,
+  `m8_watchcapture` — shares `m8_device`'s. They speak the same underlying M8 protocol from two
+  separate codebases. Note the consequence for `m8_watchcapture`: it links `m8_device` for the
+  display and `m8_audiocap` for the audio, so it is the one tool that reads the screen and
+  records the sound through the same process — see its doc for why that had to be one process.
 - **Known real, currently-open reliability issues live in `M8_DEVICE_CONTROL_SPEC.md`**, not
   here — `m8_nav.md` and `m8_diffcheck.md` summarize the hardware-testing gotchas found as of
   2026-07-18, but that spec document is the living, authoritative source for current status

@@ -37,13 +37,18 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **DSP**: DaisySP (LGPL)
 - **Persistence**: `m8-files-cxx` (github.com/mbenam/m8-files-cxx), vendored, `src/` only
 - **FFT**: kissfft (vendored, `third_party/`)
-- **Capture audio**: miniaudio (vendored, header-only, `m8_capture` only)
+- **Capture audio**: miniaudio (vendored, header-only) — `m8_audiocap` only; `m8_capture` and
+  `m8_watchcapture` link that, not miniaudio directly
 - **Tests**: Catch2 v3 — 321 cases (static `TEST_CASE` count, 2026-08-14; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
 **Audio-API separation (invariant):** the engine links no audio API; `m8_clone` links SDL;
-`m8_capture` links miniaudio; nothing else links either.
+`m8_audiocap` links miniaudio; nothing else links either. The invariant is unchanged in
+substance — miniaudio moved from `m8_capture`'s single translation unit into a one-file
+library so `m8_watchcapture` could share the WAV writer and device picker rather than grow a
+second pair that drifts. `m8_device` still links neither, which is why a tool that needs the
+screen *and* the audio links both libraries instead of one growing into the other.
 
 Targets:
 - `m8_engine` — static lib, **zero SDL dependencies** (enforced: `m8_tests` links it without SDL)

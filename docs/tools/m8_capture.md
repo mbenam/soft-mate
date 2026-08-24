@@ -1,12 +1,18 @@
 # m8_capture
 
 **Source:** [`src/tools/main_capture.cpp`](../../src/tools/main_capture.cpp) (532 lines)
-**Build target:** `m8_capture` (CMakeLists.txt)
+**Build target:** `m8_capture` (CMakeLists.txt, links `m8_audiocap`)
 **Category:** real-hardware audio capture (the capture half of the render→capture→analyze/
 spectrum hardware-parity loop)
-**Links:** `miniaudio` (header-only, vendored). No SDL, no engine. Standalone — has its own
-independent Win32 serial implementation (not shared with [`m8_nav`](m8_nav.md)'s `M8Device`; both
-speak the same raw M8 controller protocol but are separate codebases).
+**Links:** `m8_audiocap` (`src/tools/audio/CaptureCore.{h,cpp}` — the WAV writer, device picker,
+onset trim and manifest, shared with [`m8_watchcapture`](m8_watchcapture.md)), which links
+vendored `miniaudio`. No SDL, no engine. Still has its own independent Win32 serial
+implementation (not shared with [`m8_nav`](m8_nav.md)'s `M8Device`; both speak the same raw M8
+controller protocol but are separate codebases) — only the audio half was extracted.
+
+> **This tool cannot see the screen**, which is a real limit rather than an omission: it is why
+> its keyjazz warning can only warn, and why a capture taken here cannot prove the state it was
+> taken in. [`m8_watchcapture`](m8_watchcapture.md) links both halves and can.
 
 ## What it does
 

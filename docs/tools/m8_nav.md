@@ -35,6 +35,30 @@ This read-verify-act discipline exists because of two hard hardware constraints 
 times" sequence, and the device does **not** auto-home — it keeps whatever screen it was left on,
 so every routine must work from an *unknown* starting state.
 
+## The read model, and what it cannot do
+
+Every read here is **pull-based and settle-gated**: `M8Device::readInto` drains the port until
+the screen goes quiet (`sinceData >= settleMs`) or it gives up (`sinceStart >= maxMs`). That is
+what makes `settled` trustworthy, and it is the right contract for navigation — a press should
+be observed after the repaint finishes, not during it.
+
+**It cannot read during playback.** The M8 redraws its playhead row continuously while the
+transport runs, so the stream never goes quiet, `sinceData` never reaches `settleMs`, and every
+read runs the full `maxMs` and returns `timedOut`. No `settleMs` value fixes this; the screen
+genuinely is never quiet. Measured on fw 6.5.2 — see [`m8_livecheck`](m8_livecheck.md).
+
+[`LiveReader`](../../src/tools/m8/LiveReader.h) is the other half of the model: it drains on its
+own thread and keeps the grid current, so `snapshot()` costs ~200 µs and promises nothing about
+settling, while `waitQuiet()` rebuilds this guarantee on top. `m8_nav` itself does not use it —
+nothing it does wants an unsettled read. Two consequences matter here anyway:
+
+- **While a `LiveReader` holds a device, pull reads on it refuse** rather than race, setting
+  `ReadStats::liveConflict` and returning immediately without touching the wire. Two drains
+  feeding one `SlipDecoder` desync it, and a desynced stream decodes as a plausible screen with
+  drifting rows (#32) — a fault that reads as the device's.
+- **COM3 is exclusive**, so `m8_livecheck` and `m8_watchcapture` cannot run while this holds the
+  port, or the reverse. Let the daemon exit first.
+
 ## Architecture (3 layers, per `M8_DEVICE_CONTROL_SPEC.md`)
 
 1. **Perception + transport** (`M8Device.{h,cpp}`) — serial port, SLIP decoding, `ScreenGrid`

@@ -13,6 +13,12 @@ then **verifies them again afterwards**. If any field will not take, it refuses 
 capture. If any field drifted during the capture, it renames the WAV to
 `<out>.DRIFTED` and exits non-zero.
 
+> **Before-and-after is a workaround for not being able to look during**, and that is no longer
+> the only option: [`m8_watchcapture`](m8_watchcapture.md) samples the guarded rows every 10 ms
+> for the whole window. It detects the same drift this does, and additionally reports *when* it
+> moved — which is the evidence `M8_DRIVER_BUGS.md` #34 says it is missing. This tool remains
+> the one that sets the fields; the two are complementary, not replacements.
+
 ## Why it exists
 
 A hardware measurement is worth exactly the state it was taken in.
