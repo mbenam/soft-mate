@@ -48,6 +48,10 @@ public:
     void noteOn(const SamplerState& s, const SampleData* d, int noteMidi = 60);
     void setSample(const SampleData* d) { m_data = d; }
     void setLoop(int32_t loopStart, int32_t loopEnd);
+
+    // FX REV: force this note's play mode. -1 clears it. Applied in
+    // computeRegion, so it must be set before noteOn.
+    void setPlayOverride(int mode) { m_playOverride = mode; }
     void render(float ratio, float out[2]);
     void computeRegion(const SamplerState& s, int noteMidi = 60);
     bool finished() const { return m_finished; }
@@ -55,6 +59,7 @@ public:
     const SampleData* data() const { return m_data; }
 
 private:
+    int m_playOverride = -1;
     void readFrame(double phase, float out[2]) const;
 
     const SampleData* m_data = nullptr;

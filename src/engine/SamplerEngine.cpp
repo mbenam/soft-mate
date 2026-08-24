@@ -48,7 +48,10 @@ void SamplerEngine::computeRegion(const SamplerState& s, int noteMidi) {
     m_startFrame = clampi(m_startFrame, 0, frames - 1);
     m_loopStart  = clampi(m_loopStart,  0, frames - 1);
     m_loopEnd    = clampi(m_loopEnd, m_loopStart + 1, frames);
-    m_mode = static_cast<SamplePlayMode>(s.play);
+    // FX REV overrides the instrument's play mode for this note only
+    // (FX_COMMANDS_SPEC.md "REV XX -- Reverse"). -1 means no override, so the
+    // instrument's own setting stands.
+    m_mode = static_cast<SamplePlayMode>(m_playOverride >= 0 ? m_playOverride : s.play);
     if (isOscMode(m_mode)) m_startFrame = m_loopStart;
     m_phase = double(m_startFrame);
     m_reverse = isReverseMode(m_mode);

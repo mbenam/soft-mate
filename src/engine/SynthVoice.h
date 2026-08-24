@@ -29,6 +29,8 @@ public:
         for (int i = 0; i < 24; ++i) m_braidsBuffer[i] = 0;
     }
     void setSample(const SampleData* s) { m_sampler.setSample(s); }
+    // FX REV, per note. See SamplerEngine::setPlayOverride.
+    void setPlayOverride(int mode) { m_sampler.setPlayOverride(mode); }
     void setVolume(float v);
     float getFrequency() const { return m_frequency; }
     void setFrequency(float f) { m_frequency = f; }

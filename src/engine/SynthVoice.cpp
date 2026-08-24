@@ -395,6 +395,9 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
     ModTargets mt{};
     float amtScale[4] = {1, 1, 1, 1};
+    // Rate scaling for MOD_RATE / MOD_BOTH / MOD_BINV, written ahead to slot
+    // i+1 the same way amtScale is. See the destination switch for the law.
+    float rateScale[4] = {1, 1, 1, 1};
 
     if (m_instrument) {
         bool noteOn = (m_gateTarget > 0.0f && m_gate < 1.0f && m_gate > 0.0f);
@@ -412,7 +415,18 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             case 0: mod_val = m_ahdEnv[i].process(p1, p2, p3, ctx); break;
             case 1: mod_val = m_adsrEnv[i].process(p1, p2, p3, mod.p4, ctx); break;
             case 2: mod_val = m_drumEnv[i].process(p1, p2, p3, ctx); break;
-            case 3: mod_val = m_lfo[i].process(p1, p3, p2, ctx, noteOn); break;
+            case 3: {
+                // Lfo::process takes a PERIOD byte, not a frequency: period =
+                // freq * samplesPerStep, so a bigger byte is a slower LFO.
+                // Scaling the rate therefore divides it.
+                uint8_t rateByte = p3;
+                if (rateScale[i] > 0.0f && rateScale[i] != 1.0f) {
+                    const float scaledByte = float(p3) / rateScale[i];
+                    rateByte = static_cast<uint8_t>(std::clamp(scaledByte + 0.5f, 1.0f, 255.0f));
+                }
+                mod_val = m_lfo[i].process(p1, rateByte, p2, ctx, noteOn);
+                break;
+            }
             case 4: mod_val = m_ahdEnv[i].process(p1, p2, p3, ctx); break;
             case 5: {
                 float src = 0.0f;
@@ -443,14 +457,31 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
             case ModDest::AMP: mt.amp += scaled; break;
             case ModDest::PAN: mt.pan += scaled; break;
             case ModDest::MOD_AMT: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
-            // MOD_RATE, and the rate half of MOD_BOTH/MOD_BINV, are not
-            // implemented: there is no per-slot modulation rate to scale, so
-            // only the amount half applies. Placeholder (AGENTS.md §8) --
-            // do not "fix" this into a guessed rate-scaling behavior without
-            // a hardware capture to verify against.
-            case ModDest::MOD_RATE: break;
-            case ModDest::MOD_BOTH: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
-            case ModDest::MOD_BINV: amtScale[(i + 1) & 3] = 1.0f + scaled; break;
+            // The rate half, implemented 2026-08-24. It was a placeholder on the
+            // grounds that there was no per-slot rate to scale -- but there is:
+            // an LFO slot's p3 is its period byte, and dividing it speeds the
+            // slot up.
+            //
+            // The LAW is chosen, not measured. MOD_AMT multiplies the target's
+            // amount by (1 + scaled), so MOD_RATE multiplies its rate by the
+            // same factor, which divides the period. That is symmetry with the
+            // neighbour rather than a captured curve, and the M8's actual
+            // scaling could differ in shape. It is written down here instead of
+            // in a comment claiming measurement.
+            //
+            // MOD_BINV differs from MOD_BOTH only in the rate half's sign --
+            // "both, inverted" -- so it speeds up where BOTH slows down. Also an
+            // assumption, and the one most worth checking first if these sound
+            // wrong.
+            case ModDest::MOD_RATE: rateScale[(i + 1) & 3] = 1.0f + scaled; break;
+            case ModDest::MOD_BOTH:
+                amtScale[(i + 1) & 3]  = 1.0f + scaled;
+                rateScale[(i + 1) & 3] = 1.0f + scaled;
+                break;
+            case ModDest::MOD_BINV:
+                amtScale[(i + 1) & 3]  = 1.0f + scaled;
+                rateScale[(i + 1) & 3] = 1.0f - scaled;
+                break;
             default: break;
             }
         }

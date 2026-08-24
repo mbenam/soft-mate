@@ -909,9 +909,13 @@ is implemented and verified.
   relevant lesson is in AGENTS.md §7a — this is the third session where the audio-capture path
   produced more retractions than findings, while screen reads produced every constant that
   held up.
-- **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
-  mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
-  read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
+- **`MOD RATE` and the rate halves — IMPLEMENTED 2026-08-24.** There *was* a per-slot rate to
+  scale after all: an LFO slot's `p3` is its period byte, so `SynthVoice.cpp` now divides it by a
+  `rateScale[]` written ahead to the target slot, exactly as `amtScale[]` already was. **The law
+  is chosen, not measured:** `MOD_AMT` multiplies amount by `(1 + scaled)`, so `MOD_RATE`
+  multiplies rate by the same factor; `MOD_BINV` inverts the rate half's sign. The M8's real
+  scaling could differ in shape, and `MOD_BINV`'s polarity is the assumption worth checking
+  first. `[modrate]` asserts the destination reaches the audio, not the magnitude.
 - **HyperSynth WIDTH is stereo as of 2026-08-24; the other synths are still mono.** The `0.5f * (outL + outR)` collapse is gone for HyperSynth: `renderFrame` now carries both channels through the output stage (`applyAmpLimFilterStereo`), so WIDTH survives. `[hypersynth]` covers it -- WIDTH 00 measures exactly mono (side RMS 0) and FF genuinely stereo. **Width is at device parity as of 2026-08-24**: `widthSpread` was 0.05 semitones at FF, which put side/mid at 0.55 -- nineteen times the device's measured 0.029, i.e. near-decorrelated where the M8 is subtly wide. A sweep of this engine placed 0.029 at WIDTH byte 4 of 255, so the constant is now 0.000754 and FF measures 0.0290. `[hypersynth]` holds it in a +/-15% band. WavSynth, FMSynth and MacroSynth remain mono, which is correct for mono sources -- only HyperSynth has a stereo control. Original entry follows.
 - **Voice path was mono for the SYNTHS; the sampler went stereo 2026-08-14.** The hardware is
   **not**, measured 2026-08-14 (`hw_findings.md` §UI-11). Two probes differing only in HyperSynth
@@ -941,13 +945,11 @@ is implemented and verified.
   (there is no separate ExternalInst type); `SynthVoice.cpp:392` falls it through with no
   render branch. Still true 2026-08-24. (WavSynth, FMSynth,
   HyperSynth are now **implemented** — see Synth engines above.)
-- **Reverb FREEZE (`XRZ`)** — the FX command sets `effects.rev_freeze` (`Engine.cpp:761`) and
-  nothing reads it, so it is silent. `SongIO` has no byte for it either — `rev_size`,
-  `rev_decay`, `rev_mod_depth`, `rev_mod_freq` and `rev_width` all round-trip, freeze does not —
-  so the flag is also lost on save. No EFFECTS-screen control exposes it; `XRZ` is the only way
-  to reach it. `FX_COMMANDS_SPEC.md` used to list it as Implemented alongside its working
-  row-mates; corrected 2026-08-21. Implementing it means holding the reverb's feedback at unity
-  while muting its input, and finding it a home in the saved effects block.
+- **Reverb FREEZE (`XRZ`) — IMPLEMENTED 2026-08-24.** `Engine.cpp` now holds the reverb at
+  unity feedback and mutes its input while `effects.rev_freeze` is set, so the tail circulates
+  instead of decaying and DECAY has no effect while frozen. `[freeze]` covers it. **Still not
+  saved, deliberately:** the `.m8s` effects block has no byte for it, and inventing an offset
+  would be guessing at the file format. `XRZ` is a playback command, so it starts clear on load.
 - **`SLICE` playback — IMPLEMENTED, verified 2026-08-24.** Both modes are live in
   `SamplerEngine.cpp:15-40`: `01` selects from the file's own markers (`sliceMarkers`), and
   `02`-`80` divides the sample into that many equal parts and plays the one the note selects.
@@ -957,14 +959,11 @@ is implemented and verified.
   a device capture for the tempo formula. (**Scales are now read** — `Engine.cpp:796` applies
   `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
   `Engine.cpp:47`. **Tables are executed** — see Tables above.)
-- **FX `REV` in phrase steps** — parsed, inert everywhere; there is no `FxCmd::REV` handler in
-  `src/engine/`. (**`VOL` and `PIT` are live at phrase level**, not just inside tables:
-  `Engine.cpp:548-552` accumulates them into `pendingVolOffset`/`pendingPitchOffset`,
-  `Engine.cpp:787` applies the pitch and `803`/`820` the volume, and `815`/`816`/`824` clear
-  them. `TBL`/`GRV`/`TIC` are live too. **`ARP`, `RET`, `RND`, `RNL` and `RTO` are implemented as
-  well** — `Engine.cpp:597/608/483/498/444`, verified 2026-08-24; the example list here was
-  stale. See `FX_COMMANDS_SPEC.md` for the current per-command matrix, which is the
-  authority on what is left.)
+- **FX `REV` in phrase steps — IMPLEMENTED 2026-08-24.** `REV 01` overrides the sampler's play
+  mode to reverse for that note only, per `FX_COMMANDS_SPEC.md`'s design: `pendingReverse[8]` set
+  on parse, consumed at note-on, cleared immediately so it cannot leak into the next note.
+  Non-sampler instruments ignore it. `[rev]` covers it. The spec's own caveat stands — the real
+  M8 `REV` can be relative to the current play mode, and this is the simple version.
 - (**Project transpose is now applied** — `m_state.project.transpose` is read at
   `Engine.cpp:345`, added to chain transpose at `Engine.cpp:386`, and folded into the played
   note at `Engine.cpp:786`; `FxCmd::TSP` writes it at `Engine.cpp:578`. **EQ is now

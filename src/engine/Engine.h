@@ -495,6 +495,8 @@ struct EngineState {
     float pendingVol[8] = {0};
     bool pendingVolValid[8] = {false};
     const Instrument* pendingInst[8] = {nullptr};
+    // FX REV: reverse the next note on this track (FX_COMMANDS_SPEC.md).
+    bool pendingReverse[8] = {false, false, false, false, false, false, false, false};
     int pendingDel[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int pendingKil[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int pendingOff[8] = {-1, -1, -1, -1, -1, -1, -1, -1};

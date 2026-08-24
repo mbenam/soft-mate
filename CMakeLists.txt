@@ -269,6 +269,7 @@ add_executable(m8_tests
     tests/test_tempo.cpp
     tests/test_sequencer_walk.cpp
     tests/test_fx.cpp
+    tests/test_fx_rev_freeze_modrate.cpp
     tests/test_groove.cpp
     tests/test_commands.cpp
     tests/test_sample_pool.cpp

@@ -528,7 +528,8 @@ void Engine::tickTrack(int t) {
 
         auto parseFX = [&](const FxSlot& fx) {
             if (fx.cmd == FxCmd::NONE) return;
-            if (fx.cmd == FxCmd::DEL) m_state.pendingDel[t] = std::min((int)fx.val, grooveLength - 1);
+            if (fx.cmd == FxCmd::REV) m_state.pendingReverse[t] = (fx.val != 0);
+            else if (fx.cmd == FxCmd::DEL) m_state.pendingDel[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::KIL) m_state.pendingKil[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::OFF) m_state.pendingOff[t] = std::min((int)fx.val, grooveLength - 1);
             else if (fx.cmd == FxCmd::HOP) m_state.nextHop[t] = fx.val;
@@ -646,7 +647,10 @@ void Engine::tickTrack(int t) {
                 if (t < 7 && m_state.pendingFreq[t] > 0.0f) {
                     int nxtInst = fx.val & 0x7F;
                     if (nxtInst < (int)m_state.instruments.size()) {
+                        // FX REV applies to this note only, so it is consumed here.
+                        m_voices[t + 1].setPlayOverride(m_state.pendingReverse[t] ? 1 : -1);
                         m_voices[t + 1].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], &m_state.instruments[nxtInst], m_state.pendingNote[t]);
+                        m_state.pendingReverse[t] = false;
                     }
                 }
             }
@@ -857,7 +861,10 @@ void Engine::tickTrack(int t) {
             if (m_state.pendingInst[t] && m_state.pendingInst[t]->type == InstType::INST_SAMPLER) {
                 m_voices[t].setSample(m_samplePool.get(m_state.pendingInst[t]->sampler.sample));
             }
-            m_voices[t].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], m_state.pendingInst[t], m_state.pendingNote[t]);
+            // FX REV applies to this note only, so it is consumed here.
+                        m_voices[t].setPlayOverride(m_state.pendingReverse[t] ? 1 : -1);
+                        m_voices[t].noteOn(m_state.pendingFreq[t], m_state.pendingVol[t], m_state.pendingInst[t], m_state.pendingNote[t]);
+                        m_state.pendingReverse[t] = false;
             EngineEvent e_on{};
             e_on.type = EventType::NOTE_ON;
             e_on.track = t;
@@ -906,7 +913,10 @@ void Engine::tickTrack(int t) {
         }
         if (doRetrig && m_voices[t].isActive()) {
             const Instrument* inst = (m_trackInstrument[t] >= 0 && m_trackInstrument[t] < (int)m_state.instruments.size()) ? &m_state.instruments[m_trackInstrument[t]] : nullptr;
-            m_voices[t].noteOn(m_voices[t].getFrequency(), m_state.pendingVol[t], inst, m_state.pendingNote[t]);
+            // FX REV applies to this note only, so it is consumed here.
+                        m_voices[t].setPlayOverride(m_state.pendingReverse[t] ? 1 : -1);
+                        m_voices[t].noteOn(m_voices[t].getFrequency(), m_state.pendingVol[t], inst, m_state.pendingNote[t]);
+                        m_state.pendingReverse[t] = false;
         }
     }
 
@@ -1637,6 +1647,23 @@ void Engine::render(float* buffer, int frames) {
         m_reverb.SetRoomSize(0.25f + 0.75f * (m_state.effects.rev_size / 255.0f));
         m_reverb.SetPitchMod(m_state.effects.rev_mod_depth / 32.0f);
         m_reverb.SetModRate(0.1f + 0.9f * (m_state.effects.rev_mod_freq / 255.0f));
+        // FREEZE (FX XRZ): hold the tail and stop feeding it.
+        //
+        // Unity feedback makes the network recirculate what it already has
+        // without decaying, and muting the input stops new material entering --
+        // together that is the "freeze" every reverb of this shape implements.
+        // It overrides the DECAY law above rather than combining with it, which
+        // is the point: while frozen, DECAY does nothing.
+        //
+        // Not persisted, and that is deliberate: the .m8s effects block has no
+        // byte for freeze (SongIO round-trips rev_size/decay/mod_depth/mod_freq/
+        // width and nothing else), and inventing an offset would be guessing at
+        // the file format. XRZ is a playback command, so it starts clear on load.
+        if (m_state.effects.rev_freeze) {
+            m_reverb.SetFeedback(1.0f);
+            sendRevL = 0.0f;
+            sendRevR = 0.0f;
+        }
         float revL = 0.0f, revR = 0.0f;
         m_reverb.Process(sendRevL, sendRevR, &revL, &revR);
         revL = dcBlock(revL, m_dcRevL);
