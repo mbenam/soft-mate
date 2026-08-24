@@ -832,6 +832,50 @@ inline ScreenFieldMap getFieldMap(Screen s, const std::string& typeHint) {
     return getFieldMap(s);
 }
 
+// Is a field's label really where the map says it is, on this screen right now?
+//
+// The maps are static; some screens are not. The SAMPLER instrument layout
+// RE-LAYS-OUT with PLAY mode: at 09 (REPITCH) the DETUNE row becomes STEPS and
+// moves up, and START/LOOP ST/LENGTH each shift down a row. The map knows
+// nothing about that, so on 2026-08-24 `cursor DETUNE` landed on LENGTH and the
+// four presses that followed edited the wrong field -- silently, because
+// identifyCursorField agreed it had arrived.
+//
+// Modelling every variant is the thorough fix and a large one. This is the
+// cheap half that removes the harm: check the label is where it should be, by
+// exactly the rule checkMapPlacement enforces offline, and fail loudly when it
+// is not. It catches any stale coordinate on any screen, not just this variant.
+//
+// Unlabelled fields (MIXER's track volumes) return true -- there is nothing to
+// look for, and the crawl gate covers those instead.
+inline bool labelIsWhereMapSays(const ScreenGrid& grid, const FieldInfo& f) {
+    const std::string label = f.label;
+    if (label.empty()) return true;
+    const int y = (f.row + 3) * 10;
+    std::string got;
+    for (size_t k = 0; k < label.size(); ++k) {
+        auto it = grid.cells.find({y, (f.col + 1 + static_cast<int>(k)) * 8});
+        got += (it != grid.cells.end()) ? static_cast<char>(it->second.ch) : ' ';
+    }
+    return got == label;
+}
+
+// The FieldInfo behind a name, for callers that need the label as well as the
+// stop. findFieldOnScreen deliberately returns only the stop.
+inline const FieldInfo* findFieldInfo(Screen s, const std::string& name,
+                                      const std::string& typeHint = "") {
+    auto map = typeHint.empty() ? getFieldMap(s) : getFieldMap(s, typeHint);
+    if (map.isGrid || !map.fields) return nullptr;
+    std::string upper = name;
+    for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (size_t i = 0; i < map.count; ++i) {
+        std::string fn = map.fields[i].name;
+        for (auto& c : fn) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (fn == upper) return &map.fields[i];
+    }
+    return nullptr;
+}
+
 // ---- Layout sanity ---------------------------------------------------------
 //
 // What fraction of a screen's mapped labels are actually where the map says?

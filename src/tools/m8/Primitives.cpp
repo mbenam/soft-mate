@@ -4,6 +4,7 @@
 
 #include "Primitives.h"
 #include "FlightRecorder.h"
+#include "NavPaths.h"
 #include "Gestures.h"
 #include <algorithm>
 #include <cctype>
@@ -424,6 +425,27 @@ JsonResult moveCursorTo(M8Device& dev, const std::string& fieldName,
                                 dev.grid());
     }
 
+    // Refuse before moving if the map does not describe this screen.
+    //
+    // Static maps, dynamic screens: the SAMPLER layout re-lays-out with PLAY
+    // mode, and on 2026-08-24 `cursor DETUNE` landed on LENGTH under REPITCH and
+    // the presses that followed edited the wrong field. identifyCursorField
+    // agreed it had arrived, because the coordinates it compares are the ones
+    // that are wrong. Checking the LABEL is where the map says catches that --
+    // and any other stale coordinate on any screen -- before a key is pressed.
+    if (const FieldInfo* info = findFieldInfo(cur, fieldName, instType)) {
+        if (!labelIsWhereMapSays(dev.grid(), *info)) {
+            return JsonResult::fail(
+                "moveCursorTo: the map places '" + fieldName + "' label '" + info->label
+                + "' at row " + std::to_string(info->row) + " col " + std::to_string(info->col)
+                + ", and the screen does not have it there. The layout has changed under the map "
+                  "-- the SAMPLER instrument screen re-lays-out with PLAY mode, for one -- so "
+                  "moving would edit whatever is actually at those coordinates. Re-crawl this "
+                  "screen (m8_crawl) rather than pressing on.",
+                dev.grid());
+        }
+    }
+
     // Check if already on target by coordinate matching.
     auto curFieldName = identifyCursorField(dev, cur);
     if (curFieldName && curFieldName.value() == target->name) {
@@ -544,6 +566,39 @@ JsonResult moveCursorTo(M8Device& dev, const std::string& fieldName,
             auto settleField2 = identifyCursorField(dev, cur);
             if (settleField2 == settleField) break;
             settleField = settleField2;
+        }
+    }
+
+    // The walker gave up. Before failing, try a route that is known to work.
+    //
+    // m8_crawl records, for every stop on a screen, the shortest key sequence
+    // from home -- measured by walking the chain until it closes. Some routes
+    // go LEFT before they go DOWN, which an axis-at-a-time walker will never
+    // find: after #20's map was corrected, DJF_FREQ, DJF_RES and MIX_EQ still
+    // could not be reached for exactly that reason. Correct coordinates, no
+    // route.
+    //
+    // This runs LAST on purpose. The walker handles most fields and is fast,
+    // while replaying costs a panicHome every time -- so turning this on cannot
+    // regress anything that already worked. It only catches what was dropped.
+    if (getNavPaths().ensureLoaded(cur)) {
+        if (const NavRoute* route = getNavPaths().route(cur, targetStopRow, targetStopCol)) {
+            panicHome(dev, holdMs);
+            gotoScreen(dev, cur, holdMs);
+            dev.readSettled(0, 200, 1500);
+            for (uint8_t mask : *route) {
+                dev.press(mask, holdMs);
+                dev.readSettled(0, 120, 900);
+            }
+            auto arrived = identifyCursorField(dev, cur);
+            if (arrived && *arrived == target->name) {
+                return JsonResult::success();
+            }
+            return JsonResult::fail(
+                "moveCursorTo: '" + fieldName + "' was not reached by the walker, and the "
+                "recorded route from hw_crawl did not land on it either (got '"
+                + (arrived ? *arrived : std::string("nothing")) + "'). The crawl artifact is "
+                "probably stale -- re-run m8_crawl for this screen.", dev.grid());
         }
     }
 

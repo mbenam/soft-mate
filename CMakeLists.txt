@@ -204,6 +204,7 @@ add_library(m8_device STATIC
     src/tools/m8/M8Device.cpp
     src/tools/m8/LiveReader.cpp
     src/tools/m8/FlightRecorder.cpp
+    src/tools/m8/NavPaths.cpp
     src/tools/m8/Primitives.cpp
     src/tools/m8/Gestures.cpp
     src/tools/m8/DeviceTheme.cpp

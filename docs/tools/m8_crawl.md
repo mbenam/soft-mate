@@ -82,6 +82,33 @@ and [`tests/test_crawl_check.cpp`](../../tests/test_crawl_check.cpp) runs the co
 CI. That test currently asserts the disagreement **still exists** — when the map is corrected it
 will fail, and that is the intended signal to flip it to `CHECK(r.ok())`.
 
+## The artifacts are used at runtime, not just checked
+
+A crawl saved to `hw_crawl/<SCREEN>.json` at the repo root is loaded by
+[`NavPaths`](../../src/tools/m8/NavPaths.h) and replayed by `moveCursorTo` **when its
+own walker fails**. That ordering is deliberate: the walker handles most fields and is fast,
+replaying costs a `panicHome` per call, so turning this on cannot regress anything that already
+worked — it only catches what was dropped.
+
+It matters because some routes go LEFT before they go DOWN, which no axis-at-a-time walker
+finds. After #20's map was corrected, `DJF_FREQ`, `DJF_RES` and `MIX_EQ` were still unreachable
+for exactly that reason: correct coordinates, no route. With replay, **all 22 MIXER fields are
+reachable**.
+
+A missing artifact means no routes and the old behaviour exactly. A stale one is reported as
+such rather than silently trusted — if the replayed route does not land on the field, the error
+says to re-crawl.
+
+## Committed artifacts
+
+| Screen | Stops | Gate |
+|---|---|---|
+| `hw_crawl/MIXER.json` | 22 | clean (after the map was rebuilt from it) |
+| `hw_crawl/PROJECT.json` | 13 | clean — PROJECT was always the control |
+
+SCALE, EFFECTS and the five INSTRUMENT layouts are **not yet crawled**. Expect gaps: MIXER had
+two phantoms and fifteen unclaimed stops before it was done.
+
 ## Gotchas
 
 - **It replays from home for every probe**, rather than walking back. The M8 remembers a per-screen
@@ -95,6 +122,10 @@ will fail, and that is the intended signal to flip it to `CHECK(r.ok())`.
   with PLAY mode (REPITCH renames DETUNE to STEPS and shifts every row below it), so an INSTRUMENT
   crawl is only valid for the mode it was taken in.
 - **COM3 is exclusive.** Let any m8drv daemon exit first.
+- **It is slow — minutes per screen, and a big screen can exceed ten.** Every probe replays from
+  home rather than walking back, because the M8 remembers a per-screen cursor position. That is
+  what makes the result trustworthy and it is the obvious thing to optimise next: cache the
+  cursor position and only re-home when a probe drifts.
 
 ## Example
 

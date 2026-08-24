@@ -59,6 +59,20 @@ nothing it does wants an unsettled read. Two consequences matter here anyway:
 - **COM3 is exclusive**, so `m8_livecheck` and `m8_watchcapture` cannot run while this holds the
   port, or the reverse. Let the daemon exit first.
 
+## Two guards on `moveCursorTo`
+
+**Recorded-route fallback.** When the walker cannot reach a field, `moveCursorTo` replays the
+route [`m8_crawl`](m8_crawl.md) measured for it, from `hw_crawl/<SCREEN>.json`. Some routes go
+LEFT before they go DOWN and no axis-at-a-time walker finds them. Fallback only, so nothing that
+already worked can change.
+
+**Stale-map refusal.** Before pressing anything it checks the field's label is where the map says
+it is, by the same rule `checkMapPlacement` enforces offline. Static maps, dynamic screens: the
+SAMPLER instrument layout re-lays-out with PLAY mode, and under REPITCH `cursor DETUNE` used to
+land on LENGTH and edit it silently — `identifyCursorField` agreed it had arrived, because the
+coordinates it compares are the ones that are wrong. It now refuses and says to re-crawl.
+Unlabelled fields are exempt; the crawl gate covers those.
+
 ## Architecture (3 layers, per `M8_DEVICE_CONTROL_SPEC.md`)
 
 1. **Perception + transport** (`M8Device.{h,cpp}`) — serial port, SLIP decoding, `ScreenGrid`
