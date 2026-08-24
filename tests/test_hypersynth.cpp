@@ -222,17 +222,18 @@ TEST_CASE("HyperSynth WIDTH produces real stereo, and WIDTH 00 is exactly mono",
     CHECK(sideFF > 1e-4);
     CHECK(sideFF > side00 * 100.0);
 
-    // Still an image rather than two unrelated signals.
+    // Width at device parity. hw_findings.md UI-11 measured side/mid = 0.029 at
+    // maximum WIDTH; `widthSpread` was calibrated to land there on 2026-08-24.
     //
-    // Deliberately loose. The device measured side/mid = 0.029 (-31 dB) at
-    // maximum width; this engine produces about 0.55, because `widthSpread`
-    // (SynthVoice.cpp, 0.05 semitones at FF) is far wider than whatever the M8
-    // uses. Tightening the constant to hit 0.029 would be fitting the engine to
-    // a captured magnitude, which is a level question hardware is not used to
-    // answer here -- so the gap is recorded in status.md instead of quietly
-    // tuned away. What this pins is the structure: the channels differ, and
-    // they are not anti-phase.
+    // The band is +/-15%, which is wide enough to survive an unrelated change to
+    // the chord voicing or the render length -- both of which move this a little
+    // -- and far too tight to survive a regression to the old constant, which
+    // put it at 0.55, nineteen times high.
     CHECK(sideFF < midFF);
+    const double ratio = sideFF / midFF;
+    INFO("side/mid at WIDTH FF = " << ratio << " (device: 0.029)");
+    CHECK(ratio > 0.0247);
+    CHECK(ratio < 0.0334);
 }
 
 TEST_CASE("HyperSynth RT safety -- zero audio-thread allocations", "[hypersynth]") {

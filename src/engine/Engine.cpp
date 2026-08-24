@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include "stmlib/utils/random.h"   // Braids RNG, reset on LOAD_SONG
 
 namespace m8 {
 namespace engine {
@@ -268,6 +269,22 @@ void Engine::processCommands() {
                     m_meterClip[i] = false;
                 }
                 m_songGcRing.push(data);
+                // Braids' RNG is process-global (stmlib Random::rng_state_ is a
+                // static), shared by every MacroSynth voice and never owned by
+                // one, so resetOscillator() below cannot reach it. Left running,
+                // it makes the in-app path diverge from a fresh engine for every
+                // model that draws on it -- the noise family especially -- which
+                // is invariant 11 all over again.
+                //
+                // Latent until 2026-08-24: the MacroSynth shape cap was 0x2B, so
+                // the demo song's shape in 0x2C-0x2F rendered silently and never
+                // advanced the RNG. Raising the cap to the device's real ceiling
+                // made it audible, and L9 caught the divergence immediately.
+                //
+                // Seeded to a fixed constant rather than reset to zero: zero is a
+                // fixed point for nothing here, but a documented seed makes both
+                // paths start identically, which is all the invariant asks.
+                stmlib::Random::Seed(0x12345678u);
                 for (int i = 0; i < 8; ++i) {
                     m_voices[i].resetOscillator();
                     m_tableState[i] = {};

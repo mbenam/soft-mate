@@ -545,7 +545,14 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
     if (m_instrument && m_instrument->type == InstType::INST_MACROSYN) {
         const MacrosynState& s = m_instrument->macrosyn;
-        if (s.shape >= 0 && s.shape <= 0x2B) {
+        // 0x2F, not 0x2B. Read off the device 2026-08-24: stepping SHAPE to its
+        // ceiling on a real M8 (fw 6.5.2) stops at 0x2F, which it names "MORSE
+        // NOISE". The vendored Braids enum ends at the same place --
+        // MACRO_OSC_SHAPE_QUESTION_MARK is 0x2F and LAST is 0x30 -- so the two
+        // agree exactly and the old cap was simply four models short:
+        // GRANULAR_CLOUD, PARTICLE_NOISE, DIGITAL_MODULATION and QUESTION_MARK
+        // were vendored, compiled and unreachable.
+        if (s.shape >= 0 && s.shape <= 0x2F) {
             isBraids = true;
             m_braidsOsc.set_shape(static_cast<braids::MacroOscillatorShape>(s.shape));
 
@@ -587,7 +594,13 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         }
 
         float detuneSpread = (h.swarm / 255.0f) * 0.25f;
-        float widthSpread = (h.width / 255.0f) * 0.05f;
+        // 0.000754 semitones at FF, not 0.05. Calibrated 2026-08-24 against the
+        // device: hw_findings.md UI-11 measured side/mid = 0.029 at maximum
+        // WIDTH, and a sweep of this engine put 0.029 at byte 4 of 255 on the
+        // old constant -- i.e. the spread was ~65x too wide, and FF sounded
+        // near-decorrelated where the M8 is subtly wide. Scaled so FF lands on
+        // the measured ratio. `[hypersynth]` asserts it.
+        float widthSpread = (h.width / 255.0f) * 0.000754f;
 
         float outL = 0.0f, outR = 0.0f;
         int activeNotes = 0;

@@ -912,7 +912,7 @@ is implemented and verified.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
-- **HyperSynth WIDTH is stereo as of 2026-08-24; the other synths are still mono.** The `0.5f * (outL + outR)` collapse is gone for HyperSynth: `renderFrame` now carries both channels through the output stage (`applyAmpLimFilterStereo`), so WIDTH survives. `[hypersynth]` covers it -- WIDTH 00 measures exactly mono (side RMS 0) and FF genuinely stereo. **Open: the width is too wide.** Side/mid comes out around 0.55 against the device's measured 0.029, because `widthSpread` is 0.05 semitones at FF. Narrowing it to match would be fitting to a captured magnitude, so the constant is left alone and the gap noted. WavSynth, FMSynth and MacroSynth remain mono, which is correct for mono sources -- only HyperSynth has a stereo control. Original entry follows.
+- **HyperSynth WIDTH is stereo as of 2026-08-24; the other synths are still mono.** The `0.5f * (outL + outR)` collapse is gone for HyperSynth: `renderFrame` now carries both channels through the output stage (`applyAmpLimFilterStereo`), so WIDTH survives. `[hypersynth]` covers it -- WIDTH 00 measures exactly mono (side RMS 0) and FF genuinely stereo. **Width is at device parity as of 2026-08-24**: `widthSpread` was 0.05 semitones at FF, which put side/mid at 0.55 -- nineteen times the device's measured 0.029, i.e. near-decorrelated where the M8 is subtly wide. A sweep of this engine placed 0.029 at WIDTH byte 4 of 255, so the constant is now 0.000754 and FF measures 0.0290. `[hypersynth]` holds it in a +/-15% band. WavSynth, FMSynth and MacroSynth remain mono, which is correct for mono sources -- only HyperSynth has a stereo control. Original entry follows.
 - **Voice path was mono for the SYNTHS; the sampler went stereo 2026-08-14.** The hardware is
   **not**, measured 2026-08-14 (`hw_findings.md` §UI-11). Two probes differing only in HyperSynth
   WIDTH: `00` captured as exactly mono (side RMS 0.000000, corr 1.0000), `FF` as genuinely stereo
@@ -1282,8 +1282,10 @@ later acceptance gate, not a per-feature step. The parity rig (`m8_makeprobe` �
 1. **MacroSynth → Braids — DONE (2026-07-17).** Ported Mutable Instruments **Braids** (MIT):
    shapes `0x00–0x2B` render through `braids::MacroOscillator`; `shape`/`timbre`/`color` drive
    the model. `[macrosynth]` test covers all 44 shapes. *Remaining:* per-model spectral parity
-   against captured hardware (acceptance gate, item 6), and shapes above `0x2B`
-   (`SynthVoice.cpp:548` still caps there). **`redux` is done** -- `SynthVoice.cpp:762`
+   against captured hardware (acceptance gate, item 6). **Shapes now go to 0x2F** -- the device's
+   own ceiling, read off a real M8 2026-08-24 by stepping SHAPE until it clamped (it stops at
+   `0x2F MORSE NOISE`). The vendored Braids enum ends at the same index, so GRANULAR_CLOUD,
+   PARTICLE_NOISE, DIGITAL_MODULATION and QUESTION_MARK were compiled in and unreachable. **`redux` is done** -- `SynthVoice.cpp:762`
    applies bit reduction from the byte; verified 2026-08-24.
 2. **Tables — DONE (2026-07-17).** `Engine::tickTable()` executes assigned tables (transpose/
    volume + HOP/TIC/VOL/PIT), TBL/GRV/TIC phrase FX wired. `[tables]` tests. See

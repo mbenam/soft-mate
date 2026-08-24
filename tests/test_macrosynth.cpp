@@ -9,7 +9,12 @@ using namespace m8::test;
 using namespace m8::engine;
 
 TEST_CASE("Macrosynth Phase 2 exhaustive shape checks", "[macrosynth]") {
-    for (int shapeIdx = 0; shapeIdx <= 0x2B; ++shapeIdx) {
+    // 0x2F is the device's ceiling, read off a real M8 (fw 6.5.2) on 2026-08-24
+    // by stepping SHAPE until it stopped -- it clamps at 0x2F "MORSE NOISE".
+    // The vendored Braids enum agrees: QUESTION_MARK is 0x2F, LAST is 0x30.
+    // This ran to 0x2B until then, so the last four models went uncovered
+    // because the engine could not reach them.
+    for (int shapeIdx = 0; shapeIdx <= 0x2F; ++shapeIdx) {
         DYNAMIC_SECTION("Shape " << shapeIdx) {
             OfflineHost host;
             auto& state = host.engine().getStateForInit();
@@ -28,8 +33,16 @@ TEST_CASE("Macrosynth Phase 2 exhaustive shape checks", "[macrosynth]") {
             setStep(host.sequencer(), 0, 0, 60, 100, 0); // Note C-4, Volume 100, Inst 0
             host.push(playPhrase(0, 0, 0));
 
-            // Render 1000 samples to verify real-time safety and lack of NaNs
-            host.render(1000);
+            // Render long enough for the model to actually emit.
+            //
+            // 1000 samples is ~21 ms, which is plenty for an oscillator and not
+            // for a grain generator. Shape 0x2D (PARTICLE_NOISE) failed the
+            // non-silence check at that length when the cap was raised to 0x2F:
+            // it fires sparse grains, and 21 ms can fall entirely between two.
+            // The noise family from 0x29 gets a longer window rather than an
+            // exemption, so they are still held to the same assertion.
+            const int renderLen = (shapeIdx >= 0x29) ? 48000 : 1000;
+            host.render(renderLen);
 
             // Verify zero allocations occurred during render
             REQUIRE(g_allocCount == 0);
