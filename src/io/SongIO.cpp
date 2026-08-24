@@ -183,9 +183,17 @@ static constexpr size_t kMixOtt          = 31;  // OTT amount
 static constexpr size_t kMixerBlockSize  = 32;
 
 // OTT is read here rather than through the library, which stops at +27.
+// LIM ATK/REL, SOFT CLIP and OTT (+28..+31) are 4.0 and later, the same story
+// as the effects block above: the library's MixerSettings stops at +27, and
+// below 4.0 those four bytes are leftovers, not mixer state. DEMO1 read 0x32 of
+// OTT and 0x12 of soft clip out of them. MASTER VOLUME and MASTER LIMIT are not
+// affected -- they are the first two bytes of the block and the library reads
+// them sequentially, so they hold in every version.
 static void loadMixerTail(const std::vector<uint8_t>& bytes,
-                          engine::MixerState& mixer) {
+                          engine::MixerState& mixer,
+                          const m8::Version& version) {
     if (bytes.size() < kMixerOffset + kMixerBlockSize) return;
+    if (!version.at_least(4, 0)) return;
     mixer.ott       = bytes[kMixerOffset + kMixOtt];
     mixer.lim_atk   = bytes[kMixerOffset + kMixLimAtk];
     mixer.lim_rel   = bytes[kMixerOffset + kMixLimRel];
@@ -239,8 +247,16 @@ static bool effectsBlockFits(const std::vector<uint8_t>& bytes) {
     return bytes.size() >= m8::V4_OFFSETS.effect_settings + kFxBlockSpan;
 }
 
+// SHIMMER, OTT TIME/COLOR and MOD TYPE (+22..+25) only exist from firmware
+// 4.0. Every older file we have -- v1.4, twelve v2.5 songs, v2.7 and v3.0.4 --
+// carries leftover firmware bytes there instead, and they are not even
+// song-specific: DEMO1 (v2.5.1) and TEST-FILE (v3.0.4) hold the identical run
+// F7 DF D2 9E, the same way +26..+29 holds 43 12 49 82 in files of every
+// version. Read as effects that gave DEMO1 a 97% shimmer reverb and a flanger
+// in place of its chorus. Below 4.0 the four fields keep their defaults.
 static void loadEffectsBlock(const std::vector<uint8_t>& bytes,
-                             engine::EffectsState& fx) {
+                             engine::EffectsState& fx,
+                             const m8::Version& version) {
     if (!effectsBlockFits(bytes)) return;
     const uint8_t* p = bytes.data() + m8::V4_OFFSETS.effect_settings;
     fx.cho_mod_depth = p[kFxModDepth];
@@ -257,6 +273,7 @@ static void loadEffectsBlock(const std::vector<uint8_t>& bytes,
     fx.rev_mod_depth = p[kFxRevModDep];
     fx.rev_mod_freq  = p[kFxRevModFrq];
     fx.rev_width     = p[kFxRevWidth];
+    if (!version.at_least(4, 0)) return;
     fx.rev_shimmer   = p[kFxRevShimmer];
     fx.ott_time      = p[kFxOttTime];
     fx.ott_color     = p[kFxOttColor];
@@ -325,20 +342,34 @@ static void saveEffectsBlock(const engine::EffectsState& fx,
 // described above from record 1 on. Going direct also lets the name survive as
 // raw bytes, so a save reproduces it.
 static constexpr size_t kScaleRecSize   = 46;
+// Pre-4.0 the record is the same 42 bytes of content with the four trailing
+// bytes we do not model absent, so only the STRIDE changes -- mask, offsets and
+// name keep their places. Measured off the block itself: the scale names sit
+// 42 bytes apart in v1.4/v2.5/v3.0 files and 46 apart from v4.0 on, and 16 * 42
+// lands exactly on the end of a pre-4.0 file. At 46 every scale after the first
+// was read 4 bytes further off than the last.
+static constexpr size_t kScaleRecSizePre4 = 42;
 static constexpr size_t kScaleNameAt    = 26;
 static constexpr size_t kScaleCount     = 16;
 static constexpr size_t kScaleBlockSpan = kScaleRecSize * kScaleCount;
 
-static bool scalesBlockFits(const std::vector<uint8_t>& bytes) {
-    return bytes.size() >= m8::V4_OFFSETS.scale + kScaleBlockSpan;
+static size_t scaleRecSize(const m8::Version& version) {
+    return version.at_least(4, 0) ? kScaleRecSize : kScaleRecSizePre4;
+}
+
+static bool scalesBlockFits(const std::vector<uint8_t>& bytes,
+                            const m8::Version& version) {
+    return bytes.size() >= m8::V4_OFFSETS.scale + scaleRecSize(version) * kScaleCount;
 }
 
 static void loadScalesBlock(const std::vector<uint8_t>& bytes,
-                            engine::EngineState& state) {
-    if (!scalesBlockFits(bytes)) return;
+                            engine::EngineState& state,
+                            const m8::Version& version) {
+    if (!scalesBlockFits(bytes, version)) return;
     const uint8_t* base = bytes.data() + m8::V4_OFFSETS.scale;
+    const size_t rec = scaleRecSize(version);
     for (size_t s = 0; s < kScaleCount; ++s) {
-        const uint8_t* p = base + s * kScaleRecSize;
+        const uint8_t* p = base + s * rec;
         engine::Scale& dst = state.scales[s];
         const uint16_t map = static_cast<uint16_t>(p[0] | (p[1] << 8));
         for (int n = 0; n < 12; ++n) {
@@ -355,9 +386,11 @@ static void loadScalesBlock(const std::vector<uint8_t>& bytes,
     }
 }
 
+// Only reached for 4.0+ songs -- saveSong() refuses anything older -- so the
+// 46-byte stride is the right one here.
 static void saveScalesBlock(const engine::EngineState& state,
                             std::vector<uint8_t>& bytes) {
-    if (!scalesBlockFits(bytes)) return;
+    if (bytes.size() < m8::V4_OFFSETS.scale + kScaleBlockSpan) return;
     uint8_t* base = bytes.data() + m8::V4_OFFSETS.scale;
     for (size_t s = 0; s < kScaleCount; ++s) {
         uint8_t* p = base + s * kScaleRecSize;
@@ -777,11 +810,21 @@ static void convertSongToEngine(const m8::Song& song,
     state.mixer.del_vol = song.mixer_settings.delay_volume;
     state.mixer.rev_vol = song.mixer_settings.reverb_volume;
     state.mixer.lim_val = song.mixer_settings.master_limit;
-    state.mixer.djf_freq = song.mixer_settings.dj_filter;
-    // dj_peak is the DJ filter's RESONANCE, not OTT (§UI-9). OTT lives at 0xED,
-    // which the library does not model; loadMixerTail() picks it up below.
-    state.mixer.djf_res = song.mixer_settings.dj_peak;
-    state.mixer.djf_typ = song.mixer_settings.dj_filter_type;
+    // The DJ filter is read at +25..+27, which holds from 2.5 on: `dj_filter`
+    // is 0x80 -- the documented "off" -- in twelve of the thirteen v2.5 songs
+    // here (MOVING BACK sets 0x90, a real value) and in every 2.7/3.0/4.x file.
+    // v1.4 does not fit: its analog/USB input block is laid out differently, so
+    // the same bytes carry no DJ filter and GOTEBORG read 0x2F there, engaging
+    // a lowpass the song never asked for. 2.5 is already a format boundary in
+    // this reader -- it is where scales start being stored. Below it the filter
+    // stays off rather than being driven from bytes we cannot place.
+    if (song.version.at_least(2, 5)) {
+        state.mixer.djf_freq = song.mixer_settings.dj_filter;
+        // dj_peak is the DJ filter's RESONANCE, not OTT (§UI-9). OTT lives at
+        // 0xED, which the library does not model; loadMixerTail() picks it up.
+        state.mixer.djf_res = song.mixer_settings.dj_peak;
+        state.mixer.djf_typ = song.mixer_settings.dj_filter_type;
+    }
 
     // Analog input (mono or stereo — engine takes left/mono channel)
     std::visit([&](auto& arg) {
@@ -852,9 +895,25 @@ static void convertSongToEngine(const m8::Song& song,
                 std::strncpy(s.samplePath, inst.sample_path.c_str(), sizeof(s.samplePath) - 1);
                 s.transp  = inst.transpose ? 1 : 0;
                 s.tbl_tic = inst.table_tick;
-                // DETUNE: file fine_pitch is signed (0 == centre); engine detune is
-                // unsigned (0x80 == centre). Convert with a signed re-centre.
-                s.detune  = static_cast<int>(static_cast<int8_t>(inst.synth_params.fine_pitch)) + 0x80;
+                // DETUNE: the file byte and the engine field use the SAME
+                // convention -- unsigned, 0x80 == centre -- so this is a
+                // straight copy. M8_SAMPLER_COMPLETION_SPEC.md 1.3 says the file
+                // is signed with 0x00 == centre and re-centres it; that was
+                // wrong, and it detuned every device-written sampler by -8
+                // semitones. Corrected 2026-08-24 against the files themselves:
+                //   0x80  every instrument in all 13 v1.4/v2.5 factory bundles,
+                //         in v3.0.4 TEST-FILE, and in every 6.0/6.5 device save
+                //         (device_golden/Sampler.m8s, probe_ottA0, scope_rel_*,
+                //         TEST01) -- i.e. an untouched DETUNE reads 0x80.
+                //   0x00  only in files soft-mate itself wrote, where the old
+                //         save path emitted detune-0x80. The spec's evidence was
+                //         its own round-trip, which held under either reading.
+                // The engine agrees independently: the REPITCH and BPM branches
+                // in SynthVoice.cpp read this same field as STEPS/BPM with 0x80
+                // the default, and their constants were measured on hardware
+                // (fw 6.5.2) including a STEPS=0x40 point. A signed re-centre
+                // would turn that 0x40 into 192 and stretch the loop 3x.
+                s.detune  = inst.synth_params.fine_pitch;
                 s.play = inst.play_mode;
                 s.slice = inst.slice;
                 s.start = inst.start;
@@ -1134,9 +1193,9 @@ static void convertEngineToSong(const engine::Sequencer& seq,
             smp.length     = static_cast<uint8_t>(s.length);
             smp.degrade    = static_cast<uint8_t>(s.degrade);
             engineSamplerToLibSynthParams(s, smp.synth_params); // volume/filter/lim/pan/dry/sends
-            // DETUNE: engine detune is unsigned with 0x80 == centre; the file's
-            // fine_pitch is SIGNED with 0 == centre. See the WARNING in §1.3.
-            smp.synth_params.fine_pitch = static_cast<uint8_t>(s.detune - 0x80);
+            // DETUNE: same convention on both sides, 0x80 == centre. See the
+            // load path for why the spec's signed re-centre was wrong.
+            smp.synth_params.fine_pitch = static_cast<uint8_t>(s.detune);
         }
         else if (engInst.type == engine::InstType::INST_MACROSYN &&
                  std::holds_alternative<m8::MacroSynth>(song.instruments[i])) {
@@ -1372,9 +1431,9 @@ LoadResult loadSong(const std::string& path, const std::string& sampleRoot) {
         // The main mix and effect EQs are not part of the parsed Song, so they
         // come straight from the file bytes (EQ_SPEC.md §4c).
         loadBusEqs(song, data, res.state);
-        loadEffectsBlock(data, res.state.effects);   // library offsets are wrong
-        loadMixerTail(data, res.state.mixer);        // OTT; library stops at +27
-        loadScalesBlock(data, res.state);            // library reads offsets unsigned
+        loadEffectsBlock(data, res.state.effects, song.version); // library offsets are wrong
+        loadMixerTail(data, res.state.mixer, song.version);      // OTT; library stops at +27
+        loadScalesBlock(data, res.state, song.version);          // library reads offsets unsigned
 
         // Collect sample paths
         for (size_t i = 0; i < song.instruments.size(); ++i) {

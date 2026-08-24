@@ -539,30 +539,37 @@ TEST_CASE("S-RT1 sampler fields round-trip through save/reload", "[io]") {
     std::filesystem::remove("temp_rt_sampler.m8s");
 }
 
-TEST_CASE("S-DET2 detune loads/saves signed fine_pitch correctly", "[io]") {
+TEST_CASE("S-DET2 detune uses the file's own centre, 0x80", "[io]") {
+    // The file's fine_pitch byte and the engine's SamplerState::detune use the
+    // SAME unsigned convention, 0x80 == in tune, so the conversion is a copy.
+    //
+    // This test used to assert a signed file byte (0x00 == in tune), following
+    // M8_SAMPLER_COMPLETION_SPEC.md 1.3. That was wrong: it round-tripped
+    // cleanly only because soft-mate's own writer applied the matching inverse,
+    // so the fixture it checked against was one soft-mate had written. Anything
+    // the DEVICE wrote came in 8 semitones flat -- (0x00 - 0x80) / 16.
     ensureSamplerProbeExists();
     auto a = loadSong("hwtest_out/probes/probe_sampler.m8s", "hwtest_out");
     REQUIRE(a.ok);
 
-    // Test case 1: detune = 0x90 (+16) -> fine_pitch = 0x10 (+16)
+    // detune 0x90 (one semitone up) must reach the file unchanged.
     a.state.instruments[0].sampler.detune = 0x90;
     std::string err;
     REQUIRE(saveSong("temp_det1.m8s", a, a.sequencer, a.state, err));
-    
+
     auto b = loadSong("temp_det1.m8s", "hwtest_out");
     REQUIRE(b.ok);
     REQUIRE(b.state.instruments[0].sampler.detune == 0x90);
 
-    // Verify file bytes directly
     auto data1 = readFile("temp_det1.m8s");
     m8::BinaryReader r1(data1);
     m8::Song song1 = m8::Song::from_reader(r1);
-    REQUIRE(std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch == 0x10);
-    
+    REQUIRE(std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch == 0x90);
+
     std::filesystem::remove("temp_det1.m8s");
 
-    // Test case 2: fine_pitch = 0xF0 (-16) -> detune = 0x70
-    std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch = 0xF0;
+    // ...and a byte set in the file must arrive unchanged in the engine.
+    std::get<m8::Sampler>(song1.instruments[0]).synth_params.fine_pitch = 0x70;
     auto outData = song1.write_over(data1);
     std::ofstream out("temp_det2.m8s", std::ios::binary);
     out.write(reinterpret_cast<char*>(outData.data()), outData.size());
@@ -573,6 +580,33 @@ TEST_CASE("S-DET2 detune loads/saves signed fine_pitch correctly", "[io]") {
     REQUIRE(c.state.instruments[0].sampler.detune == 0x70);
 
     std::filesystem::remove("temp_det2.m8s");
+}
+
+// The anchor for the test above, and the reason the old one could be wrong for
+// so long without anything noticing: a round-trip through our own writer agrees
+// with itself under either convention. Only a file we did NOT write can settle
+// which centre is real. device_golden/Sampler.m8s is a 6.5.0 device save whose
+// instrument 0 is an untouched sampler, so its DETUNE is the device's default --
+// and the device stores 0x80 there, not 0x00. Every 1.4/2.5 factory bundle and
+// every other 6.x device save in this tree agrees.
+TEST_CASE("S-DET3 a device save's untouched DETUNE loads as centre", "[io]") {
+    const std::string path = "tests/fixtures/device_golden/Sampler.m8s";
+    auto data = readFile(path);
+    REQUIRE(!data.empty());
+
+    m8::BinaryReader r(data);
+    m8::Song song = m8::Song::from_reader(r);
+    REQUIRE(song.version.major == 6);
+    const auto* smp = std::get_if<m8::Sampler>(&song.instruments[0]);
+    REQUIRE(smp != nullptr);
+    REQUIRE(smp->synth_params.fine_pitch == 0x80);
+
+    auto loaded = loadSong(path, "hwtest_out");
+    REQUIRE(loaded.ok);
+    REQUIRE(loaded.state.instruments[0].type == InstType::INST_SAMPLER);
+    // 0x80 is centre: no pitch shift. Under the old signed reading this was 0,
+    // which the renderer turns into (0 - 128)/16 = -8 semitones.
+    REQUIRE(loaded.state.instruments[0].sampler.detune == 0x80);
 }
 
 // Helper: write a library Song to a temp .m8s file over a template's bytes.

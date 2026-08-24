@@ -114,9 +114,8 @@ before** that closing brace.
             smp.length     = static_cast<uint8_t>(s.length);
             smp.degrade    = static_cast<uint8_t>(s.degrade);
             engineSamplerToLibSynthParams(s, smp.synth_params); // volume/filter/lim/pan/dry/sends
-            // DETUNE: engine detune is unsigned with 0x80 == centre; the file's
-            // fine_pitch is SIGNED with 0 == centre. See the WARNING in §1.3.
-            smp.synth_params.fine_pitch = static_cast<uint8_t>(s.detune - 0x80);
+            // DETUNE: same convention on both sides, unsigned 0x80 == centre.
+            smp.synth_params.fine_pitch = static_cast<uint8_t>(s.detune);
         }
         else if (engInst.type == engine::InstType::INST_MACROSYN &&
                  std::holds_alternative<m8::MacroSynth>(song.instruments[i])) {
@@ -153,9 +152,8 @@ Notes:
 ```cpp
                 s.transp  = inst.transpose ? 1 : 0;
                 s.tbl_tic = inst.table_tick;
-                // DETUNE: file fine_pitch is signed (0 == centre); engine detune is
-                // unsigned (0x80 == centre). Convert with a signed re-centre.
-                s.detune  = static_cast<int>(static_cast<int8_t>(inst.synth_params.fine_pitch)) + 0x80;
+                // DETUNE: same convention on both sides, unsigned 0x80 == centre.
+                s.detune  = inst.synth_params.fine_pitch;
 ```
 
 **Where:** same function, the **macrosyn** branch (around lines 346–367). It sets `ms.shape`,
@@ -166,22 +164,32 @@ branch (e.g. right after `engine::setName(engInst.name, inst.name.c_str());`):
                 ms.tbl_tic = inst.table_tick;
 ```
 
-> ### ⚠️ CRITICAL TRAP — DETUNE centre convention. READ THIS.
-> Do **NOT** write `s.detune = inst.synth_params.fine_pitch;`. The two use different centres:
-> - The **file** `fine_pitch` byte is a **signed** offset: `0x00` = in tune, `0x10` = +1
->   semitone (16 steps × 1/16 semitone), `0xF0` (= −16) = −1 semitone.
-> - The **engine** `SamplerState::detune` is **unsigned** with `0x80` = in tune; the renderer
->   computes `(detune − 128) × (1/16 semitone)` (`SynthVoice.cpp:155`).
+> ### ⚠️ CORRECTED 2026-08-24 — DETUNE needs no conversion.
+> This section used to say the file byte was **signed** with `0x00` = in tune, and told you to
+> re-centre it on load (`detune = int8_t(fine_pitch) + 0x80`) and on save. **That was wrong.**
+> The file and the engine use the SAME convention — unsigned, `0x80` = in tune — so both
+> directions are a straight copy:
+> - LOAD: `detune = fine_pitch`
+> - SAVE: `fine_pitch = detune`
 >
-> The correct conversions are therefore:
-> - LOAD: `detune = int8_t(fine_pitch) + 0x80`   (fine_pitch 0 → detune 0x80 → in tune ✓)
-> - SAVE: `fine_pitch = uint8_t(detune − 0x80)`
+> The evidence is the files themselves. An untouched DETUNE reads **`0x80`** in every M8-written
+> file in this tree: all thirteen v1.4/v2.5 factory bundles, v3.0.4 `TEST-FILE.m8s`, and every
+> 6.0/6.5 device save (`device_golden/Sampler.m8s`, `probe_ottA0`, `scope_rel_*`, `TEST01`).
+> `0x00` appears only in files **soft-mate itself wrote**, because the old save path emitted
+> `detune − 0x80`. The v4.1 goldens are in that category, not device saves — they carry
+> deliberately-set volumes and our own centre.
 >
-> If you get this wrong, **every sample plays ~8 semitones off**. There is a test (§1.5,
-> S-DET1/S-DET2) whose entire job is to catch this — make it pass, do not weaken it.
+> The engine says the same thing independently: `SynthVoice.cpp`'s REPITCH and BPM branches read
+> this very field as STEPS/BPM with `0x80` the default, and their constants were **measured on
+> hardware** (fw 6.5.2) including a STEPS = `0x40` point. A signed re-centre turns that `0x40`
+> into `192` and stretches the loop 3×.
 >
-> Why the current hardcode "worked": `s.detune = 0x80` accidentally equals the in-tune centre,
-> so probes with `fine_pitch = 0` sounded correct. It silently ignored any real detune.
+> Why the error survived: a save→load round-trip through our own writer agrees with itself under
+> either convention, so the round-trip test could not see it. Only a file we did not write can.
+> `S-DET3` in `tests/test_persistence.cpp` is that anchor — it asserts a 6.5 device save's
+> untouched DETUNE loads as centre. Do not weaken it.
+>
+> The real symptom of getting this wrong: **every device-written sample plays 8 semitones flat.**
 
 ### 1.4 Fix C — relabel the first mixer send CHO → MFX (cosmetic, matches firmware 6)
 

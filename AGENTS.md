@@ -243,7 +243,12 @@ SCALE record        46 bytes, NOT 42. mask u16 LE at +0, 12 offsets at +2 as
                     Anchored by tests/fixtures/device_golden/scaleprobe.m8s.
 
 Sampler root note   C-4 (MIDI 60)
-DETUNE              1/16 semitone per step, 0x80 centre
+DETUNE              1/16 semitone per step, 0x80 centre -- in the FILE byte as
+                    well as the engine field, so the two need no conversion.
+                    Every M8-written file reads 0x80 for an untouched DETUNE:
+                    the v1.4/v2.5 factory bundles, v3.0.4 TEST-FILE, and the 6.x
+                    device saves. 0x00 appears only where soft-mate wrote it.
+                    Anchored by test S-DET3.
 Envelope times      IN TICKS, tempo-relative. Not seconds.
 LOOP window         [LOOP ST, LOOP ST + LENGTH], relative to the WHOLE SAMPLE
 ```
