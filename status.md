@@ -937,7 +937,9 @@ is implemented and verified.
 
 ## Not implemented
 
-- **MIDIOut, ExternalInst** — preserved on save, silent on play. (WavSynth, FMSynth,
+- **MIDI-out instruments** — preserved on save, silent on play. `InstType` has `INST_MIDI`
+  (there is no separate ExternalInst type); `SynthVoice.cpp:392` falls it through with no
+  render branch. Still true 2026-08-24. (WavSynth, FMSynth,
   HyperSynth are now **implemented** — see Synth engines above.)
 - **Reverb FREEZE (`XRZ`)** — the FX command sets `effects.rev_freeze` (`Engine.cpp:761`) and
   nothing reads it, so it is silent. `SongIO` has no byte for it either — `rev_size`,
@@ -946,18 +948,23 @@ is implemented and verified.
   to reach it. `FX_COMMANDS_SPEC.md` used to list it as Implemented alongside its working
   row-mates; corrected 2026-08-21. Implementing it means holding the reverb's feedback at unity
   while muting its input, and finding it a home in the saved effects block.
-- **`SLICE` playback** — the byte is stored and saved, and the engine reads it only to
-  *suppress* loop-point setup when it is non-zero (`SynthVoice.cpp:497`). It never selects a
-  slice region, so playback ignores it. (**Scales are now read** — `Engine.cpp:796` applies
+- **`SLICE` playback — IMPLEMENTED, verified 2026-08-24.** Both modes are live in
+  `SamplerEngine.cpp:15-40`: `01` selects from the file's own markers (`sliceMarkers`), and
+  `02`-`80` divides the sample into that many equal parts and plays the one the note selects.
+  `SynthVoice.cpp:497`'s `s.slice == 0` test is the loop-point suppression that reads as
+  "the byte is only used to suppress", but the slicing itself happens a layer down. What
+  remains is the note-base/START interaction and the REPITCH/BPM play modes, still blocked on
+  a device capture for the tempo formula. (**Scales are now read** — `Engine.cpp:796` applies
   `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
   `Engine.cpp:47`. **Tables are executed** — see Tables above.)
 - **FX `REV` in phrase steps** — parsed, inert everywhere; there is no `FxCmd::REV` handler in
   `src/engine/`. (**`VOL` and `PIT` are live at phrase level**, not just inside tables:
   `Engine.cpp:548-552` accumulates them into `pendingVolOffset`/`pendingPitchOffset`,
   `Engine.cpp:787` applies the pitch and `803`/`820` the volume, and `815`/`816`/`824` clear
-  them. `TBL`/`GRV`/`TIC` are live too — see `FX_COMMANDS_SPEC.md` for the full per-command
-  matrix and the long list of M8 FX commands still absent, e.g. ARP/RET/RND/RETRIG/scale+arp
-  commands.)
+  them. `TBL`/`GRV`/`TIC` are live too. **`ARP`, `RET`, `RND`, `RNL` and `RTO` are implemented as
+  well** — `Engine.cpp:597/608/483/498/444`, verified 2026-08-24; the example list here was
+  stale. See `FX_COMMANDS_SPEC.md` for the current per-command matrix, which is the
+  authority on what is left.)
 - (**Project transpose is now applied** — `m_state.project.transpose` is read at
   `Engine.cpp:345`, added to chain transpose at `Engine.cpp:386`, and folded into the played
   note at `Engine.cpp:786`; `FxCmd::TSP` writes it at `Engine.cpp:578`. **EQ is now
