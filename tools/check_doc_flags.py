@@ -22,6 +22,7 @@ TOOLS = [
     ("nav",         "src/tools/main_nav.cpp",         "docs/tools/m8_nav.md"),
     ("watchcapture","src/tools/main_watchcapture.cpp","docs/tools/m8_watchcapture.md"),
     ("render",      "src/tools/main_render.cpp",      "docs/tools/m8_render.md"),
+    ("sweep",       "src/tools/main_sweep.cpp",       "docs/tools/m8_sweep.md"),
     ("spectrum",    "src/tools/main_spectrum.cpp",    "docs/tools/m8_spectrum.md"),
 ]
 

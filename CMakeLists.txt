@@ -227,6 +227,14 @@ add_executable(m8_nav src/tools/main_nav.cpp)
 target_link_libraries(m8_nav PRIVATE m8_device)
 
 # ---------------------------------------------------------------------------
+# Field sweep runner: set a field, capture, measure, next value. Links both
+# halves -- m8_device to drive, m8_audiocap to record. Self-sufficient enough
+# to run from a scheduled command rather than needing anything watching it.
+# ---------------------------------------------------------------------------
+add_executable(m8_sweep src/tools/main_sweep.cpp)
+target_link_libraries(m8_sweep PRIVATE m8_device m8_audiocap)
+
+# ---------------------------------------------------------------------------
 # Cursor-chain crawler. Walks every stop a screen actually has and records the
 # navigation graph, so the field maps can be diffed against the device instead
 # of hand-typed. See M8_DRIVER_BUGS.md #20/#31.

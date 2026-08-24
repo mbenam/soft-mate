@@ -13,6 +13,7 @@
 // ===========================================================================
 
 #include "analysis/AudioMetrics.h"
+#include "audio/Metrics.h"
 
 #define DR_WAV_IMPLEMENTATION
 #include "engine/dr_wav.h"
@@ -318,75 +319,10 @@ static int runVerifyRecord(const std::string& recordPath) {
 static constexpr float kSaturationThresh = 0.995f;
 
 
-// ---- loop period and pitch -------------------------------------------------
-//
-// These exist because the same two measurements were written from scratch three
-// times in one session (2026-08-24, verifying the sampler's REPITCH and BPM
-// modes) and got the wrong answer twice. Once the onset detector locked onto
-// the sequencer's row rate instead of the sampler's loop -- at STEPS 0x40 the
-// two are both a quarter beat, so it "passed" while measuring the wrong thing.
-// Once autocorrelation latched onto a sub-harmonic because the search range was
-// guessed. Ad-hoc measurement code is where the errors live, so it lives here
-// now, written once.
-//
-// PERIOD is autocorrelation of the amplitude envelope: it answers "how often
-// does this repeat", which is what a loop length is. PITCH is zero-crossing
-// rate over a steady window: it answers "how fast is this playing", which is
-// what a resampling ratio shows up as. They are different questions and the
-// wrong one gives a plausible number, so both are offered rather than one.
-
-static std::vector<float> envelopeOf(const std::vector<float>& mono, int block) {
-    std::vector<float> env;
-    for (size_t i = 0; i + block < mono.size(); i += block) {
-        float pk = 0.0f;
-        for (int j = 0; j < block; ++j) pk = std::max(pk, std::fabs(mono[i + j]));
-        env.push_back(pk);
-    }
-    return env;
-}
-
-// Best repeat period in samples, searched over [loSamples, hiSamples].
-// Returns 0 if nothing correlates.
-static int measurePeriod(const std::vector<float>& mono, int sr,
-                         int loSamples, int hiSamples, double& corrOut) {
-    const int block = 16;
-    std::vector<float> env = envelopeOf(mono, block);
-    if (env.size() < 8) { corrOut = 0.0; return 0; }
-    double mean = 0.0;
-    for (float v : env) mean += v;
-    mean /= double(env.size());
-    for (float& v : env) v = static_cast<float>(v - mean);
-
-    const int loLag = std::max(1, loSamples / block);
-    const int hiLag = std::min<int>(hiSamples / block, static_cast<int>(env.size()) / 2);
-    int bestLag = 0; double best = -2.0;
-    for (int lag = loLag; lag < hiLag; ++lag) {
-        double num = 0, da = 0, db = 0;
-        for (size_t i = 0; i + lag < env.size(); ++i) {
-            num += double(env[i]) * env[i + lag];
-            da  += double(env[i]) * env[i];
-            db  += double(env[i + lag]) * env[i + lag];
-        }
-        const double c = (da > 0 && db > 0) ? num / std::sqrt(da * db) : 0.0;
-        if (c > best) { best = c; bestLag = lag * block; }
-    }
-    corrOut = best;
-    (void)sr;
-    return bestLag;
-}
-
-// Fundamental in Hz from zero crossings over [fromFrame, toFrame).
-static double measurePitch(const std::vector<float>& mono, int sr,
-                           size_t fromFrame, size_t toFrame) {
-    toFrame = std::min(toFrame, mono.size());
-    if (toFrame <= fromFrame + 64) return 0.0;
-    int crossings = 0;
-    for (size_t i = fromFrame + 1; i < toFrame; ++i)
-        if ((mono[i - 1] < 0.0f) != (mono[i] < 0.0f)) ++crossings;
-    if (crossings < 4) return 0.0;
-    const double seconds = double(toFrame - fromFrame) / double(sr);
-    return (crossings / 2.0) / seconds;
-}
+// Period and pitch live in audio/Metrics.h so m8_sweep shares them -- see that
+// header for why measuring these ad hoc kept producing wrong answers.
+using m8::audio::measurePeriod;
+using m8::audio::measurePitch;
 
 static bool checkHard(const m8::analysis::Metrics& m, const char* path) {
     bool ok = true;
@@ -796,7 +732,7 @@ int main(int argc, char** argv) {
                         wav.c_str(), sr, static_cast<unsigned long long>(frames));
             if (wantPeriod) {
                 double corr = 0.0;
-                const int per = measurePeriod(mono, static_cast<int>(sr), loS, hiS, corr);
+                const int per = measurePeriod(mono, loS, hiS, corr);
                 std::printf("  \"period_samples\": %d,\n  \"period_seconds\": %.6f,\n  \"period_corr\": %.4f,\n",
                             per, sr ? double(per) / double(sr) : 0.0, corr);
             }
