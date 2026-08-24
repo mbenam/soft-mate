@@ -50,7 +50,8 @@ that is "see what is already implemented".
   sample's base BPM and scale by song-BPM over sample-BPM. Both apply pitch modulation on top.
   **Hardware-verified 2026-08-24**: the loop is STEPS/256 of a beat (linear in STEPS, inverse in
   BPM), so the constant is 3/32 of `samplesPerTick`. It had been 0.25 -- 2.67x long. The BPM
-  modes 0C-0E are a separate law and remain unverified.
+  modes 0C-0E are verified too: rate = songBPM / the byte read as a BPM, confirmed by halving
+  each independently and getting exactly 2.0000 both ways. They needed no change.
 
 ### 1.3 Absent entirely
 

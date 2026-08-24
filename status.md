@@ -39,7 +39,7 @@ and tested. "Placeholder" means it makes noise but is not the real thing.
 - **FFT**: kissfft (vendored, `third_party/`)
 - **Capture audio**: miniaudio (vendored, header-only) — `m8_audiocap` only; `m8_capture` and
   `m8_watchcapture` link that, not miniaudio directly
-- **Tests**: Catch2 v3 — 434 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- **Tests**: Catch2 v3 — 435 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 - **Build**: CMake + FetchContent
 - **Platform**: Windows / MSVC. Linux builds clean; macOS untested.
 
@@ -105,7 +105,7 @@ Targets:
   bug #20, which remains **OPEN**. See Known issues. *Instrument `TYPE` is NOT fenced* — this
   line claimed it was until 2026-08-15, but `FENCED_FIELDS` holds only the four MIXER entries
   and cycling TYPE from `m8drv` works (verified on fw 6.5.2, NONE → WAVSYNTH → MACROSYN).
-- `m8_tests` — 434 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
+- `m8_tests` — 435 cases (static `TEST_CASE` count, 2026-08-24; see Tests below)
 
 Build directories: **`build/` and `build_asan/` only**. Always `--target`. See `AGENTS.md`.
 
@@ -611,7 +611,7 @@ If the file is missing, the app falls back to `loadDemoSong()` — the in-code "
 previous startup song, 128 BPM, A-minor, sampler drums + MacroSynth) and `songs/opening.m8s`
 are earlier committed songs kept alongside it; several tests load `sunrise.m8s` by name.
 
-### Tests — 434 cases
+### Tests — 435 cases
 Tags: `[tempo] [walk] [fx] [groove] [commands] [sample_pool] [sampler] [modulation]
 [rt_safety] [demo] [io] [audio] [macrosynth] [hypersynth] [fmsynth] [wavsynth] [tables]
 [output_stage] [inst_pool] [mixer] [eq] [ui] [fuzz] [doc] [hwdecode] [scale] [render] [bundle] [char_picker]
@@ -976,8 +976,18 @@ is implemented and verified.
   Linear in STEPS, inversely proportional to BPM, and **the loop is STEPS/256 of a beat** — so
   the default `0x80` is an eighth note. The constant was `0.25`, which ran **2.67x long**; it is
   now `3/32` and predictions land within 0.05% of the two clean measurements. `[repitch]` pins it.
-  The BPM modes `0C`–`0E` are a different law (playback rate, not loop length) and remain
-  unverified. (**Scales are now read** — `Engine.cpp:796` applies
+  The BPM modes `0C`–`0E` are **also hardware-verified now** (same sitting). They are a playback
+  RATE, not a loop length, and the device even relabels the field from STEPS to BPM:
+
+  | BPM byte | song BPM | period |
+  |---|---|---|
+  | `0x80` | 140 | 27648 smp |
+  | `0x80` | 70 | 55296 smp |
+  | `0x40` | 70 | 27648 smp |
+
+  Halving the tempo doubles the period, halving the byte halves it — both ratios came out at
+  exactly 2.0000. Rate = songBPM / byte-read-as-BPM, which is what the engine already did, so
+  `0C`–`0E` needed **no change**. Pinned by `[repitch]`. (**Scales are now read** — `Engine.cpp:796` applies
   `m_state.scales[]`, gated by the instrument's TRANSP flag; see the comment at
   `Engine.cpp:47`. **Tables are executed** — see Tables above.)
 - **FX `REV` in phrase steps — IMPLEMENTED 2026-08-24.** `REV 01` overrides the sampler's play

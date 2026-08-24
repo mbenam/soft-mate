@@ -71,7 +71,7 @@ double measuredPeriod(const std::vector<float>& a) {
     return double(kSampleFrames) * double(kToneHz) / fOut;
 }
 
-double renderPeriod(int stepsByte, int bpm) {
+double renderPeriod(int stepsByte, int bpm, int playMode = 9) {
     OfflineHost host;
     auto& state = host.engine().getStateForInit();
 
@@ -90,7 +90,7 @@ double renderPeriod(int stepsByte, int bpm) {
 
     auto& inst = state.instruments[0];
     inst.type = InstType::INST_SAMPLER;
-    inst.sampler.play    = 9;            // REPITCH
+    inst.sampler.play    = playMode;     // 9 = REPITCH, 12 = REP.BPM
     inst.sampler.detune  = stepsByte;    // STEPS
     inst.sampler.volume  = 0x40;
     inst.sampler.dry     = 0xFF;
@@ -171,4 +171,43 @@ TEST_CASE("REPITCH period scales with STEPS and inversely with tempo",
 
     INFO("tempo halving: " << c / a << " (want 2)");
     CHECK(std::fabs(c / a - 2.0) < 0.1);
+}
+
+TEST_CASE("REP.BPM plays at song-BPM over sample-BPM", "[sampler][repitch]") {
+    // PLAY 0C-0E are a different law from 09-0B: not a loop length, a playback
+    // RATE. The field is even relabelled on the device -- STEPS becomes BPM.
+    //
+    // MEASURED on hardware 2026-08-24 (fw 6.5.2, instrument 09 in REP.BPM,
+    // keyjazz C-4, period by autocorrelation):
+    //
+    //   BPM byte  song BPM   period
+    //   0x80      140        27648 smp
+    //   0x80       70        55296 smp
+    //   0x40       70        27648 smp
+    //
+    // Halving the tempo doubles the period; halving the BPM byte halves it.
+    // Both ratios came out at exactly 2.0000, so the rate is songBPM divided by
+    // the byte read as a BPM -- which is what the engine already did. No change
+    // was needed here; this pins it so it stays that way.
+    auto period = [](int bpmByte, int songBpm) {
+        return renderPeriod(bpmByte, songBpm, 12);   // 12 = REP.BPM
+    };
+
+    const double a = period(0x80, 140);
+    const double b = period(0x80, 70);
+    const double c = period(0x40, 70);
+    REQUIRE(a > 0.0);
+    REQUIRE(b > 0.0);
+    REQUIRE(c > 0.0);
+
+    INFO("tempo halving: " << b / a << " (want 2)");
+    CHECK(std::fabs(b / a - 2.0) < 0.05);
+
+    INFO("BPM byte halving: " << c / b << " (want 0.5)");
+    CHECK(std::fabs(c / b - 0.5) < 0.05);
+
+    // Absolute: one pass is sampleFrames * byte / songBPM.
+    const double want = double(kSampleFrames) * 128.0 / 140.0;
+    INFO("absolute at byte 0x80 / 140 BPM: got " << a << " want " << want);
+    CHECK(std::fabs(a - want) / want < 0.05);
 }
