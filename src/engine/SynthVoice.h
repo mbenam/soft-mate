@@ -142,6 +142,10 @@ private:
     // summing first and splitting afterwards would run the filter on the wrong
     // signal, and running it twice would advance the filter state twice.
     bool  m_frameStereo = false;
+    // HyperSynth's per-channel output, kept between the oscillator block and the
+    // output stage so WIDTH's stereo survives (hw_findings.md UI-11).
+    bool  m_hyperStereo = false;
+    float m_hyperL_out = 0.0f, m_hyperR_out = 0.0f;
     bool  m_frameFilled = false;
     float m_frameOut[2] = {0.0f, 0.0f};
 

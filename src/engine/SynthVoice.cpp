@@ -648,6 +648,17 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
         outL *= norm;
         outR *= norm;
         sample = 0.5f * (outL + outR);
+        // WIDTH detunes the left and right stacks in opposite directions, so
+        // outL and outR genuinely differ -- and collapsing them here threw that
+        // away. Measured 2026-08-14 (hw_findings.md UI-11): two probes differing
+        // only in WIDTH captured off the device as exactly mono at 00 (side RMS
+        // 0.000000, corr 1.0000) and genuinely stereo at FF (side RMS 0.002136,
+        // corr 0.9984). Through m8_render both read 0.000086 -- no response at
+        // all. Keep them for the stereo path; `sample` stays the mono mix so
+        // renderSample's contract is unchanged.
+        m_hyperStereo = true;
+        m_hyperL_out = outL;
+        m_hyperR_out = outR;
     }
 
     if (m_instrument && m_instrument->type == InstType::INST_FMSYNTH) {
@@ -770,6 +781,19 @@ float SynthVoice::renderSample(const EnvContext& ctx) {
 
     if (m_instrument && m_instrument->type == InstType::INST_HYPERSYN) {
         const HyperState& h = m_instrument->hyper;
+        if (m_frameStereo && m_hyperStereo) {
+            float l = m_hyperL_out, r = m_hyperR_out;
+            applyAmpLimFilterStereo(l, r, h.volume, h.lim, h.filter_type,
+                                    h.cutoff, h.res, mt);
+            const float effVolS = m_velocityTakeover ? 1.0f : m_currentVolume;
+            float volModS = m_gate * (1.0f + mt.volume);
+            if (volModS < 0.0f) volModS = 0.0f;
+            const float g = effVolS * volModS * m_tableVolume;
+            m_frameOut[0] = std::clamp(l * g, -1.0f, 1.0f);
+            m_frameOut[1] = std::clamp(r * g, -1.0f, 1.0f);
+            m_frameFilled = true;
+            return 0.5f * (m_frameOut[0] + m_frameOut[1]);
+        }
         sample = applyAmpLimFilter(sample, h.volume, h.lim, h.filter_type,
                                    h.cutoff, h.res, mt);
     }

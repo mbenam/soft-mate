@@ -912,7 +912,8 @@ is implemented and verified.
 - **`MOD RATE` / rate half of `MOD BOTH`/`MOD BINV` do nothing** — only the amount half of
   mod-to-mod routing is applied. Was previously a dead `rateScale` array (computed, never
   read); removed rather than left looking implemented (`CODE_CLEANUP_SPEC.md` #8).
-- **Voice path is mono for the SYNTHS; the sampler is now stereo (2026-08-14).** The hardware is
+- **HyperSynth WIDTH is stereo as of 2026-08-24; the other synths are still mono.** The `0.5f * (outL + outR)` collapse is gone for HyperSynth: `renderFrame` now carries both channels through the output stage (`applyAmpLimFilterStereo`), so WIDTH survives. `[hypersynth]` covers it -- WIDTH 00 measures exactly mono (side RMS 0) and FF genuinely stereo. **Open: the width is too wide.** Side/mid comes out around 0.55 against the device's measured 0.029, because `widthSpread` is 0.05 semitones at FF. Narrowing it to match would be fitting to a captured magnitude, so the constant is left alone and the gap noted. WavSynth, FMSynth and MacroSynth remain mono, which is correct for mono sources -- only HyperSynth has a stereo control. Original entry follows.
+- **Voice path was mono for the SYNTHS; the sampler went stereo 2026-08-14.** The hardware is
   **not**, measured 2026-08-14 (`hw_findings.md` §UI-11). Two probes differing only in HyperSynth
   WIDTH: `00` captured as exactly mono (side RMS 0.000000, corr 1.0000), `FF` as genuinely stereo
   (side RMS 0.002136, corr 0.9984), reproducible across two velocities with no clipping. So the
