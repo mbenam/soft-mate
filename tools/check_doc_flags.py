@@ -14,6 +14,7 @@ TOOLS = [
     ("capture",     "src/tools/main_capture.cpp",     "docs/tools/m8_capture.md"),
     ("composesong", "src/tools/main_composesong.cpp", "docs/tools/m8_composesong.md"),
     ("diffcheck",   "src/tools/main_diffcheck.cpp",   "docs/tools/m8_diffcheck.md"),
+    ("editwatch",   "src/tools/main_editwatch.cpp",   "docs/tools/m8_editwatch.md"),
     ("livecheck",   "src/tools/main_livecheck.cpp",   "docs/tools/m8_livecheck.md"),
     ("makeprobe",   "src/tools/main_makeprobe.cpp",   "docs/tools/m8_makeprobe.md"),
     ("makesong",    "src/tools/main_makesong.cpp",    "docs/tools/m8_makesong.md"),

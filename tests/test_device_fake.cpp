@@ -66,6 +66,19 @@ public:
     // ---- what the test inspects afterwards --------------------------------
     std::vector<uint8_t> control;   // 'E', 'R', 'D' etc, in order
     std::vector<uint8_t> presses;   // every mask sent after a 'C'
+    // Drop the EDIT bit off the Nth gesture press, turning a coarse step into a
+    // bare arrow -- i.e. a cursor move onto the neighbouring field.
+    //
+    // This models M8_DRIVER_BUGS.md #34's *suspected* mechanism, and modelling
+    // it is not the same as confirming it: a hardware sweep on 2026-08-24 sent
+    // 288 coarse presses across nine hold/gap combinations (8-40 ms hold,
+    // 12-60 ms gap) without a single slip, so whatever produces it on the
+    // device is not simply "a coarse press loses its modifier at speed". What
+    // this fixture pins is the *guard*, which is mechanism-independent: it
+    // checks the cursor is still on the field it started on, and does not care
+    // why it left.
+    int dropEditOnPress = -1;                   // 1-based; -1 = never
+
     int  openCount  = 0;
     bool closed     = false;
 
@@ -98,6 +111,7 @@ public:
 
 private:
     std::deque<uint8_t> m_out;
+    size_t gesturePresses = 0;      // EDIT-carrying presses seen, for dropEditOnPress
     bool m_expectMask = false;      // the byte after 'C' is the key mask
 
     int cursorIndex() const {
@@ -126,6 +140,13 @@ private:
     void applyPress(uint8_t mask) {
         if (mask == 0) return;                  // release
         const auto& g = getGestures();
+        if (dropEditOnPress > 0 && static_cast<int>(gesturePresses) + 1 == dropEditOnPress
+            && (mask & Key::EDIT)) {
+            ++gesturePresses;
+            mask &= static_cast<uint8_t>(~Key::EDIT);   // the modifier never landed
+        } else if (mask & Key::EDIT) {
+            ++gesturePresses;
+        }
         // Gestures first: EDIT|<arrow> must not be read as a bare arrow.
         if (g.isReady()) {
             if (mask == g.valueInc)   { bumpValue(+1);  queueFullRepaint(); return; }
@@ -539,6 +560,66 @@ TEST_CASE("editValue converges upward using coarse then fine steps", "[hwdecode]
     // 32 needs 32 presses, coarse-then-fine needs a handful. Each press logs a
     // mask and a release, so 20 entries is roughly 10 presses.
     CHECK(fake.presses.size() < 20);
+}
+
+TEST_CASE("editValue aborts when the cursor drifts off the field mid-walk",
+          "[hwdecode]") {
+    // M8_DRIVER_BUGS.md #34: `set AMP FF` left AMP at FD and moved LIM from 04
+    // to 08, with no LIM command issued and nothing in the result saying so.
+    // The measurement taken around it had to be discarded.
+    //
+    // The guard landed in 82a176e and had no test until now, which is the same
+    // trap the guard itself exists to close: a check that has never been seen
+    // to fire is indistinguishable from one that cannot. Both halves matter --
+    // it must abort when the cursor leaves, and it must NOT abort when the
+    // cursor stays, or every legitimate edit becomes a false alarm.
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.cursorRow = 6;                    // TRANSPOSE, with GROOVE below it
+    fake.dropEditOnPress = 2;              // the 2nd coarse press loses EDIT
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    auto res = editValue(dev, "TRANSPOSE", "40", kHold);
+
+    INFO("editValue: " << res.error);
+    CHECK_FALSE(res.ok);
+    CHECK(res.error.find("drifted") != std::string::npos);
+    CHECK(res.error.find("#34") != std::string::npos);
+
+    // The cursor really did move -- otherwise this test proves nothing about
+    // the guard, only that editValue failed for some other reason.
+    CHECK(fake.cursorRow != 6);
+
+    // And the field it drifted ONTO must be intact. Aborting after writing to
+    // the wrong field would be the bug with a louder message.
+    CHECK(fake.valueAt(7) == 0x00);        // GROOVE, untouched
+}
+
+TEST_CASE("editValue does not cry wolf when the cursor stays put",
+          "[hwdecode]") {
+    // The other half. A guard that fires on a clean walk is worse than none,
+    // because the operator learns to work around it.
+    ScopedGestures gestures;
+    FakeM8 fake;
+    fake.rows = projectRows();
+    fake.cursorRow = 6;
+    fake.dropEditOnPress = -1;             // nothing goes wrong
+    fake.powerOn();
+
+    M8Device dev;
+    dev.setSerial(&fake);
+    dev.readSettled(kMin, kSettle, kMax);
+
+    auto res = editValue(dev, "TRANSPOSE", "40", kHold);
+    INFO("editValue: " << res.error);
+    CHECK(res.ok);
+    CHECK(fake.valueAt(6) == 0x40);
+    CHECK(fake.cursorRow == 6);
 }
 
 TEST_CASE("editValue converges downward", "[hwdecode]") {

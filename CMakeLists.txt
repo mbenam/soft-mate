@@ -225,6 +225,14 @@ add_executable(m8_nav src/tools/main_nav.cpp)
 target_link_libraries(m8_nav PRIVATE m8_device)
 
 # ---------------------------------------------------------------------------
+# Edit-walk cursor watcher. Replays the gesture editValue sends, one press at a
+# time, sampling the cursor between presses -- the reproduction step
+# M8_DRIVER_BUGS.md #34 says it needs. Serial only.
+# ---------------------------------------------------------------------------
+add_executable(m8_editwatch src/tools/main_editwatch.cpp)
+target_link_libraries(m8_editwatch PRIVATE m8_device)
+
+# ---------------------------------------------------------------------------
 # Watched audio capture: records USB audio while decoding the screen, and
 # aborts on transport inversion or field drift instead of producing a number
 # that has to be thrown away later. Links both halves -- m8_device for the

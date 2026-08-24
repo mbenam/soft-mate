@@ -28,7 +28,7 @@ nothing could:
 | | What happened | What catches it now |
 |---|---|---|
 | **#34** (2026-08-19) | `set AMP FF` silently moved LIM from 04 to 08. The sweep point taken at the wrong LIM looked like a real measurement and survived until a later read noticed. | `--watch AMP --watch LIM` — the guarded rows are re-read every 10 ms. |
-| 2026-08-20 | `PLAY` is a toggle. The start press stopped an already-playing device and the stop press started it, so the window held the silence between notes. It latched after three good captures and poisoned the remaining **seventeen**. | The transport is read before it is pressed, and the playhead is watched for the whole window. |
+| 2026-08-20 | `PLAY` is a toggle. The start press stopped an already-playing device and the stop press started it, so the window held the silence between notes. It latched after three good captures and poisoned the remaining **seventeen**. | The transport is established before `PLAY` is pressed — by the playhead where it is drawn, by listening for quiet where it is not. See the transport probe below. |
 
 ## CLI flags
 
@@ -41,6 +41,8 @@ nothing could:
 | `--watch <LABEL>` | no, repeatable | Guard the row this label sits on. Whole row, not the parsed value. |
 | `--sample-ms <n>` | no (`10`) | Screen sampling interval. |
 | `--pre-roll <ms>` | no (`5`) | Silence kept before the detected onset. |
+| `--silence-floor <f>` | no (`0.002`) | Level below which the device counts as quiet. |
+| `--probe-ms <n>` | no (`8000`) | Longest the transport probe waits for the device to go quiet. |
 | `--help` | no | Print usage and exit 0. |
 
 ## Exit codes
@@ -76,19 +78,49 @@ Comparison is on the **whole row**, not the parsed value: conflating those was a
 (m8drv's `read` vs `read --row`), and #34 moved a *neighbouring* field, which a value-scoped
 check would have missed.
 
+## The transport probe
+
+`PLAY` is a toggle, so pressing it blind on an already-playing device stops it — the 2026-08-20
+latch. Where the playhead is drawn, it answers this. Where it is not, the tool **listens before
+pressing**: a device already playing is already making sound.
+
+A single listen is not enough, and hardware said so on the first try. With the transport confirmed
+stopped two seconds earlier, one 400 ms sample still read `0.385` and concluded "playing". **A
+stopped M8 rings** — measured decay `0.354 → 0.0034` over five seconds, monotonic. An
+instantaneous level cannot separate a tail from a song.
+
+So it waits for quiet instead: the device must stay below `--silence-floor` for 400 ms
+uninterrupted. A tail gets there; a running song does not. If nothing goes quiet inside
+`--probe-ms`, it calls the device playing and does **not** press — the safe direction, since
+leaving a playing device playing yields a valid capture and pressing PLAY on one yields the
+poisoned kind.
+
+Verified on hardware, fw 6.5.2, 2026-08-24, parked on INSTRUMENT where the playhead is invisible:
+
+| Entry state | Probe | Decision | Result |
+|---|---|---|---|
+| Stopped | heard the tail at `0.291`, then quiet | pressed PLAY | capture peak `0.312` |
+| Playing | never went quiet, peak `1.013` | did not press | capture peak `1.039`, transport left running |
+
+`probe_peak`, `probe_went_quiet` and `probe_quiet_after_ms` go into the manifest, so a wrong call
+is visible after the fact rather than silent.
+
 ## Gotchas
 
-- **On a form screen the transport guard is inactive, and it says so.** PROJECT, INSTRUMENT,
+- **On a form screen the playhead is invisible, and the audio covers it.** PROJECT, INSTRUMENT,
   MIXER and SCALE draw no playhead (`M8_DRIVER_BUGS.md` #28), so `playhead_observable` is false
-  and "not playing" cannot be distinguished from "cannot tell". It prints `! <SCREEN> draws no
-  playhead; the transport guard is inactive`. This is the common case for measurement, since
-  hw_measure parks on INSTRUMENT to keep keyjazz out of a phrase — the field guard still works.
+  and the screen cannot say whether the transport is running. Since this tool holds the audio
+  too, it listens instead — see the transport probe below. This is the common case for
+  measurement, since hw_measure parks on INSTRUMENT to keep keyjazz out of a phrase.
 - **The transport guard ignores the first 400 ms.** The marker takes a moment to appear after the
   press; firing on that would reject every capture.
 - **`--watch` labels must be on the screen at start**, or it exits 2 rather than guarding nothing.
 - **COM3 is exclusive.** Park the device with m8drv first, and let its daemon exit.
 - **It presses `PLAY` at most twice** — once to start if the device was not already playing, once
-  to restore. Never blind: the transport is read first.
+  to restore. Never blind: the transport is read, or listened for, first.
+- **A deliberately silent probe will be misread as a playing device**, because "never goes quiet"
+  and "never makes a sound" are distinguished by the end-of-capture no-signal check, not by the
+  probe. Capturing a noise floor is the one case to pass `--probe-ms 0` for.
 
 ## Example
 

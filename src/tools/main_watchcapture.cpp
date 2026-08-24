@@ -67,6 +67,11 @@ using namespace m8::dev;
 using namespace m8::audio;
 using clk = std::chrono::steady_clock;
 
+// How long the device must stay below the floor before we call it stopped.
+// Short enough not to add real time, long enough not to latch onto the gap
+// between two notes of a playing song.
+static constexpr int kQuietNeededMs = 400;
+
 namespace {
 
 // canonRow / rowTextFor / sampleWatch live in m8/FieldGuard.h so
@@ -105,6 +110,8 @@ int main(int argc, char** argv) {
     double seconds = 3.0;
     int sampleMs = 10;
     float preRollMs = 5.0f;
+    float silenceFloor = 0.002f;
+    int probeMs = 8000;   // max wait for the device to go quiet
     std::vector<Watch> watches;
 
     for (int i = 1; i < argc; ++i) {
@@ -116,6 +123,8 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--watch") && i + 1 < argc)      watches.push_back({argv[++i], "", "", false});
         else if (!std::strcmp(a, "--sample-ms") && i + 1 < argc)  sampleMs = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--pre-roll") && i + 1 < argc)   preRollMs = static_cast<float>(std::atof(argv[++i]));
+        else if (!std::strcmp(a, "--silence-floor") && i + 1 < argc) silenceFloor = static_cast<float>(std::atof(argv[++i]));
+        else if (!std::strcmp(a, "--probe-ms") && i + 1 < argc)   probeMs = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--help")) {
             std::printf("usage: m8_watchcapture --port COM3 --audio M8 --seconds 3 --out f.wav\n"
                         "                       [--watch LABEL]... [--sample-ms 10] [--pre-roll 5]\n");
@@ -218,8 +227,65 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // Read-then-press. Never a blind PLAY.
-    if (!wasPlaying) {
+    // Listen before pressing, and WAIT FOR QUIET rather than sampling once.
+    //
+    // A single sample is not enough, and hardware said so immediately: with the
+    // transport confirmed stopped two seconds earlier, one 400 ms listen still
+    // read 0.385 and concluded "playing". A stopped M8 rings -- measured decay
+    // 0.354 -> 0.0034 over five seconds -- so an instantaneous level cannot
+    // separate a tail from a song. A *sustained* one can: a tail eventually
+    // falls below the floor, and a running song does not.
+    //
+    // If it never goes quiet inside the budget we call it playing and do not
+    // press. That is the safe direction: leaving a playing device playing gives
+    // a valid capture, pressing PLAY on one gives the poisoned kind.
+    float probePeak = 0.0f;
+    bool  wentQuiet = false;
+    int   quietAfterMs = -1;
+    if (probeMs > 0) {
+        const auto probeStart = clk::now();
+        auto lastLoud = probeStart;
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            float now = 0.0f;
+            {
+                std::lock_guard<std::mutex> lock(captureData.mtx);
+                for (float v : captureData.frames) now = std::max(now, std::fabs(v));
+                captureData.frames.clear();     // the probe is not the capture
+            }
+            probePeak = std::max(probePeak, now);
+            const auto t = clk::now();
+            if (now > silenceFloor) lastLoud = t;
+            const int sinceLoud = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(t - lastLoud).count());
+            const int elapsed = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(t - probeStart).count());
+            if (sinceLoud >= kQuietNeededMs) {
+                wentQuiet = true;
+                quietAfterMs = elapsed;
+                break;
+            }
+            if (elapsed >= probeMs) break;
+        }
+    }
+    // Quiet means stopped. Never-quiet means playing (or ringing past the
+    // budget, which is reported so it is visible rather than assumed).
+    const bool audioSaysPlaying = (probeMs > 0) && !wentQuiet;
+
+    // The playhead is authoritative where it is drawn; the audio covers the
+    // screens where it is not. Where both speak they should agree, and a
+    // disagreement is recorded rather than resolved -- it means either the
+    // device is ringing from a previous capture or the playhead read is wrong,
+    // and quietly picking one would hide whichever it is.
+    const bool playingOnEntry = playheadObservable ? wasPlaying : audioSaysPlaying;
+    const bool guardsDisagree = playheadObservable && (wasPlaying != audioSaysPlaying);
+    std::printf("transport: playhead=%s audio=%s (probe peak %.5f) -> %s\n",
+                playheadObservable ? (wasPlaying ? "playing" : "stopped") : "n/a",
+                probeMs > 0 ? (audioSaysPlaying ? "playing" : "stopped") : "n/a",
+                probePeak, playingOnEntry ? "already running, not pressing PLAY"
+                                          : "stopped, pressing PLAY");
+
+    if (!playingOnEntry) {
         dev.press(Key::PLAY);
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
@@ -230,6 +296,33 @@ int main(int argc, char** argv) {
     std::vector<Sample> timeline;
     std::string abortReason;
     bool transportDropped = false;
+    // Audio-derived transport detection, and why it is a *probe* rather than a
+    // guard.
+    //
+    // The playhead tells us whether the device is playing, but only on grid
+    // screens: PROJECT, INSTRUMENT, MIXER and SCALE draw none (#28), and
+    // INSTRUMENT is exactly where hw_measure parks so keyjazz cannot land in a
+    // phrase. On those screens `wasPlaying` reads false whatever the transport
+    // is doing, so pressing PLAY stops an already-playing device -- the
+    // 2026-08-20 latch that poisoned seventeen captures.
+    //
+    // The first version of this looked for silence *during* the capture, and
+    // hardware showed why that cannot work. Reproduced deliberately on
+    // 2026-08-24: with the transport running and the device parked on
+    // INSTRUMENT, the PLAY press stopped it and the capture recorded a pure
+    // decaying tail -- 0.354 -> 0.0034 over five seconds, monotonic, never
+    // reaching any sensible floor inside the window. A stopped M8 does not go
+    // quiet, it rings.
+    //
+    // So listen BEFORE pressing anything instead. A device already playing is
+    // already making sound; a stopped one is not. That makes the transport
+    // observable on every screen, and turns the failure from something to
+    // detect into something that cannot happen.
+    //
+    // When unsure, do not press: leaving a playing device playing yields a
+    // valid capture, while pressing PLAY on one yields the poisoned kind.
+    size_t audioSeen = 0;
+    float  runPeak = 0.0f;      // loudest sample seen across the whole window
     const auto t0 = clk::now();
     const auto until = t0 + std::chrono::milliseconds(static_cast<int>(seconds * 1000));
 
@@ -253,6 +346,17 @@ int main(int argc, char** argv) {
             break;
         }
 
+        // Track the loudest thing that came out. A capture with no signal at
+        // all is worthless whatever caused it, and that is checked once at the
+        // end -- not as a rolling window, because a stopped M8 rings for
+        // seconds and a rolling silence test cannot tell a tail from a song.
+        {
+            std::lock_guard<std::mutex> lock(captureData.mtx);
+            for (size_t i = audioSeen; i < captureData.frames.size(); ++i)
+                runPeak = std::max(runPeak, std::fabs(captureData.frames[i]));
+            audioSeen = captureData.frames.size();
+        }
+
         // Field guard.
         bool drift = false;
         for (Watch& w : watches)
@@ -272,7 +376,7 @@ int main(int argc, char** argv) {
     ma_device_stop(&device);
 
     // Restore the transport to how we found it.
-    if (!wasPlaying && !transportDropped) {
+    if (!playingOnEntry && !transportDropped) {
         dev.press(Key::PLAY);
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
@@ -287,6 +391,10 @@ int main(int argc, char** argv) {
         frames = captureData.frames;
     }
     std::printf("capture: stopped after %d ms, %zu frames\n", capturedMs, frames.size() / kChannels);
+
+    if (abortReason.empty() && runPeak <= silenceFloor)
+        abortReason = "no signal for the whole capture (peak " + std::to_string(runPeak)
+                    + " <= floor) -- the device produced nothing";
 
     const bool guardPassed = abortReason.empty();
     if (!guardPassed) std::fprintf(stderr, "\n! GUARD: %s\n\n", abortReason.c_str());
