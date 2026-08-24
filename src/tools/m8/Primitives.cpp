@@ -3,6 +3,7 @@
 // ===========================================================================
 
 #include "Primitives.h"
+#include "FlightRecorder.h"
 #include "Gestures.h"
 #include <algorithm>
 #include <cctype>
@@ -1166,6 +1167,34 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
     dev.readSettled(120, 200, 1200);
     std::string currentRaw = readCursorValue(dev, fieldLabel);
 
+    // Refuse fast when the value cannot be read, instead of walking into it.
+    //
+    // The stepping loop below re-reads every iteration at a ~320 ms floor and
+    // runs up to 256 times, so a field whose text this cannot parse costs 80
+    // seconds and then fails anyway. On 2026-08-24 that happened three times in
+    // one session -- `set SHAPE 0E` on an enum, and `set DETUNE 40` after
+    // REPITCH relabelled the row to STEPS -- each burning the full 150 s client
+    // timeout and taking the daemon down with it.
+    //
+    // A numeric target needs a leading hex run in the on-screen text to converge
+    // against (see the convergence check below, and bug #13). If there is none,
+    // no amount of stepping will produce one.
+    if (isNumeric(targetValue)) {
+        size_t lead = 0;
+        while (lead < currentRaw.size()
+               && std::isxdigit(static_cast<unsigned char>(currentRaw[lead]))) ++lead;
+        if (lead == 0) {
+            return JsonResult::fail(
+                "editValue: cannot read a numeric value for '" + fieldName + "' -- the cell "
+                "reads '" + currentRaw + "', which has no leading hex digits to converge "
+                "against. Refusing now rather than stepping 256 times at a 320ms floor and "
+                "failing in 80 seconds. Either the field is an enum (step it, do not set it), "
+                "or the screen has relabelled the row and the field map is pointing at the "
+                "wrong cell -- REPITCH renames DETUNE to STEPS and shifts every row below it.",
+                dev.grid());
+        }
+    }
+
     // Remember which field the cursor actually reports sitting on, so the walk
     // below can notice if it stops being that field. See the check inside the
     // stepping loop for why (M8_DRIVER_BUGS.md #34).
@@ -1241,6 +1270,13 @@ JsonResult editValue(M8Device& dev, const std::string& fieldName,
             if (startField) {
                 auto nowField = identifyCursorField(dev, targetScreen);
                 if (nowField && *nowField != *startField) {
+                    // Dump the flight recorder before returning. #34 has been
+                    // seen once and not reproduced since, so the one thing that
+                    // must not happen is noticing it and keeping no evidence.
+                    if (getFlightRecorder().running()) {
+                        getFlightRecorder().dump("editvalue_drift.json",
+                            "cursor drifted off '" + *startField + "' onto '" + *nowField + "'");
+                    }
                     return JsonResult::fail(
                         "editValue: cursor drifted off '" + *startField + "' onto '"
                         + *nowField + "' during the edit -- aborting rather than writing to "

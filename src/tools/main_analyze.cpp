@@ -115,7 +115,9 @@ static void printUsage() {
     std::fprintf(stderr,
         "usage: m8_analyze <file.wav> [--events <events.csv>] [--json <report.json>] [--record <rec.json>]\n"
         "       m8_analyze --diff <a.wav> <b.wav> [--record <rec.json>]\n"
-        "       m8_analyze --verify-record <record.json>\n");
+        "       m8_analyze --verify-record <record.json>\n"
+        "       m8_analyze <file.wav> --period [--period-range LO HI]  (loop length, samples)\n"
+        "       m8_analyze <file.wav> --pitch [--pitch-window FROM TO] (fundamental, Hz)\n");
 }
 
 static int runVerifyRecord(const std::string& recordPath) {
@@ -314,6 +316,77 @@ static int runVerifyRecord(const std::string& recordPath) {
 //   |DC| < 0.005 overall AND < 0.01 per 1-second window
 //   crest > 6 dB
 static constexpr float kSaturationThresh = 0.995f;
+
+
+// ---- loop period and pitch -------------------------------------------------
+//
+// These exist because the same two measurements were written from scratch three
+// times in one session (2026-08-24, verifying the sampler's REPITCH and BPM
+// modes) and got the wrong answer twice. Once the onset detector locked onto
+// the sequencer's row rate instead of the sampler's loop -- at STEPS 0x40 the
+// two are both a quarter beat, so it "passed" while measuring the wrong thing.
+// Once autocorrelation latched onto a sub-harmonic because the search range was
+// guessed. Ad-hoc measurement code is where the errors live, so it lives here
+// now, written once.
+//
+// PERIOD is autocorrelation of the amplitude envelope: it answers "how often
+// does this repeat", which is what a loop length is. PITCH is zero-crossing
+// rate over a steady window: it answers "how fast is this playing", which is
+// what a resampling ratio shows up as. They are different questions and the
+// wrong one gives a plausible number, so both are offered rather than one.
+
+static std::vector<float> envelopeOf(const std::vector<float>& mono, int block) {
+    std::vector<float> env;
+    for (size_t i = 0; i + block < mono.size(); i += block) {
+        float pk = 0.0f;
+        for (int j = 0; j < block; ++j) pk = std::max(pk, std::fabs(mono[i + j]));
+        env.push_back(pk);
+    }
+    return env;
+}
+
+// Best repeat period in samples, searched over [loSamples, hiSamples].
+// Returns 0 if nothing correlates.
+static int measurePeriod(const std::vector<float>& mono, int sr,
+                         int loSamples, int hiSamples, double& corrOut) {
+    const int block = 16;
+    std::vector<float> env = envelopeOf(mono, block);
+    if (env.size() < 8) { corrOut = 0.0; return 0; }
+    double mean = 0.0;
+    for (float v : env) mean += v;
+    mean /= double(env.size());
+    for (float& v : env) v = static_cast<float>(v - mean);
+
+    const int loLag = std::max(1, loSamples / block);
+    const int hiLag = std::min<int>(hiSamples / block, static_cast<int>(env.size()) / 2);
+    int bestLag = 0; double best = -2.0;
+    for (int lag = loLag; lag < hiLag; ++lag) {
+        double num = 0, da = 0, db = 0;
+        for (size_t i = 0; i + lag < env.size(); ++i) {
+            num += double(env[i]) * env[i + lag];
+            da  += double(env[i]) * env[i];
+            db  += double(env[i + lag]) * env[i + lag];
+        }
+        const double c = (da > 0 && db > 0) ? num / std::sqrt(da * db) : 0.0;
+        if (c > best) { best = c; bestLag = lag * block; }
+    }
+    corrOut = best;
+    (void)sr;
+    return bestLag;
+}
+
+// Fundamental in Hz from zero crossings over [fromFrame, toFrame).
+static double measurePitch(const std::vector<float>& mono, int sr,
+                           size_t fromFrame, size_t toFrame) {
+    toFrame = std::min(toFrame, mono.size());
+    if (toFrame <= fromFrame + 64) return 0.0;
+    int crossings = 0;
+    for (size_t i = fromFrame + 1; i < toFrame; ++i)
+        if ((mono[i - 1] < 0.0f) != (mono[i] < 0.0f)) ++crossings;
+    if (crossings < 4) return 0.0;
+    const double seconds = double(toFrame - fromFrame) / double(sr);
+    return (crossings / 2.0) / seconds;
+}
 
 static bool checkHard(const m8::analysis::Metrics& m, const char* path) {
     bool ok = true;
@@ -692,6 +765,48 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         printUsage();
         return 2;
+    }
+
+    // --period / --pitch: the two measurements the sampler verification work
+    // needed. See the helpers above for why they are here rather than rewritten
+    // per investigation.
+    {
+        bool wantPeriod = false, wantPitch = false;
+        int  loS = 2000, hiS = 60000;
+        size_t fromF = 600, toF = 3000;
+        std::string wav;
+        for (int i = 1; i < argc; ++i) {
+            std::string a = argv[i];
+            if      (a == "--period") wantPeriod = true;
+            else if (a == "--pitch")  wantPitch  = true;
+            else if (a == "--period-range" && i + 2 < argc) { loS = std::atoi(argv[i+1]); hiS = std::atoi(argv[i+2]); }
+            else if (a == "--pitch-window" && i + 2 < argc) { fromF = std::atoi(argv[i+1]); toF = std::atoi(argv[i+2]); }
+            else if (!a.empty() && a[0] != '-' && wav.empty()) wav = a;
+        }
+        if (wantPeriod || wantPitch) {
+            if (wav.empty()) { printUsage(); return 2; }
+            unsigned ch = 0, sr = 0; drwav_uint64 frames = 0;
+            float* raw = drwav_open_file_and_read_pcm_frames_f32(wav.c_str(), &ch, &sr, &frames, nullptr);
+            if (!raw) { std::fprintf(stderr, "cannot read %s\n", wav.c_str()); return 2; }
+            std::vector<float> mono = downmix(raw, static_cast<size_t>(frames), ch);
+            drwav_free(raw, nullptr);
+
+            std::printf("{\n");
+            std::printf("  \"file\": \"%s\",\n  \"sample_rate\": %u,\n  \"frames\": %llu,\n",
+                        wav.c_str(), sr, static_cast<unsigned long long>(frames));
+            if (wantPeriod) {
+                double corr = 0.0;
+                const int per = measurePeriod(mono, static_cast<int>(sr), loS, hiS, corr);
+                std::printf("  \"period_samples\": %d,\n  \"period_seconds\": %.6f,\n  \"period_corr\": %.4f,\n",
+                            per, sr ? double(per) / double(sr) : 0.0, corr);
+            }
+            if (wantPitch) {
+                const double hz = measurePitch(mono, static_cast<int>(sr), fromF, toF);
+                std::printf("  \"pitch_hz\": %.3f,\n", hz);
+            }
+            std::printf("  \"ok\": true\n}\n");
+            return 0;
+        }
     }
 
     std::string verifyRecordPath;

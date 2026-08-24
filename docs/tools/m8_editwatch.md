@@ -32,6 +32,7 @@ reports whether the restore verified.
 | `--hold-ms <n>` | no (`40`) | Key hold duration. |
 | `--sample-ms <n>` | no (`5`) | Cursor sampling interval between presses. |
 | `--gap-ms <n>` | no (`60`) | Wait between presses. |
+| `--soak <minutes>` | no (`0`) | Repeat the walk up and back down for this long, stopping the instant anything moves. `0` runs a single walk. |
 | `--allow-mutation` | **yes** | Required; the tool edits a field. |
 | `--help` | no | Print usage and exit 0. |
 
@@ -66,6 +67,14 @@ aimed at the wrong thing — which is precisely what the bug entry warned about.
 
 **What it does not mean.** A negative result over 288 presses does not prove the device never drops
 a modifier; #34 was one event in a long session. It narrows the search, it does not close it.
+
+## Soaking for #34
+
+#34 was seen once in a long session and has not been reproduced in 288 deliberate presses, so the realistic strategy is volume plus a recorder. `--soak N` repeats the walk for N minutes, alternating direction each round so the value stays inside its range instead of pinning at `FF`.
+
+The [flight recorder](../../src/tools/m8/FlightRecorder.h) runs throughout: every press, every read's cursor position, and the raw pre-SLIP bytes, in a fixed-size ring. When a slip or a neighbour change is detected the soak **stops immediately** — continuing would overwrite the seconds that matter — and writes `editwatch_drift.json`. `editValue`'s own #34 guard dumps to `editvalue_drift.json` the same way.
+
+The raw bytes are the point: they separate "we sent a bad mask" from "the device did something else" from "our decode is wrong", which are indistinguishable once decoded. #32 is the precedent.
 
 ## Gotchas
 

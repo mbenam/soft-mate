@@ -6,6 +6,14 @@
 loop; the machine-readable pass/fail gate for "is this audio actually correct")
 **Links:** `m8_engine` only (for `analysis::AudioMetrics`). No SDL.
 
+## Measurement modes: `--period` and `--pitch`
+
+These exist because the same two measurements were written from scratch three times while verifying the sampler's REPITCH and BPM modes (2026-08-24), and got the wrong answer twice: once the onset detector locked onto the sequencer's row rate instead of the sampler's loop — at STEPS `0x40` the two are both a quarter beat, so it "passed" while measuring the wrong thing — and once autocorrelation latched onto a sub-harmonic because the search range was guessed.
+
+**They answer different questions.** `--period` is *how often does this repeat*, which is what a loop length is. `--pitch` is *how fast is this playing*, which is how a resampling ratio shows up. Asking the wrong one returns a plausible number, so both are offered rather than one.
+
+Verified against the hand measurements they replace: the three REP.BPM captures came back 27648 / 55280 / 27648 samples against 27648 / 55296 / 27648 measured by hand.
+
 ## What it does
 
 Reads a rendered WAV (stereo, 16-bit PCM — the exact format [`m8_render`](m8_render.md) writes),
@@ -49,6 +57,10 @@ borderline pass — read the printed FAIL line, it states which check and by how
 | `--diff <a.wav> <b.wav>` | Switches to diff mode entirely — ignores all other flags, compares two files sample-by-sample. |
 | `--record <path>` | Write an execution record JSON file containing run arguments, input file hashes (FNV-1a 64-bit), peak levels, saturation threshold, and overall status. |
 | `--verify-record <path>` | Verify a previously recorded run record file by confirming input files exist and match recorded FNV-1a 64-bit hashes. Exits 0 on match, non-zero on mismatch or missing inputs. |
+| `--period` | Measurement mode: loop/repeat length in samples, by autocorrelation of the amplitude envelope. See *Measurement modes* above. |
+| `--period-range <lo> <hi>` | Search bounds for `--period`, in samples. Default 2000..60000. |
+| `--pitch` | Measurement mode: fundamental in Hz, by zero-crossing rate. |
+| `--pitch-window <from> <to>` | Frame window for `--pitch`. Default 600..3000. |
 
 ## Per-note analysis (`--events`)
 

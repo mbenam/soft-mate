@@ -3,6 +3,7 @@
 // ===========================================================================
 
 #include "M8Device.h"
+#include "FlightRecorder.h"
 #include <cstring>
 #include <cstdio>
 #include <cctype>
@@ -630,6 +631,7 @@ PumpResult M8Device::pumpOnce() {
     size_t n = m_port->recv(buf, sizeof(buf));
     if (n == 0) return r;
     r.bytes = n;
+    getFlightRecorder().recordRaw(buf, n);
     if (m_rawTap) m_rawTap->insert(m_rawTap->end(), buf, buf + n);
     for (size_t i = 0; i < n; ++i)
         if (m_slip.feed(buf[i], frame)) {
@@ -661,6 +663,7 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
         auto now = std::chrono::steady_clock::now();
         if (n > 0) {
             lastData = now;
+            getFlightRecorder().recordRaw(buf, n);
             if (m_rawTap) m_rawTap->insert(m_rawTap->end(), buf, buf + n);
             for (size_t i = 0; i < n; ++i)
                 if (m_slip.feed(buf[i], frame)) {
@@ -682,6 +685,12 @@ void M8Device::readInto(int minMs, int settleMs, int maxMs) {
     // answers whether the picture stopped changing; these answer whether it is
     // a picture at all, and the two are independent -- a desynced stream goes
     // quiet exactly like a good one (M8_DRIVER_BUGS.md #32).
+    {
+        // One entry per read: where the driver believed the cursor was, and
+        // whether the read it based that on had actually settled.
+        const int cy = m_grid.cursorRowY();
+        getFlightRecorder().recordRead(cy, -1, m_lastRead.framesSeen, m_lastRead.settled);
+    }
     m_lastRead.offPanelCells = m_grid.offPanelCells;
     m_lastRead.offPitchCells = m_grid.offPitchCells;
     m_lastRead.shortFrames   = m_grid.shortFrames;
@@ -746,6 +755,7 @@ std::optional<std::string> M8Device::valueOf(const FieldRef& field) {
 }
 
 void M8Device::press(uint8_t mask, int holdMs) {
+    getFlightRecorder().recordPress(mask, holdMs);
     m_port->sendByte('C');
     m_port->sendByte(mask);
     std::this_thread::sleep_for(std::chrono::milliseconds(holdMs));

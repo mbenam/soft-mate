@@ -37,6 +37,7 @@
 // ===========================================================================
 
 #include "m8/FieldGuard.h"
+#include "m8/FlightRecorder.h"
 #include "m8/Gestures.h"
 #include "m8/LiveReader.h"
 #include "m8/M8Device.h"
@@ -49,6 +50,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace m8::dev;
@@ -79,6 +81,7 @@ int main(int argc, char** argv) {
     std::string port = "COM3", field = "AMP", neighbour = "LIM", gesture = "coarse-up";
     int steps = 16, holdMs = 40, sampleMs = 5, gapMs = 60;
     bool allowMutation = false;
+    int soakMinutes = 0;
 
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
@@ -91,6 +94,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--sample-ms") && i + 1 < argc) sampleMs = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--gap-ms")    && i + 1 < argc) gapMs = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--allow-mutation")) allowMutation = true;
+        else if (!std::strcmp(a, "--soak") && i + 1 < argc) soakMinutes = std::atoi(argv[++i]);
         else if (!std::strcmp(a, "--help")) {
             std::printf("usage: m8_editwatch --port COM3 --field AMP --neighbour LIM\n"
                         "                    [--gesture coarse-up|coarse-down|fine-up|fine-down]\n"
@@ -111,7 +115,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    uint8_t mask = 0, inverse = 0;
+    uint8_t mask = 0, inverse = 0;   // swapped each soak round
     if      (gesture == "coarse-up")   { mask = g.valueInc16; inverse = g.valueDec16; }
     else if (gesture == "coarse-down") { mask = g.valueDec16; inverse = g.valueInc16; }
     else if (gesture == "fine-up")     { mask = g.valueInc;   inverse = g.valueDec;   }
@@ -155,6 +159,27 @@ int main(int argc, char** argv) {
     int  pressesDone = 0;
     const auto t0 = clk::now();
 
+    // Soak: repeat the walk up and back down until the clock runs out.
+    //
+    // #34 was seen once in a long session and has not been reproduced in 288
+    // deliberate presses, so the only realistic way to catch it is volume --
+    // and the flight recorder means the evidence is already captured when it
+    // finally fires, rather than needing someone watching at the moment.
+    // --soak 0 (the default) runs a single walk, as before.
+    getFlightRecorder().start();
+    getFlightRecorder().recordNote("editwatch start");
+    const auto soakUntil = clk::now() + std::chrono::minutes(soakMinutes);
+    int soakRounds = 0;
+
+    do {
+    if (soakMinutes > 0) {
+        ++soakRounds;
+        // Alternate direction each round so the value walks up, then back down,
+        // and the field stays inside its range instead of pinning at FF.
+        if (soakRounds > 1) std::swap(mask, inverse);
+        std::fprintf(stderr, "soak round %d (%d min budget)\n", soakRounds, soakMinutes);
+    }
+
     for (int i = 1; i <= steps; ++i) {
         dev.press(mask, holdMs);
         ++pressesDone;
@@ -183,6 +208,19 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(sampleMs));
         }
     }
+
+    // Stop the soak the moment anything moves: the recorder holds the seconds
+    // before it, and continuing would overwrite them.
+    if (!slips.empty() || neighbourMoved) {
+        getFlightRecorder().recordNote("slip or neighbour drift detected");
+        getFlightRecorder().dump("editwatch_drift.json",
+                                 "cursor slipped during an edit walk (M8_DRIVER_BUGS.md #34)");
+        std::fprintf(stderr, "\n! caught it -- flight recorder written to editwatch_drift.json\n\n");
+        break;
+    }
+    } while (soakMinutes > 0 && clk::now() < soakUntil);
+
+    getFlightRecorder().stop();
     live.stop();
 
     dev.readSettled(0, 250, 2000);

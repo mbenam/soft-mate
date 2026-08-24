@@ -203,6 +203,7 @@ target_link_libraries(m8_capture PRIVATE m8_audiocap)
 add_library(m8_device STATIC
     src/tools/m8/M8Device.cpp
     src/tools/m8/LiveReader.cpp
+    src/tools/m8/FlightRecorder.cpp
     src/tools/m8/Primitives.cpp
     src/tools/m8/Gestures.cpp
     src/tools/m8/DeviceTheme.cpp
@@ -223,6 +224,14 @@ target_link_libraries(m8_device PUBLIC Threads::Threads)
 # -------------------------------------------------------------------
 add_executable(m8_nav src/tools/main_nav.cpp)
 target_link_libraries(m8_nav PRIVATE m8_device)
+
+# ---------------------------------------------------------------------------
+# Cursor-chain crawler. Walks every stop a screen actually has and records the
+# navigation graph, so the field maps can be diffed against the device instead
+# of hand-typed. See M8_DRIVER_BUGS.md #20/#31.
+# ---------------------------------------------------------------------------
+add_executable(m8_crawl src/tools/main_crawl.cpp)
+target_link_libraries(m8_crawl PRIVATE m8_device)
 
 # ---------------------------------------------------------------------------
 # Edit-walk cursor watcher. Replays the gesture editValue sends, one press at a
@@ -275,6 +284,7 @@ add_executable(m8_tests
     tests/test_sample_pool.cpp
     tests/test_sample_preview.cpp
     tests/test_repitch.cpp
+    tests/test_crawl_check.cpp
     tests/test_sampler.cpp
     tests/test_modulation.cpp
     tests/test_rt_safety.cpp
