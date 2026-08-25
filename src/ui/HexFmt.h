@@ -84,10 +84,13 @@ inline std::string FxName(m8::engine::FxCmd cmd) {
         case m8::engine::FxCmd::ET2: return "ET2";
         case m8::engine::FxCmd::LA1: return "LA1";
         case m8::engine::FxCmd::LA2: return "LA2";
+        case m8::engine::FxCmd::LA3: return "LA3";
         case m8::engine::FxCmd::LF1: return "LF1";
         case m8::engine::FxCmd::LF2: return "LF2";
+        case m8::engine::FxCmd::LF3: return "LF3";
         case m8::engine::FxCmd::LT1: return "LT1";
         case m8::engine::FxCmd::LT2: return "LT2";
+        case m8::engine::FxCmd::LT3: return "LT3";
         case m8::engine::FxCmd::EQM: return "EQM";
         case m8::engine::FxCmd::EQI: return "EQI";
         case m8::engine::FxCmd::VMV: return "VMV";

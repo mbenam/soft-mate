@@ -1501,3 +1501,78 @@ fine; only the daemon's parser is missing it. Work around it with the raw mask,
 `PRESS key=0x08`, which is how the playback captures above were taken.
 
 - **Date:** 2026-08-21
+
+---
+
+## UI-16 — The FX command byte table, read off the device
+
+- **Date:** 2026-08-24
+- **Firmware:** 6.5.2, COM3, via `m8drv batch`
+- **Song:** DEMO2, a v2.5.1 factory bundle, loaded on the device
+
+### What was wrong
+
+`libFxToEngine` mapped file byte → command arithmetically: `0x00..0x08` →
+`VOL PIT DEL REV HOP KIL TBL GRV TIC`, i.e. the declaration order of the
+`FxCmd` enum, with everything else `UNKNOWN`. `FX_COMMANDS_SPEC.md` Part K
+carried the same run out to `0x23`, already marked wrong from `0x09` up by the
+2026-08-14 SCA/SCG probe — but it claimed `0x00`–`0x08` were sound "because
+they are exercised by the round-trip tests."
+
+They were not. A round-trip runs our reader against our own writer, so it holds
+under **any** consistent mapping and can never pin a byte to a command. `L12`
+asserted `0x06 → TBL` and passed for months while the device called `0x12` TBL.
+This is the same circularity that hid the DETUNE bug.
+
+### Method
+
+DEMO2 uses 21 distinct FX command bytes. A greedy cover picked ten phrases
+reaching all 21, each addressed as (song row, track) → chain step → phrase, and
+captured with `CAPTURE`. Every FX cell on every captured screen was matched
+against the byte at that step in the file. **The value columns agreed on every
+cell**, which is what pins the alignment — a misalignment would have shown up as
+mismatched values, not just names.
+
+### Result
+
+```
+Sequencer                    Instrument / modulation
+0x04  HOP    0x12  TBL       0x80  VOL    0x9A  DE2
+0x05  KIL    0x13  THO       0x92  EA1    0x9C  LA3
+0x08  REP    0x17  VMV       0x94  HO1    0x9D  LF3
+0x0A  PSL    0x21  XRD       0x95  DE1    0x9E  LT3
+0x0C  PVB
+```
+
+plus `0x10` SCA / `0x11` SCG from the 2026-08-14 probe. No overlap, no conflict.
+
+Three entries contradicted the old table: **`0x08` is REP, not TIC** (12 uses in
+DEMO2 — we were firing a tick command where the song means repeat), **TBL is
+`0x12`, not `0x06`**, and **VOL is `0x80`, not `0x00`**. Only `0x04` HOP and
+`0x05` KIL happened to agree, which looks like coincidence.
+
+The bytes fall in two ranges — sequencer below `0x40`, instrument and modulation
+from `0x80`. The old contiguous run could not express that.
+
+### Two things this does not settle
+
+**Completeness.** Only bytes DEMO2 uses were read. The run is not contiguous, so
+a byte cannot be inferred from its neighbours. Still named but unmapped, in usage
+order: `0x91` SRV (16), `0x89` CUT (11), `0x83` PLY (7), `0x84` STA (4) — the
+device names them, the engine has no counterpart, so they need semantics.
+
+**Version.** The 21 readings come from a v2.5.1 file, SCA/SCG from a 6.5-authored
+one. Nothing here can test whether 4.x/6.x files agree, because **no 4.0+ song in
+this tree uses FX at all** — TEST01, KICK01, neondusk, sunrise and opening have
+zero between them. That is also why the old table was never caught: nothing
+exercised it. Settling it needs a song authored on the device with known FX and
+saved as 6.5.
+
+### One migration detail
+
+The device rescales REP's value ×4 when loading a pre-4.0 song: file `0x02`
+showed as `08`, `0x08` as `20`, `0xFF` as `FC` (`0x3FC` truncated). Pre-4.0 files
+hold the older scale. Unknown whether other commands do the same.
+
+Pinned by `S-FX1` / `S-FX2` in `tests/test_persistence.cpp`; raw map in
+`hw_crawl/DEMO2_fx_map.json`.

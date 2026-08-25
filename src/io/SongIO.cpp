@@ -480,46 +480,76 @@ static void saveUnwrittenBlocks(const m8::Song& song,
 }
 
 // ---- FxCmd mapping ----
-// Library file bytes:  0xFF = none; 0x00..0x08 = VOL,PIT,DEL,REV,HOP,KIL,TBL,GRV,TIC;
-//                      0x09.. = ARP and the rest of the M8 FX set (NOT modeled here).
-// Engine enum:         NONE=0, then VOL..TIC = 1..9  (file byte + 1).
+// ---- FX command bytes -------------------------------------------------------
 //
-// Commands the engine does not model (>= 0x09) decode to FxCmd::UNKNOWN and are
-// preserved byte-for-byte on save: convertEngineToSong leaves UNKNOWN slots as the
-// re-parsed original bytes rather than overwriting them (invariant #8 — saving must
-// preserve what the engine doesn't model). We deliberately do NOT assign identity or
-// meaning to bytes past TIC — their file-format indices are not verified in this tree
-// (see FX_COMMANDS_SPEC.md), only carried through.
-
-// SCA/SCG are the one pair we decode past TIC. MEASURED 2026-08-14 on fw 6.5.2:
-// a phrase authored on the device with SCG 10 on row 0 and SCA 20 on row 1 saved
-// its FX slots as `11 10` and `10 20`. So SCA is 0x10 and SCG is 0x11.
+// Every entry in kFxBytes below was READ OFF A DEVICE. Nothing here is derived
+// by walking the manual's command list and numbering it, which is how the old
+// table was built and why it was wrong.
 //
-// FX_COMMANDS_SPEC.md Part K says 0x17 and 0x18, and it is WRONG -- that table
-// derives the whole 0x09..0x23 run by walking the manual's FX list in order, and
-// the device's own list is not in that order either (stepping the FX enum gives
-// ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG, with
-// DEL/GRV/HOP where the spec puts RND/RNL/RET and RMX absent entirely). Treat
-// every other entry in that table as unverified until a probe says otherwise.
-static constexpr uint8_t kLibFxSca = 0x10;
-static constexpr uint8_t kLibFxScg = 0x11;
+// MEASURED 2026-08-24, fw 6.5.2, DEMO2 (a v2.5.1 factory bundle) loaded on the
+// device: ten of its phrases were captured with m8drv and each FX cell's printed
+// command name was matched against the byte at that step in the file. The value
+// columns agreed on every cell, which is what pins the alignment. That covered
+// the 21 distinct command bytes DEMO2 uses. SCA/SCG come from a separate probe
+// (2026-08-14): a phrase authored on the device with SCG 10 and SCA 20 saved as
+// `11 10` and `10 20`. The two sets do not overlap and do not contradict.
+//
+// The bytes fall in two ranges -- sequencer commands below 0x40, instrument and
+// modulation commands from 0x80 -- which the old single-run table could not
+// represent at all.
+//
+// What this table is NOT: complete. Only bytes DEMO2 actually uses are here.
+// Anything absent decodes to FxCmd::UNKNOWN and is preserved byte-for-byte on
+// save (convertEngineToSong leaves UNKNOWN slots as the re-parsed original
+// bytes, invariant #8), exactly as before. Adding an entry requires a device
+// reading, not an inference from its neighbours -- the run is not contiguous and
+// the gaps are real.
+//
+// Known-missing, in DEMO2 usage order: 0x91 SRV (16), 0x89 CUT (11), 0x83 PLY
+// (7), 0x84 STA (4). Those are instrument-parameter commands with no engine
+// counterpart yet; they need semantics, not just a byte.
+//
+// One migration detail, for whoever implements REP: the device rescales its
+// value x4 when it loads a pre-4.0 song. File 0x02 displayed as 08, 0x08 as 20,
+// 0xFF as FC (0x3FC truncated). The byte in the file is the pre-4.0 scale.
+struct FxByte { uint8_t byte; engine::FxCmd cmd; };
+static constexpr FxByte kFxBytes[] = {
+    // sequencer commands
+    { 0x04, engine::FxCmd::HOP },
+    { 0x05, engine::FxCmd::KIL },
+    { 0x08, engine::FxCmd::REP },   // the old table called this TIC
+    { 0x0A, engine::FxCmd::PSL },
+    { 0x0C, engine::FxCmd::PVB },
+    { 0x10, engine::FxCmd::SCA },
+    { 0x11, engine::FxCmd::SCG },
+    { 0x12, engine::FxCmd::TBL },   // the old table put TBL at 0x06
+    { 0x13, engine::FxCmd::THO },
+    { 0x17, engine::FxCmd::VMV },
+    { 0x21, engine::FxCmd::XRD },
+    // instrument / modulation commands
+    { 0x80, engine::FxCmd::VOL },   // the old table put VOL at 0x00
+    { 0x92, engine::FxCmd::EA1 },
+    { 0x94, engine::FxCmd::HO1 },
+    { 0x95, engine::FxCmd::DE1 },
+    { 0x9A, engine::FxCmd::DE2 },
+    { 0x9C, engine::FxCmd::LA3 },
+    { 0x9D, engine::FxCmd::LF3 },
+    { 0x9E, engine::FxCmd::LT3 },
+};
 
 static engine::FxCmd libFxToEngine(uint8_t cmd) {
     if (cmd == 0xFF) return engine::FxCmd::NONE;
-    if (cmd <= 0x08) return static_cast<engine::FxCmd>(cmd + 1);  // VOL..TIC (modeled)
-    if (cmd == kLibFxSca) return engine::FxCmd::SCA;
-    if (cmd == kLibFxScg) return engine::FxCmd::SCG;
-    return engine::FxCmd::UNKNOWN;                                // preserved, inert
+    for (const auto& e : kFxBytes) if (e.byte == cmd) return e.cmd;
+    return engine::FxCmd::UNKNOWN;   // preserved, inert
 }
 
 static uint8_t engineFxToLib(engine::FxCmd cmd) {
     if (cmd == engine::FxCmd::NONE) return 0xFF;
-    // UNKNOWN is never routed through here — the phrase save loop preserves the
+    // UNKNOWN never routes through here -- the phrase save loop preserves the
     // original byte for UNKNOWN slots instead of calling this. Guard defensively.
     if (cmd == engine::FxCmd::UNKNOWN) return 0xFF;
-    if (cmd == engine::FxCmd::SCA) return kLibFxSca;
-    if (cmd == engine::FxCmd::SCG) return kLibFxScg;
-    return static_cast<uint8_t>(cmd) - 1;  // VOL..TIC -> 0x00..0x08
+    for (const auto& e : kFxBytes) if (e.cmd == cmd) return e.byte;
+    return 0xFF;
 }
 
 // ---- Mod conversion ----

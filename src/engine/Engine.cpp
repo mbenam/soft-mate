@@ -710,6 +710,9 @@ void Engine::tickTrack(int t) {
             else if (fx.cmd == FxCmd::LT2) {
                 m_voices[t].retriggerLfo(1, static_cast<float>(fx.val) / 255.0f);
             }
+            else if (fx.cmd == FxCmd::LT3) {
+                m_voices[t].retriggerLfo(2, static_cast<float>(fx.val) / 255.0f);
+            }
             else if (fx.cmd == FxCmd::EA1) {
                 m_voices[t].m_modAmtOffset[0] += static_cast<int8_t>(fx.val);
             }
@@ -740,11 +743,17 @@ void Engine::tickTrack(int t) {
             else if (fx.cmd == FxCmd::LA2) {
                 m_voices[t].m_modAmtOffset[1] += static_cast<int8_t>(fx.val);
             }
+            else if (fx.cmd == FxCmd::LA3) {
+                m_voices[t].m_modAmtOffset[2] += static_cast<int8_t>(fx.val);
+            }
             else if (fx.cmd == FxCmd::LF1) {
                 m_voices[t].m_modP3Offset[0] += static_cast<int8_t>(fx.val);
             }
             else if (fx.cmd == FxCmd::LF2) {
                 m_voices[t].m_modP3Offset[1] += static_cast<int8_t>(fx.val);
+            }
+            else if (fx.cmd == FxCmd::LF3) {
+                m_voices[t].m_modP3Offset[2] += static_cast<int8_t>(fx.val);
             }
             else if (fx.cmd == FxCmd::VMV) {
                 m_state.mixer.mix_vol = fx.val;

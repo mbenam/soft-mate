@@ -22,7 +22,12 @@ enum class FxCmd : uint8_t {
     VOL, PIT, DEL, REV, HOP, KIL, TBL, GRV, TIC,
     SCA, SCG,
     ARP, ARC, CHA, GGR, INS, RND, RNL, RET, REP, RTO, RMX, NTH, PSL, PBN, PVB, PVX, SNG, SED, THO, TBX, TPO, TSP, NXT, OFF, MTT,
-    FIN, EA1, EA2, AT1, AT2, HO1, HO2, DE1, DE2, ET1, ET2, LA1, LA2, LF1, LF2, LT1, LT2,
+    FIN, EA1, EA2, AT1, AT2, HO1, HO2, DE1, DE2, ET1, ET2,
+    // Modulator-slot commands. The M8 has four mod slots per instrument;
+    // slot 3 is measured (LA3/LF3/LT3 = 0x9C/0x9D/0x9E, see SongIO's FX
+    // table). Slot 4 exists on the device but its bytes are not measured,
+    // so it has no entry here rather than a guessed one.
+    LA1, LA2, LA3, LF1, LF2, LF3, LT1, LT2, LT3,
     EQM, EQI, VMV, VMX, VDE, VRE, VT1, VT2, VT3, VT4, VT5, VT6, VT7, VT8, DJC, DJR, DJT,
     XMT, XMM, XMF, XMW, XMR, XDT, XDF, XDW, XDR, XRS, XRD, XRM, XRF, XRW, XRZ,
     IVO, IMX, IDE, IRV, IV2, IM2, ID2, IR2, USB,

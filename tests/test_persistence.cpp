@@ -620,39 +620,128 @@ static void writeSongFile(const std::string& path, m8::Song& song,
 // L12 — modeled FX commands TBL/GRV/TIC (lib 0x06/0x07/0x08) survive load and
 // round-trip on save. Regression: libFxToEngine used to drop everything >= 0x06 to
 // NONE, so table/groove/tic assignments were lost on load (and clobbered on save).
-TEST_CASE("L12 TBL/GRV/TIC round-trip through file", "[io]") {
+TEST_CASE("L12 measured FX bytes decode and round-trip", "[io]") {
+    // Was "TBL/GRV/TIC round-trip", asserting bytes 0x06/0x07/0x08 decoded to
+    // TBL/GRV/TIC. A device reading disproved that (2026-08-24): TBL is 0x12 and
+    // 0x08 is REP. The old test passed anyway because a save->load round-trip
+    // through our own writer agrees with itself under ANY consistent mapping --
+    // the same circularity that hid the DETUNE bug. It could never have caught
+    // this. S-FX1 below is the test that can: it pins bytes to commands.
     auto data = readFile(songPath("V4EMPTY.m8s"));
     REQUIRE(!data.empty());
 
     m8::BinaryReader r(data);
     auto song = m8::Song::from_reader(r);
-    // Inject TBL/GRV/TIC into phrase 0, row 0's three FX slots.
-    song.phrases[0].steps[0].fx1.command = 0x06; song.phrases[0].steps[0].fx1.value = 0x11; // TBL
-    song.phrases[0].steps[0].fx2.command = 0x07; song.phrases[0].steps[0].fx2.value = 0x22; // GRV
-    song.phrases[0].steps[0].fx3.command = 0x08; song.phrases[0].steps[0].fx3.value = 0x33; // TIC
+    song.phrases[0].steps[0].fx1.command = 0x12; song.phrases[0].steps[0].fx1.value = 0x11; // TBL
+    song.phrases[0].steps[0].fx2.command = 0x08; song.phrases[0].steps[0].fx2.value = 0x22; // REP
+    song.phrases[0].steps[0].fx3.command = 0x06; song.phrases[0].steps[0].fx3.value = 0x33; // unmeasured
     writeSongFile("temp_fxrt1.m8s", song, data);
 
-    // Load: the engine must decode them to TBL/GRV/TIC (not NONE).
     auto loaded = loadSong("temp_fxrt1.m8s", "");
     REQUIRE(loaded.ok);
     const auto& step = loaded.sequencer.phrases[0][0];
     REQUIRE(step.fx[0].cmd == FxCmd::TBL); REQUIRE(step.fx[0].val == 0x11);
-    REQUIRE(step.fx[1].cmd == FxCmd::GRV); REQUIRE(step.fx[1].val == 0x22);
-    REQUIRE(step.fx[2].cmd == FxCmd::TIC); REQUIRE(step.fx[2].val == 0x33);
+    REQUIRE(step.fx[1].cmd == FxCmd::REP); REQUIRE(step.fx[1].val == 0x22);
+    // 0x06 has no device reading, so it stays UNKNOWN rather than being guessed.
+    REQUIRE(step.fx[2].cmd == FxCmd::UNKNOWN);
 
-    // Save and reparse: the file bytes must come back identical.
+    // All three must come back byte-identical -- the modeled two through the
+    // table, the unmeasured one through UNKNOWN preservation.
     std::string err;
     REQUIRE(saveSong("temp_fxrt1_out.m8s", loaded, loaded.sequencer, loaded.state, err));
     auto outBytes = readFile("temp_fxrt1_out.m8s");
     m8::BinaryReader r2(outBytes);
     auto reparsed = m8::Song::from_reader(r2);
-    REQUIRE(reparsed.phrases[0].steps[0].fx1.command == 0x06);
+    REQUIRE(reparsed.phrases[0].steps[0].fx1.command == 0x12);
     REQUIRE(reparsed.phrases[0].steps[0].fx1.value   == 0x11);
-    REQUIRE(reparsed.phrases[0].steps[0].fx2.command == 0x07);
-    REQUIRE(reparsed.phrases[0].steps[0].fx3.command == 0x08);
+    REQUIRE(reparsed.phrases[0].steps[0].fx2.command == 0x08);
+    REQUIRE(reparsed.phrases[0].steps[0].fx2.value   == 0x22);
+    REQUIRE(reparsed.phrases[0].steps[0].fx3.command == 0x06);
+    REQUIRE(reparsed.phrases[0].steps[0].fx3.value   == 0x33);
 
     std::filesystem::remove("temp_fxrt1.m8s");
     std::filesystem::remove("temp_fxrt1_out.m8s");
+}
+
+// S-FX1 — the FX byte table, pinned to what the device printed.
+//
+// Read off fw 6.5.2 on 2026-08-24 with DEMO2 (a v2.5.1 factory bundle) loaded:
+// ten phrases captured, each FX cell's printed command name matched against the
+// byte at that step in the file, value columns agreeing on every cell. SCA/SCG
+// come from a separate 2026-08-14 probe of a device-authored phrase.
+//
+// A round-trip cannot verify any of this -- see L12's note. If one of these ever
+// goes red, re-read the device before changing the expectation.
+TEST_CASE("S-FX1 FX bytes decode to the commands the device names", "[io]") {
+    struct { uint8_t byte; FxCmd cmd; const char* name; } expected[] = {
+        { 0x04, FxCmd::HOP, "HOP" }, { 0x05, FxCmd::KIL, "KIL" },
+        { 0x08, FxCmd::REP, "REP" }, { 0x0A, FxCmd::PSL, "PSL" },
+        { 0x0C, FxCmd::PVB, "PVB" }, { 0x10, FxCmd::SCA, "SCA" },
+        { 0x11, FxCmd::SCG, "SCG" }, { 0x12, FxCmd::TBL, "TBL" },
+        { 0x13, FxCmd::THO, "THO" }, { 0x17, FxCmd::VMV, "VMV" },
+        { 0x21, FxCmd::XRD, "XRD" }, { 0x80, FxCmd::VOL, "VOL" },
+        { 0x92, FxCmd::EA1, "EA1" }, { 0x94, FxCmd::HO1, "HO1" },
+        { 0x95, FxCmd::DE1, "DE1" }, { 0x9A, FxCmd::DE2, "DE2" },
+        { 0x9C, FxCmd::LA3, "LA3" }, { 0x9D, FxCmd::LF3, "LF3" },
+        { 0x9E, FxCmd::LT3, "LT3" },
+    };
+
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    for (const auto& e : expected) {
+        m8::BinaryReader r(data);
+        auto song = m8::Song::from_reader(r);
+        song.phrases[0].steps[0].fx1.command = e.byte;
+        song.phrases[0].steps[0].fx1.value   = 0x40;
+        writeSongFile("temp_fxmap.m8s", song, data);
+
+        auto loaded = loadSong("temp_fxmap.m8s", "");
+        REQUIRE(loaded.ok);
+        INFO("byte 0x" << std::hex << int(e.byte) << " should be " << e.name);
+        REQUIRE(loaded.sequencer.phrases[0][0].fx[0].cmd == e.cmd);
+
+        // ...and must write back as the same byte.
+        std::string err;
+        REQUIRE(saveSong("temp_fxmap_out.m8s", loaded, loaded.sequencer, loaded.state, err));
+        auto out = readFile("temp_fxmap_out.m8s");
+        m8::BinaryReader r2(out);
+        auto back = m8::Song::from_reader(r2);
+        REQUIRE(back.phrases[0].steps[0].fx1.command == e.byte);
+    }
+    std::filesystem::remove("temp_fxmap.m8s");
+    std::filesystem::remove("temp_fxmap_out.m8s");
+}
+
+// The bytes DEMO2 uses that we still cannot name a command for. They must decode
+// to UNKNOWN and survive a save untouched -- never be guessed into something.
+TEST_CASE("S-FX2 unmeasured FX bytes stay UNKNOWN and are preserved", "[io]") {
+    const uint8_t unmeasured[] = { 0x83, 0x84, 0x89, 0x91 };  // PLY STA CUT SRV
+    auto data = readFile(songPath("V4EMPTY.m8s"));
+    REQUIRE(!data.empty());
+
+    for (uint8_t b : unmeasured) {
+        m8::BinaryReader r(data);
+        auto song = m8::Song::from_reader(r);
+        song.phrases[0].steps[0].fx1.command = b;
+        song.phrases[0].steps[0].fx1.value   = 0x5A;
+        writeSongFile("temp_fxunk.m8s", song, data);
+
+        auto loaded = loadSong("temp_fxunk.m8s", "");
+        REQUIRE(loaded.ok);
+        INFO("byte 0x" << std::hex << int(b));
+        REQUIRE(loaded.sequencer.phrases[0][0].fx[0].cmd == FxCmd::UNKNOWN);
+
+        std::string err;
+        REQUIRE(saveSong("temp_fxunk_out.m8s", loaded, loaded.sequencer, loaded.state, err));
+        auto out = readFile("temp_fxunk_out.m8s");
+        m8::BinaryReader r2(out);
+        auto back = m8::Song::from_reader(r2);
+        REQUIRE(back.phrases[0].steps[0].fx1.command == b);
+        REQUIRE(back.phrases[0].steps[0].fx1.value   == 0x5A);
+    }
+    std::filesystem::remove("temp_fxunk.m8s");
+    std::filesystem::remove("temp_fxunk_out.m8s");
 }
 
 // L13 — unmodeled FX commands (lib byte >= 0x09, e.g. ARP) are preserved byte-for-byte

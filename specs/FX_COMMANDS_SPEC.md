@@ -1044,69 +1044,71 @@ All mixer/FX commands are **absolute** (not relative).
 
 ### libFxToEngine mapping
 
-> **WRONG BELOW `0x09`'s LINE — DISPROVED 2026-08-14. Do not build on this table.**
+> **REPLACED 2026-08-24 by a device reading. The old table is deleted, not
+> corrected — it was numbered by walking the manual's command list, and that
+> premise was wrong end to end.**
 >
-> This run was derived by walking the M8 manual's FX command list in order and
-> numbering it sequentially from `0x09`. A device measurement says it is wrong:
-> a phrase authored on fw 6.5.2 with `SCG 10` and `SCA 20` saved its FX slots as
-> `11 10` and `10 20`, so **SCA is `0x10` and SCG is `0x11`**, not `0x17`/`0x18`.
->
-> The premise fails too. The device's own FX enum is not in this order — stepping
-> the cell from `---` gives
-> `ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG`,
-> with `DEL`/`GRV`/`HOP` where this table puts `RND`/`RNL`/`RET`, and `RMX`
-> absent entirely. So neither the order nor the base offset survives.
->
-> `0xFF` and `0x00`–`0x08` are unaffected: those are exercised by the round-trip
-> tests and are correct. **Every entry from `0x09` on needs its own probe before
-> use.** The probe is cheap: author the command in a phrase on the device, save,
-> and read the FX byte. See `hw_findings.md` §UI-13 and test `L32`.
+> The old table also carried a note claiming `0x00`–`0x08` were safe "because
+> they are exercised by the round-trip tests." They were not safe, and a
+> round-trip test can never make them safe: it runs our reader against our own
+> writer, so it agrees with itself under any consistent mapping. `0x08` was TIC
+> in that table and is REP on the device. This is the same circular reasoning
+> that hid the DETUNE bug (`M8_SAMPLER_COMPLETION_SPEC.md` §1.3).
+
+**How this was measured.** fw 6.5.2, 2026-08-24. DEMO2 — a v2.5.1 factory
+bundle — loaded on the device; ten of its phrases captured with `m8drv`; each FX
+cell's printed command name matched against the byte at that step in the file.
+The value columns agreed on every cell, which is what pins the alignment. That
+covers the 21 distinct command bytes DEMO2 uses. SCA/SCG are from a separate
+2026-08-14 probe of a device-authored phrase. The two sets do not overlap and do
+not contradict each other.
+
+The bytes fall in **two ranges** — sequencer commands below `0x40`, instrument
+and modulation commands from `0x80`. The old single contiguous run could not
+represent that at all.
 
 ```
-Library  Engine
-0xFF     NONE
-0x00     VOL
-0x01     PIT
-0x02     DEL
-0x03     REV
-0x04     HOP
-0x05     KIL
-0x06     TBL
-0x07     GRV
-0x08     TIC
-0x09     ARP
-0x0A     ARC
-0x0B     CHA
-0x0C     RND
-0x0D     RNL
-0x0E     RET
-0x0F     REP
-0x10     RTO
-0x11     RMX
-0x12     NTH
-0x13     PSL
-0x14     PBN
-0x15     PVB
-0x16     PVX
-0x17     SCA
-0x18     SCG
-0x19     SNG
-0x1A     SED
-0x1B     THO
-0x1C     TBX
-0x1D     TPO
-0x1E     TSP
-0x1F     NXT
-0x20     OFF
-0x21     MTT
-0x22     INS
-0x23     GGR
+Sequencer                    Instrument / modulation
+0xFF  NONE                   0x80  VOL
+0x04  HOP                    0x92  EA1
+0x05  KIL                    0x94  HO1
+0x08  REP                    0x95  DE1
+0x0A  PSL                    0x9A  DE2
+0x0C  PVB                    0x9C  LA3
+0x10  SCA                    0x9D  LF3
+0x11  SCG                    0x9E  LT3
+0x12  TBL
+0x13  THO
+0x17  VMV
+0x21  XRD
 ```
+
+**This table is not complete, and the gaps are real.** Only bytes DEMO2 uses are
+listed. The run is not contiguous, so a byte's meaning cannot be inferred from
+its neighbours. Anything absent decodes to `FxCmd::UNKNOWN` and is preserved
+byte-for-byte on save. **Adding an entry requires a device reading.**
+
+Named but not yet mapped, in DEMO2 usage order: `0x91` SRV (16 uses), `0x89` CUT
+(11), `0x83` PLY (7), `0x84` STA (4). The device names them; they have no engine
+counterpart yet, so they need semantics rather than just a byte.
+
+**Value scaling.** REP's value is rescaled ×4 when the device loads a pre-4.0
+song: file `0x02` displayed as `08`, `0x08` as `20`, `0xFF` as `FC` (`0x3FC`
+truncated). The byte in a pre-4.0 file is on the older scale. Whether other
+commands do this is unknown.
+
+**Version caveat.** The 21 measurements come from a v2.5.1 file; SCA/SCG from a
+6.5-authored one. Nothing in this tree can test whether 4.x/6.x files use the
+same byte values, because **no 4.0+ song here uses FX at all** — TEST01,
+KICK01, neondusk, sunrise and opening have zero FX commands between them. That
+is also how the old table survived so long: nothing ever exercised it.
+
+Pinned by `S-FX1` and `S-FX2` in `tests/test_persistence.cpp`.
 
 ### engineFxToLib mapping
 
-Reverse of the above. `v == 0` (NONE) maps to `0xFF`. All others map to
-`libIndex = engineValue - 1` for the first 6, then sequential for the rest.
+Reverse lookup over the same table. `NONE` maps to `0xFF`; `UNKNOWN` never
+reaches it (the phrase save loop preserves the original byte instead).
 
 ### Mixer/FX send commands
 
