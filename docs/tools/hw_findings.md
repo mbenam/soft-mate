@@ -1987,3 +1987,192 @@ already use.
 and guessed the selector was a grid. It is not — they are simply later in the
 list. Walking far enough gives `... TBL THO TIC TBX TPO TSP GGR RMX INS NXT KIL
 OFF MTT`. The order is not alphabetical past `TSP`.
+
+---
+
+## UI-24 — Mixer and send-effect FX commands are invisible on the device's own screens
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3
+
+The manual says of every `X**` command "Changes the value in the Send Effects
+settings view", and of every `V**`, `DJ*` and `USB` command "Changes the value
+located in the Mixer view" (pp. 73-74). **Read back over the display protocol,
+they do not.** This wasted most of a session and is recorded so nobody plans a
+measurement around a screen read again.
+
+**Method.** `XMM 90`, `XMT 10`, `VMV 20` and `TPO 50` were placed in a playing
+phrase, on rows with and without a note, and the corresponding screens read --
+during playback with the cursor already parked on the field, and after stopping.
+`MOD DEPTH` stayed `40`, `MOD TYPE` stayed `00`, `MIX` stayed `E0`, `TEMPO`
+stayed `120.00`, in every combination.
+
+**The commands do execute.** A capture settles it: with `VMV 20` on phrase row 4
+the output is at full level for the 0.5 s up to that row and at -53 dB for the
+remaining 5.5 s of the capture. The mixer screen read `E0` throughout.
+
+**And the change is not kept.** The next capture, started from a stop, is at full
+level again for its first 0.5 s. The FX-command value applies for the duration of
+the transport run and the stored song value returns on stop.
+
+### What it means for a clone
+
+The engine writes these commands straight into its persistent mixer and effects
+state, where they survive the stop. The device does not. Any clone wanting parity
+needs a performance layer over the stored values -- a live overlay discarded when
+the transport stops -- not a write into the song.
+
+### How to measure them instead
+
+Audio only. Route the instrument fully to the effect under test (`DRY 00`,
+`MFX FF`), capture with `m8_capture`, and compare average spectra against
+references captured with the setting made *on the settings screen*, where it does
+persist. Cosine distance on a Hann-windowed average magnitude spectrum separates
+the three ModFX algorithms cleanly: same-setting repeats score 0.996-0.999,
+different algorithms 0.41-0.88.
+
+**Verify the rig before and after every capture.** Instrument sends were observed
+reverting to their defaults mid-session -- `DRY`/`MFX`/`MULT` all back to stock
+between two captures, silently. Three contradictory XMT readings came from that
+before it was caught. Every measurement below asserts the routing on both sides
+of the capture and discards the run if it moved.
+
+---
+
+## UI-25 — XMT: the ModFX type is the LOW nibble, saturating at 02
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3
+
+> **XMT XX (Send Effect: ModFX Mod Type)** — Set the ModFX type & phase position.
+> — p. 73
+
+Two settings named in one byte and no statement of how they are packed. The
+stored byte is a plain type: §UI-9 measured MOD TYPE at effects+25 moving
+`00 -> 02`, and the screen reads `MOD TYPE 00 CHORUS`.
+
+**Method.** Instrument 00 WAVSYNTH SINE, `MULT 80` for harmonic content,
+`DRY 00`, `MFX FF`. One note on phrase row 0 with the `XMT` beside it. References
+captured with MOD TYPE set to `00`, `01` and `02` on the Effect Settings screen
+and no `XMT` in the phrase. Eight-second captures, average spectrum from 1.0 s,
+cosine distance. Routing asserted before and after each capture; stored MOD TYPE
+forced to `00` for every `XMT` run and re-read afterwards.
+
+| `XMT` | vs CHORUS ref | vs PHASER ref | vs FLANGER ref | type |
+|---|---|---|---|---|
+| `00` | **0.987** | 0.573 | 0.778 | 0 chorus |
+| `01` | 0.540 | **0.996** | 0.879 | 1 phaser |
+| `02` | 0.739 | 0.897 | **0.963** | 2 flanger |
+| `03` | 0.751 | 0.899 | **0.976** | 2 flanger |
+| `04` | 0.771 | 0.880 | **0.999** | 2 flanger |
+| `05` | 0.763 | 0.897 | **0.992** | 2 flanger |
+| `0F` | 0.748 | 0.905 | **0.975** | 2 flanger |
+| `10` | **0.997** | 0.559 | 0.780 | 0 chorus |
+| `20` | **0.997** | 0.562 | 0.781 | 0 chorus |
+| `12` | 0.770 | 0.885 | **0.998** | 2 flanger |
+
+**So: `type = clamp(val & 0x0F, 0, 2)`.** `0x12` gives the flanger and `0x10`
+and `0x20` give the chorus, so the high nibble does not choose the type; `0x04`
+gives the flanger rather than the chorus, so it saturates rather than masking the
+low two bits.
+
+`01` was captured twice, in separate sessions, scoring 0.996 both times against
+the phaser reference.
+
+**The high nibble — the manual's "phase position" — produced no measurable
+difference here.** `00`, `10` and `20` score 0.991-0.999 against each other. A
+phase offset on a free-running LFO averaged over eight seconds is exactly what
+would hide, so this says the high nibble does not select the type, not that it
+does nothing.
+
+**Beware the earlier contradictory readings.** Before the routing was asserted
+per capture (§UI-24), `XMT 02` read as a flanger twice and a chorus once, and
+`XMT 01` read as neither phaser nor chorus. Those runs were taken with the
+instrument's sends silently reset. They are wrong; the table above supersedes
+them.
+
+---
+
+## UI-26 — RMX's first digit is a track count, not a bitmask
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3
+
+> **RMX XY** — Set the phrase play-head position (Y) of tracks to the left of the
+> current track. Select which tracks are affected using the first digit X. — p. 71
+
+"Select which tracks" reads like a bitmask, and a 4-bit mask covers four tracks
+where a count covers fifteen; neither fits eight cleanly. The clone reads X as a
+count from track 1.
+
+**Method.** A test song at song row 03, with only two tracks carrying content, so
+nothing else can sound:
+
+- **track 3** — phrase with `C-6` on rows 0-3 and `C-3` on rows 4-7, rows 8-F
+  empty. The two blocks are three octaves apart, so the dominant partial names
+  which block is playing.
+- **track 4** — an otherwise empty phrase carrying `RMX X0` on row 6.
+
+Six-second captures; dominant spectral peak per 1024-sample hop.
+
+| `RMX` | track 3 at 0.75 s (row 6) | track 3 affected? |
+|---|---|---|
+| `10` | 281/305 Hz, unbroken | no |
+| `20` | 281/305 Hz, unbroken | no |
+| `30` | jumps to 2344/6188 Hz for ~0.5 s | **yes** |
+| `40` | jumps to 2344/6188 Hz for ~0.5 s | **yes** |
+
+`30` was captured twice with the same result; `10` matches a no-RMX control
+exactly.
+
+**This rules out both bitmask readings and leaves the count.**
+
+- *Absolute bitmask* (bit 0 = track 1): `X=3` is bits 0 and 1, tracks 1 and 2, so
+  track 3 would not move. It moves.
+- *Relative bitmask* (bit 0 = the track immediately to the left): `X=1` would be
+  track 3 itself. It does not move.
+- *Count from track 1*: `X=1` is track 1, `X=2` is tracks 1-2, `X=3` reaches
+  track 3. All four rows fit.
+
+**What it settles.** The clone's `for (k = 0; k < t && k < X; ++k)` is right, and
+parity entry B14 closes as correct rather than as a defect.
+
+**Not settled:** what the play-head actually does on arrival. A jump with `Y=0`
+did not restart the note on row 0 — the target goes bright and atonal for about
+half a second instead — so the M8 appears to move the position without
+re-striking the row. Measuring that needs a different probe and was not the
+question here.
+
+---
+
+## UI-27 — The device's global FX command list, in order
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3
+
+Walked with `EDIT+RIGHT` on a phrase FX cell with no instrument in the row, from
+`MTT` all the way round to `MTT`. The list is a single cycle; `EDIT+LEFT`
+saturates at `ARP` rather than wrapping, and `EDIT+UP`/`DOWN` do nothing on this
+column — it is an enum, so the `enum_next` gesture is the only way through it.
+
+```
+ARP ARC CHA DEL GRV HOP RND RNL RET REP RTO NTH PSL PBN PVB PVX SCA SCG SED SNG
+TBL THO TIC TBX TPO TSP GGR RMX INS NXT KIL OFF MTT
+VMV VMX VDE VRE VIN USB EQI EQM VT1 VT2 VT3 VT4 VT5 VT6 VT7 VT8
+XMT XMM XMF XMW XMR XDT XDF XDW XDR XRS XRD XRM XRF XRW XRH XRZ
+IMX IDE IRE VI2 IM2 ID2 IR2 DJC DJR DJT OTT OTC OTI
+```
+
+**Seven mnemonics here are not in the manual's list, and three names the manual
+uses do not exist on the device.**
+
+| Manual | Device | Note |
+|---|---|---|
+| `IVO` | **`VIN`** | line input volume |
+| `IRV` | **`IRE`** | line input reverb send — the manual's own body text says `IRE`, only its heading says `IRV` |
+| `IV2` | **`VI2`** | second input volume |
+| — | **`XRH`** | absent from the manual; by position among the reverb commands, SHIMMER |
+| — | **`OTT` `OTC` `OTI`** | absent from the manual; the OTT amount, colour and time of §UI-9 |
+
+Any clone storing effects by mnemonic is storing three names the device never
+writes, and cannot represent four commands it does.
