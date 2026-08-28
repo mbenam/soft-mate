@@ -74,6 +74,40 @@ enum class FxCmd : uint8_t {
 
 ### What works today
 
+> ### ⛔ The `lib 0x..` bytes in the table below are WRONG
+>
+> They were derived arithmetically — file byte equals `FxCmd` enum position — and
+> `hw_findings.md` §UI-16 (2026-08-24, firmware 6.5.2, COM3) read the real table
+> off the device. Three of them are contradicted outright:
+>
+> | Command | This table says | The device says |
+> |---|---|---|
+> | TIC | `0x08` | `0x08` is **REP**. TIC is unread. |
+> | TBL | `0x06` | **`0x12`** |
+> | VOL | `0x00` | **`0x80`** |
+>
+> Measured, complete as far as it goes: `0x04` HOP, `0x05` KIL, `0x08` REP,
+> `0x0A` PSL, `0x0C` PVB, `0x10` SCA, `0x11` SCG, `0x12` TBL, `0x13` THO,
+> `0x17` VMV, `0x21` XRD, `0x80` VOL, `0x92` EA1, `0x94` HO1, `0x95` DE1,
+> `0x9A` DE2, `0x9C` LA3, `0x9D` LF3, `0x9E` LT3.
+>
+> The bytes fall in two ranges — sequencer below `0x40`, instrument and modulation
+> from `0x80` — so no contiguous run can express them and **a byte cannot be
+> inferred from its neighbours**. Only the 21 bytes DEMO2 uses were read; every
+> other `lib 0x..` in this document is an unverified guess, not a reading.
+>
+> Four more the device names with no engine counterpart: `0x91` SRV, `0x89` CUT,
+> `0x83` PLY, `0x84` STA.
+>
+> **Why this survived so long.** The old text defended `0x00`–`0x08` as sound
+> "because they are exercised by the round-trip tests". A round-trip runs our
+> reader against our own writer, so it holds under *any* consistent mapping and
+> can never pin a byte to a command. `L12` asserted `0x06 → TBL` and passed for
+> months while the device called `0x12` TBL.
+>
+> Recorded here 2026-08-28 because the correction lived only in `hw_findings.md`
+> and this is the document an implementer reads.
+
 | Cmd | Phrase engine | Table engine | File I/O | UI selectable | Status |
 |-----|:---:|:---:|:---:|:---:|:---|
 | VOL | yes | yes | yes (lib 0x00) | yes | **Implemented** |
