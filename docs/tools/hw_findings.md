@@ -1576,3 +1576,80 @@ hold the older scale. Unknown whether other commands do the same.
 
 Pinned by `S-FX1` / `S-FX2` in `tests/test_persistence.cpp`; raw map in
 `hw_crawl/DEMO2_fx_map.json`.
+
+---
+
+## UI-17 — NTH's skip period is X+1, measured
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+- **Song:** a blank project authored on the device by the driver
+
+### The question
+
+`NTH XY` is a conditional trigger on loop count. The manual (p. 71) declines to
+give the arithmetic — "refer to the help text at the bottom of the screen" — and
+the help text only renders while `EDIT` is held, which `m8drv` cannot snapshot:
+it presses and releases, then reads. So the law was measured behaviourally
+instead, which is better evidence than the prose would have been.
+
+### Method
+
+Instrument 00 set to MACROSYN, `SHAPE 22` KICK — self-decaying, so each trigger
+is one countable blip and no envelope has to be authored. `AMP 40`. Phrase 00
+row 0: `C-4`, vol `64`, instrument `00`, `NTH` in FX1, rows 1-15 empty. PHRASE
+mode loops the 16 rows; at the stock 120 BPM that is **2.000 s per loop**,
+confirmed to the millisecond by the onset spacing below.
+
+Captured 20 s per value with `m8_capture --port COM3 --seconds 20` and counted
+rising envelope crossings with `tools/count_onsets.py`.
+
+### Results
+
+| Value | X | Onsets in 20 s | Spacing | Loops per trigger |
+|---|---|---|---|---|
+| `NTH00` | 0 | 11 | 2.000 s | every loop |
+| `NTH01` | 0 | 11 | 2.000 s | every loop |
+| `NTH02` | 0 | 11 | 2.000 s | every loop |
+| `NTH10` | 1 | 5 | 4.000 s | every 2nd |
+| `NTHF2` | F | 1 | — | every 16th |
+
+**The period is X + 1.** X=0 plays every loop, X=1 every second, X=F every
+sixteenth. Equivalently: the row plays when `loopCount % (X + 1) == 0`.
+
+### The trap this run walked into first
+
+`NTH01`, `NTH02` and `NTH00` are indistinguishable, and the first pass read that
+as "NTH does nothing". They are not a control on the period at all: **X skips
+what is to the LEFT of the command and Y what is to the RIGHT** (manual p. 71),
+and in `NTH0Y` the X digit is zero, so nothing on the left — including the note —
+is ever skipped. FX2 and FX3 were empty, so Y had nothing to act on either.
+
+Only the **high** nibble moves the note. Anyone re-running this should set `NTHX0`.
+
+Y is assumed symmetric with X and was not separately measured.
+
+### What it settles
+
+The clone's `loopCount % (x + 1) != 0` skip is **correct**. Recorded in
+`tessera/docs/parity.md` as closed rather than as a disparity.
+
+### Incidental readings from the same session
+
+- The device's stock MACROSYN defaults, read off `INST00`: `SHAPE 00 CSAW`,
+  `TIMBRE 80`, `COLOR 80`, `DEGRADE 00`, `REDUX 00`, `FILTER 00`, `CUTOFF FF`,
+  `RES 00`, `AMP 00`, `LIM 00`, `PAN 80`, `DRY C0`, `MFX 00`, `DEL 00`, `REV 00`,
+  `TRANSP ON`, `TBL.TIC 01`, `EQ --`.
+- **There is no VOLUME field on the instrument screen.** AMP is the only gain
+  control the device exposes, which is the device-side confirmation of the clone's
+  A1 disparity.
+- **`TBL.TIC` defaults to `01` on the device**, not `FF`. The clone defaults every
+  instrument type to `0xFF`, which the manual defines as "increments table row at
+  200 Hz" against the device's "1 tick per row". Worth checking as a separate
+  disparity.
+- Braids shape indices agree with the vendored enum: `20` STRUCK BELL,
+  `21` STRUCK DRUM, `22` KICK.
+- `EDIT+RIGHT`/`LEFT` steps an FX command by one and `EDIT+UP`/`DOWN` steps a
+  value's high nibble by one, wrapping. The FX selector is a grid, so walking it
+  with `EDIT+RIGHT` alone visits only one row of commands — `GGR`, `INS`, `KIL`
+  and `RMX` were all absent from that walk and are not missing from the device.
