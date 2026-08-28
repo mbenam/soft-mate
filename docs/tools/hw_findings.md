@@ -1789,3 +1789,67 @@ walk to B/C/D — the cursor read stays on the row label.
 This is the same gap §UI-11 hit for HyperSynth WIDTH, which is why that capture
 had to bake the value into a probe file instead. The unblocking route is the same:
 either add an FM field map, or author the patch with `m8_makeprobe` and load it.
+
+---
+
+## UI-20 — Octave digits are hexadecimal; the DRUM envelope resists this rig
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+
+### Octave naming, settled
+
+Stepping a note up by octave from `C-6` with `EDIT+UP`:
+
+```
+C-6  C-7  C-8  C-9  C-A  C-B  G-B (clamped)
+```
+
+**The octave digit is hexadecimal**: `A` is 10, `B` is 11. The note field stays
+exactly three characters at every octave, and sharps render normally there —
+stepping down from the ceiling gives `F#B`, then `F-B`.
+
+With §UI-18's `(midi / 12) + 1`, this closes the range: `C-1` is MIDI 0, `C-6` is
+MIDI 60, and `G-B` is MIDI 127 — `127 / 12 = 10`, plus one is 11 = `B`, and
+`127 % 12 = 7` = G. The clamp at `G-B` confirms it from the other end.
+
+This unblocks the clone's F28: `renderNote` needs `(midi / 12) + 1` emitted as one
+hex digit, and `parseNote` needs to accept `1`–`9`, `A`, `B`. The fixed three-
+character width the `.tsr` row grammar depends on is safe.
+
+### DRUM envelope — attempted, not settled
+
+The manual (p. 20) says PEAK "modifies two parameters: Duck amount and peak time"
+and its diagram labels a DUCK stage, but gives no arithmetic. The clone has no
+duck at all.
+
+**Method.** MACROSYN `SHAPE 00 CSAW`, `AMP 40`, one sustained note. `MOD1` set to
+`DRUM ENV` → `VOLUME`, `AMT FF`. `BODY` taken to `00` so no hold stage sits
+between the transient and the decay. `PEAK` swept `00`, `40`, `80`, `C0`, `F0`,
+four seconds captured at each, envelope read as peak-per-2 ms over the first
+200 ms.
+
+**Device defaults worth recording**: a fresh `DRUM ENV` slot reads
+`PEAK 80`, `BODY 10`, `DEC 80`.
+
+**Result: suggestive, not conclusive.** Higher PEAK gives a faster initial decay —
+at `PEAK 00` the envelope is still near half amplitude around 100 ms, at `PEAK F0`
+it is down to a fifth by 40 ms — which is consistent with PEAK carrying a peak
+*time*. Nothing in the traces separates a duck *amount* from that, and a sawtooth
+carrier at ~350 Hz puts period-rate ripple into 2 ms bins, so the small
+differences between takes cannot be attributed with confidence.
+
+**Do not implement a duck from this.** A guessed envelope shape is worse than a
+known-missing one.
+
+**The experiment that would settle it**, for whoever picks it up:
+
+1. A carrier with no ripple of its own — `SHAPE 06 SINE` on WAVSYNTH, not a saw.
+2. `BODY` and `DEC` set long — `40` and `C0` — so the peak, duck and decay stages
+   are separated in time instead of overlapping in the first 50 ms.
+3. RMS per 5 ms window rather than peak per 2 ms; peak-per-window is what let the
+   waveform's own crest through.
+4. Sweep only the high nibble of PEAK with the low nibble pinned, then the reverse.
+   If the two nibbles carry different parameters, that is what shows it — and if
+   they do not, the split is somewhere else and the guess in the clone's spec is
+   wrong.
