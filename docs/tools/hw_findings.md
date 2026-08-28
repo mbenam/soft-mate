@@ -1653,3 +1653,69 @@ The clone's `loopCount % (x + 1) != 0` skip is **correct**. Recorded in
   value's high nibble by one, wrapping. The FX selector is a grid, so walking it
   with `EDIT+RIGHT` alone visits only one row of commands — `GGR`, `INS`, `KIL`
   and `RMX` were all absent from that walk and are not missing from the device.
+
+---
+
+## UI-18 — The M8 names middle C "C-6"; RNL randomises its own row only
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+- **Song:** the blank project from §UI-17, MACROSYN `SHAPE 00 CSAW`, `AMP 40`
+
+### Octave naming — measured, not inferred
+
+| Entered on the device | Measured fundamental | MIDI |
+|---|---|---|
+| `C-4` | ~65 Hz | 36 |
+| `C-6` | 260 Hz | 60 |
+
+Both measured with `m8_analyze --pitch` on a 0.4 s slice, cross-checked against
+`tessera_analyze --pitch`, which agrees on 260 Hz for the same tone.
+
+**The M8 names MIDI 60 — middle C — `C-6`.** Its octave number is
+`(midi / 12) + 1`, so MIDI 0..127 spans `C-1` to `G-11`, which is the "11
+octaves" the manual claims on p. 14.
+
+The clone names MIDI 60 `C-4` (`RowCodec.h`: `octave = (midi / 12) - 1`, range
+`-1..9`). That is also 11 octaves, but labelled **two octaves lower**. The stored
+byte and the frequency are right; only the name is wrong. It matters anyway —
+anyone reading a note off an M8 screen and typing it into the clone lands two
+octaves out.
+
+Why it went unnoticed: the clone is self-consistent. `parseNote(renderNote(n))`
+round-trips for every value, and every test that names a note names it the
+clone's way. Nothing compares a name against the device, so the whole naming
+scheme could shift without a single test failing — the same circularity §UI-16
+records for the FX byte table.
+
+### RNL in the first FX column
+
+`RNL F0` on row 0 of a 16-row phrase, C-4 in the note column, rows 4, 8 and 12
+carrying plain notes with no FX. Ten loops captured, pitch measured per row.
+
+- **Row 0 varied every loop**: MIDI 51, 46, 48, 45, 45, 45 across six loops.
+- **Rows 4, 8 and 12 were constant** at 65.40 Hz every loop, all thirty
+  measurements.
+
+Two results:
+
+1. **`RNL` in the first FX column randomises the note**, as the manual says
+   (p. 70). The clone does nothing there — `Engine.cpp:542` guards with
+   `f > 0` — so this is a confirmed gap, recorded as B12 in the clone's
+   `docs/parity.md`.
+2. **The randomisation does not carry to later rows.** Only the row holding the
+   command changed.
+
+Result 2 is evidence about `RNL`, not proof about `RND`. They are different
+commands and `RND`'s reach is still unmeasured; it is left open in
+`tessera/docs/captures.md` rather than closed by analogy.
+
+### Method note
+
+The note pitches were first read with an autocorrelation script that returned
+65.40 Hz — exactly a quarter of 261.63. A power-of-two error is that estimator's
+classic failure, so the reading was not trusted until `m8_analyze --pitch`, a
+different algorithm, agreed on the same tone, and until the same script was run
+against a clone render of a known C-4 as a control. It is worth the extra step:
+the first, untrusted reading would have supported the same conclusion for the
+wrong reason.
