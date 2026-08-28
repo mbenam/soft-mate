@@ -1909,3 +1909,49 @@ something different above the gap to catch the wrong answer.
 
 The clone's F20 — per-track song position — had this recorded as "row 0 unless a
 capture says otherwise". The capture says otherwise.
+
+---
+
+## UI-22 — A track on an empty song cell stays silent and never advances
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+
+### The question
+
+§UI-21 settled where a track restarts when its run *ends*. This is the other
+case: a track whose cell is empty at the row playback **starts** on. Does it stay
+silent, or does it move forward and find its music later?
+
+It mattered immediately: the clone's demo song has tracks 4–7 empty at song row 0
+with their real parts at rows 1–3, and per-track song positions left them silent
+for the whole song.
+
+### Method
+
+Track 1: row 0 empty, row 1 = chain `00` (F-6, 350 Hz), row 2 = chain `01`.
+Track 2: rows 0 and 1 = chain `01` (F-8, 1400 Hz), so the song keeps running and
+the two tracks are separable by pitch. Playback started at row 0, 12 s captured,
+pitch read over 0.25 s at the top of each 2 s bar.
+
+| Bar | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| Hz | 1390 | 1400 | 1390 | 1400 | 1400 |
+
+**Track 1 never sounds.** 350 Hz appears in no bar. It does not advance to row 1,
+where its chain is waiting, and it does not follow track 2.
+
+### Result
+
+An empty song cell is not a rest and not a wait. The track parks there.
+
+The manual agrees from the other direction (p. 10): *"To maintain a track's play
+position with other tracks while it remains silent, create a chain that contains
+empty phrases. It is common to use either chain 00 or FE for this purpose."* That
+advice would be pointless if an empty cell already kept a track moving.
+
+### What it settles
+
+The clone's F20. It also condemned the clone's own demo song, whose tracks 4–7
+relied on the shared-row behaviour to join late; they now carry the keeper chain
+the manual describes.
