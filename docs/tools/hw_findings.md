@@ -1955,3 +1955,35 @@ advice would be pointless if an empty cell already kept a track moving.
 The clone's F20. It also condemned the clone's own demo song, whose tracks 4–7
 relied on the shared-row behaviour to join late; they now carry the keeper chain
 the manual describes.
+
+---
+
+## UI-23 — MTT is signed int8 in eighths of a tick
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3
+
+The manual (p. 72) gives MTT's unit — "negative or positive sub-ticks (1/8th
+tick)" — but not the byte encoding.
+
+**Method.** MACROSYN `SHAPE 22` KICK, one note on phrase rows 0, 4, 8 and 12, at
+the stock 120 BPM: four rows is 0.500 s and one tick is 20.83 ms, so an eighth of
+a tick is 2.60 ms. Onsets counted with `tools/count_onsets.py`.
+
+Control, no MTT — gaps all `0.500`.
+
+With `MTT 04` on row 8, gaps repeat `0.500, 0.510, 0.490, 0.500`: the row-8 note
+lands 10 ms late and the following note is unmoved, so the row is displaced rather
+than the tempo changed. 10 ms against a predicted 4 × 2.60 = 10.4 ms, inside the
+2 ms bin resolution.
+
+**So the value is a signed byte in eighths of a tick** — `0x04` is +½ tick,
+`0xFC` would be −½ — the same int8 convention `VOL`, `PIT`, `FIN`, `TSP` and `SNG`
+already use.
+
+### Incidental: the FX selector is one list, not a grid
+
+§UI-17 recorded `GGR`, `INS`, `KIL` and `RMX` as absent from an `EDIT+RIGHT` walk
+and guessed the selector was a grid. It is not — they are simply later in the
+list. Walking far enough gives `... TBL THO TIC TBX TPO TSP GGR RMX INS NXT KIL
+OFF MTT`. The order is not alphabetical past `TSP`.
