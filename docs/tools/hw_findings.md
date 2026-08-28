@@ -1853,3 +1853,59 @@ known-missing one.
    If the two nibbles carry different parameters, that is what shows it — and if
    they do not, the split is somewhere else and the guess in the clone's spec is
    wrong.
+
+---
+
+## UI-21 — A track loops to the start of its own contiguous run, not to song row 0
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+
+### The question
+
+The manual (p. 10): a track increments through its chains "until it reaches an
+empty column, at which point the given track will **loop back to the beginning of
+its list of chains**." *The beginning* is ambiguous for any song with a gap —
+song row 0, or the first row of the run the track was actually playing.
+
+It matters: it is the one unknown in the clone's largest pending fix, per-track
+song position.
+
+### Method
+
+Two chains that sound different: chain `00` → phrase `00` → `F-6` (350 Hz),
+chain `01` → phrase `01` → `F-8` (1400 Hz). MACROSYN, so both are easy to tell
+apart from a pitch reading. Playback started from the song cursor, captured for
+14 s, pitch measured over 0.25 s at the top of each 2 s bar.
+
+**First layout** — track 1 rows: `-- -- 00 01 --`, started at row 2. Result:
+350, 1400, 350, 1400, 350, 1400, 350, 1400.
+
+That is consistent with both readings, because a loop to row 0 that scanned
+forward past the empty rows would also land on row 2. So it settles nothing, and
+a second layout was needed.
+
+**Second layout** — track 1 rows: `00 -- 01 --`, started at row 2. The run
+containing row 2 is row 2 alone; row 0 holds a *different* chain.
+
+| Bar | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| Hz | 1400 | 1390 | 1400 | 1400 | 1390 | 1400 |
+
+**Every bar is chain 01.** Chain 00 at row 0 never plays.
+
+### Result
+
+**A track loops to the first row of the contiguous non-empty run it is playing** —
+scan upward from the current row until an empty cell or the top of the song, and
+restart there. Not song row 0.
+
+The first layout's ambiguity is worth keeping in mind for anyone re-running this:
+a gap-free song cannot distinguish the two readings, and neither can a layout
+whose run starts at row 0. The run must start below a gap, and there must be
+something different above the gap to catch the wrong answer.
+
+### What it settles
+
+The clone's F20 — per-track song position — had this recorded as "row 0 unless a
+capture says otherwise". The capture says otherwise.
