@@ -1719,3 +1719,73 @@ different algorithm, agreed on the same tone, and until the same script was run
 against a clone render of a known C-4 as a control. It is worth the extra step:
 the first, untrusted reading would have supported the same conclusion for the
 wrong reason.
+
+---
+
+## UI-19 — RND reaches across rows; three stock defaults differ from the clone's
+
+- **Date:** 2026-08-28
+- **Firmware:** 6.5.2, COM3, via `m8drv batch` + `m8_capture`
+
+### RND's reach — measured
+
+`RND` "randomizes the previously active FX command" (manual p. 70). Whether
+"previously active" means earlier in the same row or carries across rows was the
+open question.
+
+Phrase 00: row 0 held `C-6` with `PBN 04`, an upward pitch bend; **row 8** held
+`RND F0` and nothing else; every other row empty. Pitch measured at 0.05-0.30 s
+and 1.60-1.90 s into each 2 s loop, with `m8_analyze --pitch`.
+
+| Loop | Control (no RND) | With `RND F0` on row 8 |
+|---|---|---|
+| | start → late | start → late |
+| 0 | 270 → 560 | 270 → 60 |
+| 1 | 270 → 560 | 200 → (inaudible) |
+| 2 | 270 → 550 | 270 → (inaudible) |
+| 3 | 270 → 550 | 260 → 7110 |
+| 4 | 270 → 560 | 270 → 7120 |
+
+The control is steady to within the estimator's 10 Hz quantisation. With `RND`
+four rows further down, the bend lands anywhere from 60 Hz to 7120 Hz and never
+twice the same.
+
+**`RND` reaches back across rows.** The clone searches only within the row
+(`Engine.cpp:526`, `for k = f - 1; k >= 0`), so it is a confirmed gap.
+
+Note this is the opposite of `RNL`, measured in §UI-18, whose effect did *not*
+carry past its own row. The two commands genuinely differ; neither result can be
+assumed from the other.
+
+### Stock defaults that differ from the clone's
+
+Read straight off `INST00` after setting each type on a blank project. These do
+not affect a loaded song, which carries its own bytes — they affect every
+instrument a user creates.
+
+| Field | Device | Clone | Where |
+|---|---|---|---|
+| `TBL.TIC` | `01` | `FF` | all five types |
+| FM operator `LEV` | `80` (all four) | `00` | `FMSynthState::FMOp::level` |
+| FM `MOD1`–`MOD4` | `00` | `80` | `FMSynthState::mod1..mod4` |
+
+The FM level default matters beyond tidiness: the clone's `probes/` documentation
+states that a default FM patch "renders digital silence, and that is the patch
+faithfully reproduced, not a broken synth". On the device a default FM patch
+**makes sound**, because every operator starts at `LEV 80`. The clone's silence is
+its own wrong default, not fidelity.
+
+`TBL.TIC` at `FF` means "increment the table row at 200 Hz" where the device
+means "one tick per row" — a factor the manual defines explicitly (p. 24).
+
+### Still open, and why
+
+**The FM PIT modulation range was not measured.** `ScreenModel.h` carries no FM
+field map, so `m8drv` cannot address `ALGO`, the per-operator `RATIO`, `LEV/FB` or
+`MOD` cells by name; `fields INSTRUMENT` lists only the sampler/macrosyn set.
+Raw cursor movement onto the MOD row lands on operator A and `RIGHT` does not
+walk to B/C/D — the cursor read stays on the row label.
+
+This is the same gap §UI-11 hit for HyperSynth WIDTH, which is why that capture
+had to bake the value into a probe file instead. The unblocking route is the same:
+either add an FM field map, or author the patch with `m8_makeprobe` and load it.
