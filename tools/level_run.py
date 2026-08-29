@@ -66,26 +66,42 @@ CAPTION = re.compile(r"\b([0-9A-F]{2})[A-Za-z][A-Za-z0-9%.:_-]*")
 def norm(row):
     """Normalise a decoded row before comparing it with another read of itself.
 
-    Two ways the same screen decodes differently, both of which discarded good
-    runs before they were understood:
+    Three ways the same screen decodes differently, each of which discarded a
+    good run before it was understood:
 
     1. **Spacing moves.** `m8drv` records one MIXER field arriving as
-       `" OUTPUT VOL  F0"` and as `"OUTPUTVOLF0"`. A run with every value
-       identical was thrown away because SHAPE rendered as `"SHAPE   06SINE"`
-       and then `"SHAPE  06SINE"`.
-    2. **An enum's caption comes and goes.** The value is drawn, the text beside
+       `" OUTPUT VOL  F0"` and as `"OUTPUTVOLF0"`.
+    2. **Spaces vanish inside labels**, not merely collapse: EFFECT SETTINGS
+       came back as `"MOD DEPTH:FRQ FF:FF"` and as `"MODDEPTH:FRQ FF:FF"`.
+       So whitespace carries no information at all here and is removed, not
+       normalised.
+    3. **An enum's caption comes and goes.** The value is drawn, the text beside
        it sometimes is not: `"LIM 00"` against `"LIM 00CLIP"`, `"FILTER 00"`
        against `"FILTER 00OFF"`. Three A3 captures were discarded for this
        before it was diagnosed -- the bytes were identical in every one.
 
-    So: collapse space runs, then drop a caption that is attached to a hex value
-    with no space. The value itself survives, so a real change still differs.
+    So: strip a caption from each whitespace-delimited token, then join with no
+    separator.
 
-    Known limit, in the safe direction: a caption of more than one word
-    (`"06PULSE 12%"`) that vanishes entirely still reads as drift, because only
-    the attached first word is stripped. That costs a re-run, not a wrong number.
+    **The caption rule requires a digit in the value.** Hex digits include A-F,
+    so a label whose first two letters happen to be hex -- `DEPTH:FRQ`, `DEL`,
+    `DECAY`, `FEEDBACK` -- is otherwise truncated to `DE` or `FE`, merging
+    distinct labels. Every caption seen on this device sits on a value carrying a
+    digit (`00CLIP`, `06SINE`, `01VOLUME`, `03LFO`, `00CHORUS`, `04POST`).
+
+    **Stripping is per token, never across the joined row.** A regex run over the
+    concatenated string matches greedily and swallows the next field: `MULT80LIM00CLIP`
+    and `MULT80LIM40` both collapse to `MULT80`, which would hide a real change.
+
+    Known limit, in the safe direction: a caption whose space to its label also
+    vanished (`"LIM00CLIP"` as one token) is not stripped and still reads as
+    drift. That costs a re-run, not a wrong number.
     """
-    return CAPTION.sub(r"\1", " ".join(row.split()))
+    out = []
+    for tok in row.split():
+        m = CAPTION.match(tok)
+        out.append(m.group(1) if m and any(c.isdigit() for c in m.group(1)) else tok)
+    return "".join(out)
 
 
 def diff(a, b):
@@ -126,7 +142,10 @@ def main():
         bad = False
         for e in a.expect:
             scr, _, want = e.partition(":")
-            if not any(want in row for row in before[scr]):
+            # normalised on both sides, for the same reason diff() is: a raw
+            # substring match fails when the decoder re-spaces the row or drops
+            # an enum caption, which is not the rig moving.
+            if not any(norm(want) in norm(row) for row in before[scr]):
                 print("rig: expected %r on %s at %s=%s, not found" % (want, scr, a.field, v))
                 for row in before[scr]:
                     print("   ", row)

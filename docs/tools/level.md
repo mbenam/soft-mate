@@ -48,6 +48,19 @@ Reach the cell by naming a field the map *does* know and pressing on from there;
 identify the value by a regex over the decoded **row**. `--enum` steps one at a
 time and reverses on a stall, for enum cells whose lists do not wrap.
 
+## `lfo_rate.py` — modulation rate from the pitch wobble
+
+```powershell
+python tools/lfo_rate.py hwtest_out/level/a2frqFF_00.wav --hi 100
+```
+
+Short-time spectral peak tracking, then an FFT of that frequency track. It prints
+the carrier it followed and the deviation it saw, so a track that is hopping
+between partials rather than following the carrier is visible — and it says
+`NOT RESOLVED`, with the cycle count and the peak-to-median ratio, when the
+window holds fewer than two cycles or the peak is not clearly a peak. See
+[`hw_findings.md`](hw_findings.md) §UI-33 for why that mattered.
+
 ## Gotchas — every one of these produced a wrong reading first
 
 - **Keyjazz velocity is not a level control on every instrument**, though

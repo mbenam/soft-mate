@@ -2804,3 +2804,82 @@ reference matters and why the `C0` row is shown above.
   not measured.
 - The spread is a level difference only; no claim is made here about what each
   effect does to the signal.
+
+---
+
+## UI-33 — ModFX `MOD FRQ`: not measured, and what blocks it
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Leaves open:** tessera `docs/captures_backlog.md` A2.
+
+**No rate in Hz is reported here.** This section exists so the next attempt
+starts from what was ruled out rather than rediscovering it. Three things below
+are measurements; the LFO rate is not one of them.
+
+### What A2 needs and this rig cannot give
+
+A2 needs a **steady tone lasting several seconds**. Its lowest `FRQ` points are
+the ones that settle whether the law is linear or geometric, and a rate below a
+few Hz cannot be seen in a note shorter than a second at all.
+
+**Every keyjazz note available on this rig is about 480 ms.** Measured on the
+`WAVV7F.M8S` WAVSYNTH probe: RMS flat within 0.03 dB from 40 ms to 480 ms, then
+a cut to exact digital zero by 520 ms, with the note held for the whole capture.
+Four things were tried and none lengthened it:
+
+- **`MOD1 HOLD` was already `FF`**, the maximum, and that is what produces the
+  480 ms.
+- **`DEC 80` → `DEC FF`**: no change. The end of the note is a cut, not a decay
+  — the last three 20 ms bins are −12.34, −14.88, then digital zero.
+- **`DEST 01 VOLUME` → `00 OFF`**: no change, still ~500 ms. So the AHD envelope
+  is not the only thing gating the voice.
+- **Tempo 120 → 80 BPM**: no change. The note did not lengthen; at ~100 ms
+  envelope resolution a tempo-scaled hold would have grown by half a bin-count
+  and did not. **Envelope hold is not tempo-scaled here.**
+
+The FM patch built for §UI-30 *did* sustain — 2.95 s, full-window — but its mod
+slots came from a project that was never saved, and rebuilding it did not
+reproduce the sustain: switching `TYPE` resets the mod slots, and the rebuilt
+patch with `DEST 01 VOLUME`, `AMT FF`, `HOLD FF`, `DEC FF` gave a **20 ms
+click**. Whatever sustains a note on this device, it is not the AHD hold.
+
+### Two things that were measured, and are worth keeping
+
+**1. At 100% wet the chorus produces no amplitude modulation.** With
+`MOD TYPE 00 CHORUS`, `MOD DEPTH:FRQ FF:FF`, instrument `DRY 00` / `MFX FF`,
+return `E0`, the output's 5 ms RMS envelope holds at **−17.5 dB ±0.3 dB** across
+the whole 500 ms note. That is expected in hindsight and it invalidates half of
+A2's stated method: the backlog says to read the period "off the amplitude
+envelope or the pitch wobble", and with `DRY 00` there is no dry path for the
+delayed copy to comb against, so there is nothing to see in amplitude. **Any
+future attempt must either track pitch, or keep some dry signal deliberately.**
+
+**2. Pitch tracking needs a cleaner source than this probe.** The WAVSYNTH probe
+at `SIZE 80` / `MULT 80` carries sidebands 27-34 dB below its 2219 Hz partial. On
+that signal an analytic-signal phase derivative returned a "carrier" of 20.1 Hz
+with a ±697 Hz deviation, and a short-time spectral peak tracker returned a
+carrier of 2809 Hz with a **±1264 Hz** swing — more than an octave, which no
+chorus does. The tracker is hopping between partials. It did report a 10.5 Hz
+periodicity at 6× the median bin, but on a track that is demonstrably not
+following the carrier that number describes the hopping, not the LFO, **so it is
+not recorded as a rate.**
+
+### What would unblock it
+
+A sustained, spectrally clean tone. In rough order of likely cost:
+
+- A natively-authored **sampler** instrument looping a sample already on the card
+  (`SHAPER.WAV` is there). Loop mode sustains for as long as the note is held and
+  a sine sample would track cleanly. Note the standing caveat that *generated*
+  sampler probes are silent on this device — this would have to be built on the
+  device, which rig fact 9 requires anyway.
+- Finding what actually gates note length. The AHD hold is ruled out above; the
+  §UI-30 FM instrument sustained and something in its mod slots did it.
+- Failing both: keep a little dry signal and read the comb-filter amplitude
+  modulation instead of the pitch, which needs no pitch tracking at all.
+
+`tools/lfo_rate.py` is kept for the next attempt: it tracks pitch by short-time
+spectral peak and **reports `NOT RESOLVED` with the cycle count and the
+peak-to-median ratio** rather than returning a number, which is what stopped the
+10.5 Hz figure above from being written down as a result.
