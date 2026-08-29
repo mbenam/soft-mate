@@ -3116,6 +3116,14 @@ the slope is unambiguous.
 
 ### Incidental: `MIX_VOL` is not linear in amplitude either
 
+**SUPERSEDED 2026-08-29 — see §UI-36**, which measured this control properly:
+eighteen points, a single exponential at **0.27675 dB/unit**, and the same
+two-run experiment used above to show the step-shrink is not a taper in the
+fader. The two-point average below (0.2761 dB/unit) survives as an estimate —
+§UI-36's fit over the same `40`-`E0` span is 0.2759 — but the law, the shape and
+the `00` endpoint all come from §UI-36 now. The caution below that two points do
+not fit a law was the right one.
+
 Two points only, both guarded, at `TRACK1_VOL E0` / `DRY C0`:
 
 | `MIX` | RMS dBFS |
@@ -3267,3 +3275,206 @@ possibilities were checked against the measured levels and none fits:
 No claim is made about what §UI-32's session actually had. What is established
 is that its stated rig, rebuilt twice, does not produce its delay or reverb
 figures, and does produce its chorus figure exactly.
+
+---
+
+## UI-36 — `MIX` is a second exponential fader at 0.27675 dB/unit; `OUTPUT VOL` is not a fader at all
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/parity.md` §E7. Replaces §UI-34's two-point
+  incidental on `MIX_VOL`.
+
+§UI-34 noted in passing that `MIX_VOL` looked exponential at about 0.2761
+dB/unit from two guarded points, and said two points do not fit a law. This
+measures it the way §UI-34 measured the track fader, and settles what
+`OUTPUT VOL` is while the rig is up.
+
+### The rig
+
+`WAVV7F.M8S` reloaded from the card. Instrument 00 `TYPE WAVSYNTH`,
+`SHAPE 06 SINE`, `SIZE 80`, `MULT 80`, `WARP 00`, `SCAN 00`, `AMP 00`,
+`LIM 00 CLIP`, `PAN 80`, `DRY C0`, `MFX`/`DEL`/`REV 00`, `FILTER 00 OFF`,
+`CUTOFF FF`, `RES 00`. Mixer: returns `MX`/`DE`/`RE 00`, `LIM 00`, `OTT 00`,
+`DJF 80`, `OUTPUT VOL F0`. Keyjazz note 60 at velocity `0x40`, 2 s captures,
+RMS over 100-420 ms from the note's onset.
+
+**Anchored against §UI-34 before any data was taken**, and this matters — see
+"A run that had to be thrown away" below. At `TRACK1_VOL E0` / `MIX E0` /
+`DRY C0` the rig reads **−12.337 dBFS**, which is §UI-34 Run A's `E0` point to
+the last digit. Two further anchors: `TRACK1_VOL A0` reads −27.667 against
+§UI-34's −27.667, and `TRACK1_VOL 40` reads −50.782 against its −50.782.
+
+### `OUTPUT VOL` is not in the recorded chain
+
+Swept first, because it is one capture per point and it decides whether there is
+a third fader to measure at all. `TRACK1_VOL E0`, `MIX E0`, `DRY C0`:
+
+| `OUTPUT VOL` | peak dBFS | RMS dBFS |
+|---|---|---|
+| `00` | −9.178 | −12.336 |
+| `40` | −9.166 | −12.337 |
+| `80` | −9.182 | −12.337 |
+| `C0` | −9.176 | −12.337 |
+| `F0` | −9.172 | −12.337 |
+| `FF` | −9.178 | −12.337 |
+
+**Every value is the same level within 0.001 dB RMS**, and the 0.016 dB of peak
+spread is capture-to-capture noise. `OUTPUT VOL 00` — the fader fully closed —
+passes full level over USB.
+
+So `OUTPUT VOL` is **not a fader in the recorded signal chain**: it is the
+analogue output stage, downstream of wherever USB audio is tapped. It cannot be
+given a law by this rig — not a linear one, not an exponential one — because it
+never reaches the recording. Anything a renderer does with it is a UI decision,
+not a parity one.
+
+That also bounds a claim nobody made but might: this says nothing about whether
+`OUTPUT VOL` is digital or analogue, only about where it sits relative to the
+USB tap.
+
+### `MIX` — eighteen points
+
+`TRACK1_VOL E0`, `DRY C0`. None clipped, none drifted.
+
+| `MIX` | peak dBFS | RMS dBFS | dB/unit from the point above |
+|---|---|---|---|
+| `00` | — | **digital zero** | — |
+| `08` | −68.725 | −72.817 | — |
+| `10` | −66.787 | −70.341 | 0.3096 |
+| `20` | −62.350 | −65.635 | 0.2941 |
+| `30` | −57.844 | −61.039 | 0.2873 |
+| `40` | −53.284 | −56.517 | 0.2826 |
+| `50` | −48.871 | −52.043 | 0.2796 |
+| `60` | −44.420 | −47.593 | 0.2781 |
+| `70` | −39.992 | −43.161 | 0.2770 |
+| `80` | −35.581 | −38.743 | 0.2761 |
+| `90` | −31.176 | −34.331 | 0.2758 |
+| `A0` | −26.764 | −29.924 | 0.2754 |
+| `B0` | −22.361 | −25.524 | 0.2750 |
+| `C0` | −17.977 | −21.125 | 0.2749 |
+| `D0` | −13.571 | −16.729 | 0.2747 |
+| `E0` | −9.171 | −12.336 | 0.2746 |
+| `F0` | −4.784 | −7.945 | 0.2745 |
+| `FF` | −0.674 | −3.830 | 0.2743 |
+
+A single exponential least-squares fit over `08`-`FF` is **0.27675 dB/unit**,
+landing every point within **0.630 dB**; over `20`-`FF` it is 0.27580 dB/unit
+within 0.301 dB. The `08` and `10` points sit at 12-25 LSB of a 16-bit capture
+and carry the table's only elevated crest figures (4.09 and 3.55 against 3.15-3.28
+everywhere else), so they are the noisy ones and the wider residual is theirs.
+
+**Linear in amplitude is not close:** it puts `0x80` at −5.99 dB where the device
+puts it at −34.9.
+
+**`MIX 00` is exact digital zero.**
+
+### The step-shrink is not a taper in `MIX`, by §UI-34's experiment
+
+The dB/unit column shrinks monotonically from 0.3096 to 0.2743, the same
+signature the track fader showed. §UI-34 separated a fader taper from a
+level-dependent path by sweeping the fader twice with everything else moved by a
+known amount; the same experiment here, with the track fader moved from `E0` to
+`A0` — 15.330 dB down, and downward deliberately (see below).
+
+**A taper in `MIX` requires the two runs to be parallel in fader coordinates:**
+
+| `MIX` | `60` | `80` | `A0` | `C0` | `E0` | `FF` |
+|---|---|---|---|---|---|---|
+| at `TRACK1_VOL E0` | −47.593 | −38.743 | −29.924 | −21.125 | −12.336 | −3.830 |
+| at `TRACK1_VOL A0` | −63.204 | −54.170 | −45.284 | −36.462 | −27.666 | −19.158 |
+| difference | −15.611 | −15.427 | −15.360 | −15.337 | −15.330 | −15.328 |
+
+**0.283 dB of spread. Rejected.**
+
+**An exponential into a level-dependent path requires one run to be the other
+slid along the fader axis** — `M4(v) = M1(v + s)`. Fitting `s` freely:
+
+- best `s` = **−55.70 `MIX` units**, against the −55.39 that 15.330 dB at
+  0.27675 dB/unit predicts;
+- residual **0.029 dB rms, 0.047 dB worst**, over six points spanning 44 dB.
+
+So `MIX` is a pure exponential and the shrink belongs to whatever follows it —
+the same conclusion, by the same method, as §UI-34 reached for the track fader.
+
+### `MIX` and the track fader are DIFFERENT laws
+
+Not assumed from the two slopes. If they were one law, the output would depend
+only on the sum of the two bytes, which is the property §UI-34 used to show that
+`DRY` and the track fader *are* one law (`DRY C0` + `TRACK FF` and `DRY FF` +
+`TRACK C0` both read −4.92).
+
+| | RMS dBFS |
+|---|---|
+| `TRACK E0` / `MIX C0` (sum 416) | **−21.125** |
+| `TRACK C0` / `MIX E0` (sum 416) | **−19.998** |
+
+Same byte sum, **1.127 dB apart**. Two faders, two slopes: 0.2407 dB/unit for the
+track fader, 0.27675 for `MIX`.
+
+### Why the shift was made downward
+
+The first attempt shifted the path **up**, by moving the instrument's `DRY` from
+`C0` to `FF` — the same control §UI-34 used, worth 15.08 dB there. It bought only
+**11.28 to 11.82 dB**:
+
+| `MIX` | `10` | `20` | `40` | `60` | `80` | `A0` | `C0` |
+|---|---|---|---|---|---|---|---|
+| `DRY FF` − `DRY C0`, dB | 11.820 | 11.614 | 11.397 | 11.327 | 11.303 | 11.286 | 11.281 |
+
+At `DRY FF` with `TRACK1_VOL E0` and `MIX C0` the output is −9.844 dBFS, and
+`MIX C0` is 17.44 dB of attenuation, so the signal arriving at `MIX` is about
+**+7.6 dBFS** — above full scale. Something upstream is holding it down, which is
+exactly the confound the experiment exists to avoid. §UI-34's +15.08 dB for that
+same `DRY` step was measured at `TRACK1_VOL A0` and `C0`, well below this.
+
+Recorded rather than pursued: **a stage between the instrument's `DRY` and `MIX`
+compresses once the signal passes roughly full scale**, costing about 3.8 dB at
++7.6 dBFS. Its curve is not measured here.
+
+### A run that had to be thrown away, and the rig fact behind it
+
+The first attempt at the downward shift produced levels **identical to the
+unshifted run** — 0.003 dB across nine points — while the MIXER screen read
+`TRACK1_VOL A0` throughout and `level_run.py`'s before-and-after guards passed on
+every capture. The WAV files were confirmed to be genuinely distinct captures,
+not a reused file: different sizes and different hashes at every point.
+
+That run had started immediately after the daemon timed out mid-sweep and was
+killed and recovered. Everything checked afterwards was correct — the same rig
+now reads −12.337 at `TRACK1_VOL E0`, −27.667 at `A0` and −50.782 at `40`, all
+exact against §UI-34 — so the fault was transient and is not explained.
+
+**The lesson is about the guards, and it generalises: a screen guard cannot
+detect this.** `level_run.py` reads the display before and after each capture,
+and the display agreed with itself while the audio did not. **After a daemon kill
+and recovery, re-anchor against a known level before trusting captures.** An
+absolute anchor would have caught it on the first point; the guards never could.
+
+Two things were eliminated while chasing it, and both are worth keeping:
+
+- **The MIXER cursor column does not select which track sounds.** With
+  `TRACK1_VOL 40`, a capture with the cursor on `TRACK1_VOL` and one with it on
+  `MIX_VOL` read −50.782 and −50.781.
+- **`cursor MIX_VOL` navigates correctly**, from `TRACK1_VOL`, `LIM_VAL`,
+  `OUT_VOL` and `MST_REV` alike — all four land on the `MIX` cell.
+
+### Tooling
+
+Two bugs found and fixed; both blocked this section.
+
+- **`editValue` refused `set OUT_VOL` and `set MIX_VOL`**, reporting "no leading
+  hex digits to converge against" and blaming the field map. `readCursorValue`
+  stripped the label by an exact prefix compare, which both spellings the device
+  draws defeat — `" OUTPUT VOL  F0"` carries a leading space the map's label does
+  not, and `"OUTPUTVOLF0"` has lost the space inside the label. It now ignores
+  whitespace on both sides. `m8drv.md` had already told readers label stripping
+  was whitespace-insensitive; that was aspirational until now.
+- **`level_run.py`'s `norm()` ate a byte out of the track-volume row.** That row
+  is eight bare hex bytes and the decoder glues neighbouring ones from time to
+  time; `"E0E0"` matches the enum-caption pattern (`E0` value, `E` letter, `0`
+  tail) and collapsed to `"E0"`, so the row normalised to seven bytes. `--expect`
+  could therefore never pin a track volume — an eight-byte want cannot be a
+  substring of a seven-byte norm — which is why the guards in the discarded run
+  above were weaker than they looked. A caption's tail must now contain a non-hex
+  character.
