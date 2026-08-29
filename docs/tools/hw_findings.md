@@ -2176,3 +2176,90 @@ uses do not exist on the device.**
 
 Any clone storing effects by mnemonic is storing three names the device never
 writes, and cannot represent four commands it does.
+
+---
+
+## UI-28 — The three TIC map modes: octave/12, velocity/8, note%16
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+
+The manual (p. 24) names them and stops:
+
+> TICFC - Octave Map: Maps playing octave to table row.
+> TICFD - Velocity Map: Maps velocity to table row.
+> TICFE - Note Map: Maps note to table row. Note: Use HOP00 on row "0C" to limit
+> table to 12 notes / octave.
+
+No arithmetic anywhere, and the note-map hint fits more than one reading, so all
+three were measured.
+
+**Method.** The table row itself is not readable: the playhead on the TABLE view
+is an accent colour rather than a character, `inspect` shows it, and it is gone
+by the time the transport has stopped — a read after a stop returns the cursor,
+which is what an early attempt here mistook it for.
+
+So the row was made to name itself. Every row of table 00 was given a distinct
+transpose in its `N` column:
+
+```
+row   0  1  2  3  4  5   6   7   8   9   A   B   C   D   E    F
+N    00 01 02 04 07 0B  10  16  1D  25  2E  38  43  4F  5C   6A
+```
+
+One note in phrase 01, `TBL.TIC` set to the mode under test, three seconds
+captured with `m8_capture`, and the dominant partial converted to a MIDI number.
+Sounding note minus played note is the transpose, and the transpose names the
+row.
+
+### Octave map, TICFC — `row = midi / 12`
+
+| played | sounded | offset | row | midi / 12 |
+|---|---|---|---|---|
+| 36 | 39.92 | +4 | 3 | 3 |
+| 48 | 54.77 | +7 | 4 | 4 |
+| 60 | 70.94 | +11 | 5 | 5 |
+| 72 | 88.00 | +16 | 6 | 6 |
+
+Note this is the octave **index**, not the octave number the device prints: MIDI
+60 is named `C-6` on screen (§UI-18) and maps to row 5.
+
+### Velocity map, TICFD — `row = velocity / 8`
+
+| velocity | sounded | offset | row | vel / 8 |
+|---|---|---|---|---|
+| 0x20 | 67.03 | +7 | 4 | 4 |
+| 0x28 | 70.94 | +11 | 5 | 5 |
+| 0x30 | 76.07 | +16 | 6 | 6 |
+| 0x38 | 81.99 | +22 | 7 | 7 |
+| 0x40 | 88.97 | +29 | 8 | 8 |
+
+Velocity 0x00 and 0x10 came back silent and are not evidence either way — at
+0x10 the note is simply too quiet to measure.
+
+### Note map, TICFE — `row = midi % 16`
+
+| played | sounded | offset | row | midi % 16 |
+|---|---|---|---|---|
+| 64 | 63.92 | +0 | 0 | 0 |
+| 65 | 65.96 | +1 | 1 | 1 |
+| 66 | 68.03 | +2 | 2 | 2 |
+| 67 | 70.94 | +4 | 3 | 3 |
+| 69 | 80.03 | +11 | 5 | 5 |
+| 72 | 101.01 | +29 | 8 | 8 |
+
+MIDI 60, 61 and 62 all read back at the same low frequency and are **not**
+counter-evidence: those rows transpose by 67, 79 and 92, so all three land past
+MIDI 127 and clamp there, above the analyser's search range.
+
+**And this settles the manual's hint.** With `row = midi % 16` a chromatic run
+walks rows 0 through 15, so putting `HOP00` on row `0C` wraps it after twelve —
+"limit table to 12 notes / octave" exactly. Under a `% 12` reading the hint would
+be meaningless, since row `0C` could never be reached. That contradiction is what
+made this unresolvable from the manual alone and is why it was measured.
+
+### What it settles
+
+The clone's B10. All three modes were parsed and then skipped, so the table froze
+on whatever row it was on. They are implemented in F41 with these mappings, each
+citing this section.
