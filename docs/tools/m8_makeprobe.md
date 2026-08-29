@@ -63,6 +63,14 @@ capture it with [`m8_capture`](m8_capture.md), then compare the two with
 | `--width <n>` | `0x80` | **HyperSynth-only.** Stereo width. Exposed because measuring the device's stereo behaviour needs it varied and `ScreenModel.h` has no HyperSynth field map, so it cannot be set on the device by field name. Hardware-measured **unipolar**: `00` is no spread, `FF` maximum — *not* bipolar around `0x80` (`hw_findings.md` §UI-11). |
 | `--pan <n>` | `0x80` | Instrument pan (`synth_params.mixer_pan`), any type. Added for the pan-law sweep (`hw_findings.md` §UI-12); the HyperSynth screen's right column sits two rows below the Sampler map it falls back to, so `set PAN` would aim at `SHIFT`. `verifyRoundTrip` checks against the requested value rather than a hardcoded `0x80`. |
 | `--slice <n>` | `0` (off) | **Sampler-only.** `0`=off, `1`=FILE (WAV-embedded slice markers), `2`-`0x80`=N equal divisions. Added for the SLICE note-base hardware investigation (`sampler-slice-repitch-hw` memory). |
+| `--fm-algo <n>` | `0` | **FMSynth-only.** The `ALGO` byte. `0x0B` reads `A+B+C+D` on the device — fully additive, so with B/C/D silent, operator A is heard alone. |
+| `--fm-level <a,b,c,d>` | `0x80,0x80,0x80,0x80` | **FMSynth-only.** Per-operator `LEV`. Fewer than four values leaves the rest at the default. This is how a single-carrier probe is made. |
+| `--fm-ratio <a,b,c,d>` | `1,1,1,1` | **FMSynth-only.** Per-operator `RATIO` integer part. |
+| `--fm-ratio-fine <a,b,c,d>` | `0,0,0,0` | **FMSynth-only.** Per-operator `RATIO` fractional part. |
+| `--fm-fb <a,b,c,d>` | `0,0,0,0` | **FMSynth-only.** Per-operator `FB`. |
+| `--fm-mod-a <a,b,c,d>` | `0,0,0,0` | **FMSynth-only.** Per-operator MOD slot 1, as the device's own byte: high nibble = source (`0`..`3` for MOD1..MOD4), low nibble = destination (`1` LEV, `2` RAT, `3` PIT, `4` FBK); `0x00` is `-----`. So MOD1→PIT is `0x03`. |
+| `--fm-mod-b <a,b,c,d>` | `0,0,0,0` | **FMSynth-only.** Per-operator MOD slot 2, same encoding. |
+| `--fm-mod-amt <1,2,3,4>` | `0,0,0,0` | **FMSynth-only.** The four `MOD1`..`MOD4` amount bytes. Measured on hardware: routed to `PIT`, each unit adds exactly one semitone, unipolar from `00`, clamped at MIDI 127 (`hw_findings.md` §UI-30). |
 | `--verify-against <path>` | — | Verify the generated probe file structure against another existing `.m8s` file. |
 | `--inspect <path>` | — | Read and print structural and patch details of an existing `.m8s` probe file. |
 
@@ -141,6 +149,15 @@ m8_makeprobe --type macrosynth --table-tick 1 --out probe_table.m8s
 
 - ~~**`--type wavsynth|fmsynth|hypersynth` always "fails" and exits 1.**~~ **STALE — disproved 2026-08-19 by running all four types.** `verifyRoundTrip` has since gained type-aware branches for `wavsynth`, `fmsynth` and `hypersynth` alongside the original `sampler` one, so none of them hits the MacroSynth check any more. Measured: `macrosynth`, `hypersynth`, `wavsynth` and `fmsynth` each **exit 0** and each print their `wrote <path> (type=... note=...)` line. Gating a script on this tool's exit code is fine now. Kept rather than deleted because the old advice ("don't gate on the exit code") is still sitting in scripts and reviewers' heads, and a silently vanished warning reads as "nobody checked".
 
+- **An FM probe cannot be loaded on the current rig, only rendered.** The `--fm-*` flags bake and
+  verify correctly, but getting a `.m8s` onto the device needs the SD card, and there is no file
+  transfer over serial (`hw_findings.md` §UI-7). §UI-30's measurement was taken by building the
+  patch **on the device** with `tools/fm_patch.py` instead. Use these flags for `m8_render`
+  comparisons, or when the file can be copied by hand.
+- **`--type fmsynth` round-trip verification only checked the instrument type until 2026-08-29.**
+  It now checks algo, every operator's level/ratio/ratio_fine/feedback/mod_a/mod_b, and all four
+  MOD amounts. The old "PASS" would have been printed by a probe with none of the requested patch
+  in it.
 - **`--volume` is `synth_params.volume`, not the on-screen "AMP" field you'd naively expect.**
   Both exist and are related but distinct — see `src/io/SongIO.cpp`'s `s.amp = sp.volume;`
   mapping if you need the exact relationship. Don't assume setting `--volume` low is equivalent

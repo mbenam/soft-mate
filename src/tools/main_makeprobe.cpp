@@ -78,6 +78,47 @@ static uint8_t parseNote(const char* s) {
 
 // ---- build a minimal song -------------------------------------------------
 
+// FMSynth-only, and the reason is the same one that produced --swarm/--width and
+// --size/--mult: ScreenModel.h has no FM field map, so ALGO, the per-operator
+// RATIO/LEV/FB and the MOD routing cannot be addressed on the device by name, and
+// raw cursor movement onto the MOD row lands on operator A with no reliable walk
+// to B/C/D. Baking the patch into the probe and loading it is the route
+// hw_findings.md UI-11 used for HyperSynth WIDTH. Defaults reproduce exactly what
+// this generator hardcoded before these fields existed.
+//
+// mod_a / mod_b are the device's own encoding, one byte per routing slot:
+// high nibble = source, 0..3 for MOD1..MOD4; low nibble = destination,
+// 1 = LEV, 2 = RAT, 3 = PIT, 4 = FBK. 0x00 is "-----", no routing.
+// So "MOD1 -> PIT" is 0x03. amt[] are the four MOD amount bytes themselves.
+struct FmProbe {
+    int algo = 0;
+    int level[4]     = {0x80, 0x80, 0x80, 0x80};
+    int ratio[4]     = {1, 1, 1, 1};
+    int ratioFine[4] = {0, 0, 0, 0};
+    int feedback[4]  = {0, 0, 0, 0};
+    int modA[4]      = {0, 0, 0, 0};
+    int modB[4]      = {0, 0, 0, 0};
+    int amt[4]       = {0, 0, 0, 0};
+};
+
+// Parse "a,b,c,d" into four ints (0x-prefixed hex accepted). Fewer than four
+// values leaves the rest at their defaults; more is an error the caller reports.
+static bool parseQuad(const std::string& text, int out[4]) {
+    size_t start = 0;
+    int n = 0;
+    while (start <= text.size() && n < 5) {
+        size_t comma = text.find(',', start);
+        std::string tok = text.substr(start, comma == std::string::npos ? std::string::npos
+                                                                        : comma - start);
+        if (tok.empty()) return false;
+        if (n >= 4) return false;
+        out[n++] = static_cast<int>(std::strtol(tok.c_str(), nullptr, 0));
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return n > 0;
+}
+
 static m8::Song buildProbeSong(
     const std::string& instType,
     uint8_t noteVal,
@@ -120,7 +161,8 @@ static m8::Song buildProbeSong(
     // Without this there was NO way to set AMP from a probe: this generator
     // hardcoded amp_type = 0, so every probe ever made had AMP 00 on the
     // device, which is exactly what made an AMP sweep look like it did nothing.
-    int probeAmp = 0x00)
+    int probeAmp = 0x00,
+    const FmProbe& fmp = FmProbe{})
 {
     m8::Song song;
 
@@ -295,21 +337,27 @@ static m8::Song buildProbeSong(
         fm.name = "PROBE";
         fm.transpose = true;
         fm.table_tick = static_cast<uint8_t>(tableTick);
-        fm.algo = m8::FmAlgo::Algo0;
-        fm.mod1 = fm.mod2 = fm.mod3 = fm.mod4 = 0;
-        // level=0x80/ratio=1 on every operator, not 0: output amplitude is
-        // entirely level-driven, and different algorithms use different
-        // operators as carriers (e.g. Algo0's carrier is op D, index 3), so
-        // an all-zero-level probe is silent under every algorithm -- not a
-        // useful "does this engine make sound" fixture.
-        for (auto& op : fm.operators) {
+        fm.algo = static_cast<m8::FmAlgo>(fmp.algo);
+        fm.mod1 = static_cast<uint8_t>(fmp.amt[0]);
+        fm.mod2 = static_cast<uint8_t>(fmp.amt[1]);
+        fm.mod3 = static_cast<uint8_t>(fmp.amt[2]);
+        fm.mod4 = static_cast<uint8_t>(fmp.amt[3]);
+        // The default level=0x80/ratio=1 on every operator, not 0: output
+        // amplitude is entirely level-driven, and different algorithms use
+        // different operators as carriers (e.g. Algo0's carrier is op D, index
+        // 3), so an all-zero-level probe is silent under every algorithm -- not
+        // a useful "does this engine make sound" fixture. --fm-level overrides
+        // it per operator, which is how a single-carrier probe is made.
+        for (int i = 0; i < 4; ++i) {
+            auto& op = fm.operators[i];
             op.shape = m8::FMWave::Sin;
-            op.ratio = 1;
-            op.ratio_fine = 0;
-            op.level = 0x80;
-            op.feedback = 0;
+            op.ratio = static_cast<uint8_t>(fmp.ratio[i]);
+            op.ratio_fine = static_cast<uint8_t>(fmp.ratioFine[i]);
+            op.level = static_cast<uint8_t>(fmp.level[i]);
+            op.feedback = static_cast<uint8_t>(fmp.feedback[i]);
             op.retrigger = 0;
-            op.mod_a = op.mod_b = 0;
+            op.mod_a = static_cast<uint8_t>(fmp.modA[i]);
+            op.mod_b = static_cast<uint8_t>(fmp.modB[i]);
         }
         fm.synth_params = makeSynthParams(volume);
         song.instruments[0] = fm;
@@ -429,7 +477,8 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
                             int expectedPan = 0x80,
                             int wavSize = -1, int wavMult = -1,
                             int wavWarp = -1, int wavScan = -1,
-                            int expectedAmp = -1) {
+                            int expectedAmp = -1,
+                            const FmProbe* fmp = nullptr) {
     // Read the file back
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { std::fprintf(stderr, "  cannot open %s for verify\n", path.c_str()); return false; }
@@ -502,6 +551,39 @@ static bool verifyRoundTrip(const std::string& path, const std::string& instType
         if (!std::holds_alternative<m8::FMSynth>(song.instruments[0])) {
             std::fprintf(stderr, "  FAIL: instrument 0 is not FMSynth\n");
             return false;
+        }
+        // Every field the FM probe flags can set is checked here. The generator's
+        // own PASS meant only "it is an FMSynth" before, which is exactly the kind
+        // of check that passes while the patch it was meant to bake is missing.
+        if (fmp) {
+            const auto& fm = std::get<m8::FMSynth>(song.instruments[0]);
+            if (static_cast<int>(fm.algo) != fmp->algo) {
+                std::fprintf(stderr, "  FAIL: algo %02X != %02X\n",
+                             static_cast<int>(fm.algo), fmp->algo);
+                return false;
+            }
+            const int amt[4] = { fm.mod1, fm.mod2, fm.mod3, fm.mod4 };
+            for (int i = 0; i < 4; ++i) {
+                if (amt[i] != fmp->amt[i]) {
+                    std::fprintf(stderr, "  FAIL: MOD%d amount %02X != %02X\n",
+                                 i + 1, amt[i], fmp->amt[i]);
+                    return false;
+                }
+                const auto& op = fm.operators[i];
+                if (op.level != fmp->level[i] || op.ratio != fmp->ratio[i] ||
+                    op.ratio_fine != fmp->ratioFine[i] || op.feedback != fmp->feedback[i] ||
+                    op.mod_a != fmp->modA[i] || op.mod_b != fmp->modB[i]) {
+                    std::fprintf(stderr,
+                                 "  FAIL: operator %c is %02X/%02X.%02X/%02X/%02X/%02X, "
+                                 "wanted %02X/%02X.%02X/%02X/%02X/%02X"
+                                 " (lev/ratio.fine/fb/modA/modB)\n",
+                                 'A' + i, op.level, op.ratio, op.ratio_fine, op.feedback,
+                                 op.mod_a, op.mod_b,
+                                 fmp->level[i], fmp->ratio[i], fmp->ratioFine[i],
+                                 fmp->feedback[i], fmp->modA[i], fmp->modB[i]);
+                    return false;
+                }
+            }
         }
     } else if (instType == "hypersynth") {
         if (!std::holds_alternative<m8::HyperSynth>(song.instruments[0])) {
@@ -645,6 +727,7 @@ int main(int argc, char** argv) {
     // flags existed, so existing probe recipes are unchanged.
     int wavSize = 0x80, wavMult = 0x80, wavWarp = 0x00, wavScan = 0x00;
     int probeAmp = 0x00;
+    FmProbe fmp;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -680,6 +763,14 @@ int main(int argc, char** argv) {
         else if (a == "--warp")        wavWarp = num();
         else if (a == "--scan")        wavScan = num();
         else if (a == "--amp")         probeAmp = num();
+        else if (a == "--fm-algo")     fmp.algo = num();
+        else if (a == "--fm-level")    { if (!parseQuad(next(), fmp.level)) { std::fprintf(stderr, "--fm-level wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-ratio")    { if (!parseQuad(next(), fmp.ratio)) { std::fprintf(stderr, "--fm-ratio wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-ratio-fine") { if (!parseQuad(next(), fmp.ratioFine)) { std::fprintf(stderr, "--fm-ratio-fine wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-fb")       { if (!parseQuad(next(), fmp.feedback)) { std::fprintf(stderr, "--fm-fb wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-mod-a")    { if (!parseQuad(next(), fmp.modA)) { std::fprintf(stderr, "--fm-mod-a wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-mod-b")    { if (!parseQuad(next(), fmp.modB)) { std::fprintf(stderr, "--fm-mod-b wants up to four comma-separated values\n"); return 1; } }
+        else if (a == "--fm-mod-amt")  { if (!parseQuad(next(), fmp.amt)) { std::fprintf(stderr, "--fm-mod-amt wants up to four comma-separated values\n"); return 1; } }
         else if (a == "--verify-against") verifyAgainst = next();
         else if (a == "--inspect")     inspectPath = next();
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); return 1; }
@@ -801,11 +892,11 @@ int main(int argc, char** argv) {
     auto song = buildProbeSong(instType, noteVal, shape, timbre, color,
                                volume, filterType, filterCutoff, filterRes, tempo, samplePath,
                                tableTick, slice, modAmt, modHold, hyperSwarm, hyperWidth,
-                               probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp);
+                               probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp, fmp);
     writeSongFile(outPath, song);
 
     if (!verifyRoundTrip(outPath, instType, shape, timbre, color, samplePath, volume,
-                         probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp)) {
+                         probePan, wavSize, wavMult, wavWarp, wavScan, probeAmp, &fmp)) {
         std::fprintf(stderr, "round-trip FAILED\n");
         return 1;
     }

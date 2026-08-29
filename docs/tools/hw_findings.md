@@ -2381,3 +2381,145 @@ they differ most.
   both, and only one was varied. These numbers are RT60 at SIZE `FF`.
 - The excitation was a 300 ms sine at C-4. A broadband source could decay
   differently if the reverb is frequency-dependent; that was not tested.
+
+---
+
+## UI-30 — FM `PIT` modulation is one semitone per unit, unipolar, clamped at MIDI 127
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/captures_backlog.md` B1, and `docs/captures.md` §Capture 1,
+  open since 2026-07 as "attempted, blocked".
+
+### What actually unblocked it
+
+The blocker on record was that `m8_makeprobe` had no FM field map, so the patch
+could not be authored, and `ScreenModel.h` has none either, so it could not be
+driven. Both halves were addressed, and **the half that was expected to work did
+not**:
+
+- `m8_makeprobe` gained `--fm-algo`, `--fm-level`, `--fm-ratio`,
+  `--fm-ratio-fine`, `--fm-fb`, `--fm-mod-a`, `--fm-mod-b` and `--fm-mod-amt`,
+  with `verifyRoundTrip` now checking every one of them — previously its FM
+  "PASS" meant only "instrument 0 is an FMSynth". The patch below bakes and
+  verifies correctly.
+- **It could not be loaded.** Loading a probe needs the file on the SD card, and
+  there is no file transfer over serial (§UI-7) — the card is not mounted on the
+  host while the device is in headless serial mode. The §UI-11 route for
+  HyperSynth worked because those probes were already on the card.
+
+So the patch was built **on the device** instead, which needed the other half:
+a way to address the FM screen's cells.
+
+### Mapping a screen whose cursor coordinates are useless
+
+The FM instrument screen reports the same cursor position at every stop along a
+row — walking right along `LEV/FB` gives `(120, 8)` eight times. Position reads
+cannot map it.
+
+What can: **press a value key and read back which number on the screen moved.**
+That is the same trick rig fact 5 uses for the table playhead, it needs nothing
+the driver does not already have, and it is unambiguous. `tools/fm_probe_map.py`
+does it — increment, dump, decrement, dump again to prove it went back. From a
+cursor homed on `TYPE`, saturating LEFT before counting RIGHT:
+
+| Path | Cell |
+|---|---|
+| `DOWN*3 LEFT*2 RIGHT*0` | `ALGO` |
+| `DOWN*6 LEFT*4 RIGHT*n` | n=0 LEV A, 1 FB A, 2 LEV B, 3 FB B, 4 LEV C, 5 FB C, 6 LEV D, 7 FB D |
+| `DOWN*7 LEFT*5 RIGHT*n` | MOD slot 1 of operator A/B/C/D |
+| `DOWN*9 LEFT*2 RIGHT*0` | `MOD1` amount — `RIGHT*1` is `AMP`, do not overshoot |
+
+Two things this cost, recorded so the next person does not pay them again.
+**The DOWN chain remembers the horizontal position per row**, so a bare `DOWN*6`
+lands wherever that row was left, not at its first cell — saturate LEFT before
+counting. And **these enum lists do not wrap**: stepping forward from `1>PIT`
+runs up to `4>FBK` and stops, so a one-directional walk can never get back to
+`-----`. `fm_patch.py` reverses on a stall.
+
+### The patch
+
+Instrument 00, `TYPE FMSYNTH`, built and read back on the device:
+
+```
+ALGO    0B A+B+C+D
+RATIO   01.00 01.00 01.00 01.00
+LEV/FB  FF/00 00/00 00/00 00/00
+MOD     1>PIT ----- ----- -----
+MOD1    00 .. FF        AMP 00   LIM 00   PAN 80   DRY C0
+FILTER  00 OFF   CUTOFF FF   RES 00   MFX 00   DEL 00   REV 00
+```
+
+`ALGO 0B` reads `A+B+C+D` on the device — the fully additive algorithm — so with
+B, C and D at level `00`, operator A is heard alone with nothing modulating it.
+Captured by keyjazz at velocity `0x40`, 3 s, `tools/fm_run.py` asserting the
+whole INSTRUMENT screen and MIXER before and after each capture. Nothing drifted
+in any run.
+
+### The control, first
+
+With the MOD slot at `-----` the patch plays keyjazz note 60 at **261.631 Hz**
+by autocorrelation and **261.633 Hz** by interpolated FFT peak — 0.0 cents from
+261.63. So the rig measures pitch correctly before any modulation is applied.
+
+### Results
+
+`tools/fm_pitch.py`, three estimators. Semitones are from the FFT peak, against
+261.63 Hz. `domin` is the fraction of energy within ±3 bins of that peak — 0.89
+throughout, i.e. a clean single tone in every capture.
+
+| `MOD1` | dec | measured Hz | semitones from the played note |
+|---|---|---|---|
+| `-----` (control) | — | 261.633 | 0.000 |
+| `00` | 0 | 261.633 | **0.000** |
+| `01` | 1 | 277.190 | **1.000** |
+| `08` | 8 | 415.298 | **7.999** |
+| `10` | 16 | 659.254 | **16.000** |
+| `20` | 32 | 1661.223 | **32.000** |
+| `30` | 48 | 4186.010 | **48.000** |
+| `40` | 64 | 10548.088 | **64.000** |
+| `42` | 66 | 11839.814 | **66.000** |
+| `44` | 68 | 12543.845 | 67.000 — clamped |
+| `60` | 96 | 12543.845 | 67.000 — clamped |
+| `80` | 128 | 12543.845 | 67.000 — clamped |
+| `A0` | 160 | 12543.845 | 67.000 — clamped |
+| `C0` | 192 | 12543.845 | 67.000 — clamped |
+| `FF` | 255 | 12543.845 | 67.000 — clamped |
+
+**The `MOD` amount adds exactly its own value in semitones.** Eight points from
+0 to 66 land within 0.001 of the integer. There is no scaling constant to fit.
+
+### The three questions the item asked
+
+1. **How many semitones does a full PIT modulation add?** `N` units add `N`
+   semitones. A full `FF` would be +255 semitones; what you actually get is the
+   clamp below.
+2. **Is it bipolar?** **No.** `00` reproduces the control pitch to 0.000
+   semitones, and no value anywhere in `00`..`FF` bends the note down. The
+   manual's "adds to the note pitch in semitones" is literal.
+3. **Where is its centre?** There is no centre. `00` is the neutral point, not
+   `80`.
+
+### The ceiling is MIDI 127, not a fixed offset
+
+Everything from `44` up came back at 12543.845 Hz, which is MIDI note 127. The
+same note played at MIDI 48 with `MOD1 FF` also came back at **12543.845 Hz** —
++79 semitones there rather than +67 — while MIDI 48 with `MOD1 20` came back at
+830.617 Hz, exactly +32.000. So the offset is relative to the played note and
+the result is then clamped to an absolute MIDI 127.
+
+The five captures at `60`/`80`/`A0`/`C0`/`FF` are not the same file — different
+frame counts, `m8_analyze --diff` FAILs — but they measure identically to three
+decimals in all three estimators and to four in peak level. The clamp is on the
+resulting pitch, not on the byte.
+
+### What this does not cover
+
+- `MOD1` was set as the instrument's own static amount. These values are also
+  driven from tables and FX commands; whether that path scales identically was
+  not tested.
+- `PIT` was routed on **operator A**, a carrier under `ALGO 0B`. On a modulator
+  operator the same destination changes the modulating frequency, and the law
+  there was not measured.
+- Above `44` the pitch is clamped rather than aliased, so nothing here says what
+  the device would do with an unclamped ultrasonic operator.
