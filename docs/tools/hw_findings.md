@@ -2721,6 +2721,23 @@ about 60 ms after the note starts. A single output number does not describe what
 - **Firmware:** 6.5.2, COM3
 - **Answers:** tessera `docs/captures_backlog.md` A3.
 
+**CORRECTED 2026-08-29 — see §UI-35.** This section's rig was rebuilt from the
+Method below and its four captures retaken, twice, each time from a fresh card
+reload. **The chorus figure reproduces exactly (−6.081 dB, to three decimals).
+The delay and reverb figures do not:** delay measures **−11.421 dB** against
+−7.230 here, and reverb **−10.294 dB** against −8.461. The two repeat runs agree
+with each other to 0.003 dB.
+
+So the ordering and the spread in the Results table below are wrong as well —
+measured again it is chorus, then reverb, then delay, spanning 5.340 dB rather
+than 2.380. The window, the estimator, the dry reference, the delay's `TIME` and
+the master return levels were each eliminated as the cause; §UI-35 lists how.
+Why this section read high on those two captures is not known.
+
+**Everything below is left as written**, as the record of what was measured
+then. Take the delay and reverb numbers from §UI-35; the chorus number here
+stands and is confirmed.
+
 ### Method
 
 `WAVV7F.M8S` reloaded from the card. Instrument 00: `TYPE WAVSYNTH`,
@@ -3075,6 +3092,12 @@ catching an attack or a tail.
 
 ### An absolute level that does NOT reconcile with §UI-32
 
+**RESOLVED 2026-08-29 — see §UI-35.** §UI-32's rig was rebuilt from its own
+Method and its captures retaken twice. The reading below is confirmed
+(−11.421 dB against §UI-32's own 50-350 ms window, repeating to 0.001 dB) and
+§UI-32's delay figure is the one that does not reproduce. Its chorus figure
+does, exactly, which is what rules out the rig and the window.
+
 Against the `DRY FF` reference from Run B at the same fader, the delay return
 here sits at **−11.404 dB** (`A0`: −23.993 against −12.589). §UI-32 reports
 **−7.230 dB** for the same send, from a rig it describes in the same terms.
@@ -3120,3 +3143,126 @@ does not transfer to it. Left open deliberately; it deserves its own item.
   `PAN`, `DRY`, `DEL`, `REV`, `FILTER`, `CUTOFF` and `RES` all land correctly.
   Anything needing `SHAPE` or `MFX` on a WAVSYNTH must go through
   `tools/step_cell.py`.
+
+---
+
+## UI-35 — §UI-32's chorus figure reproduces exactly; its delay and reverb do not
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Corrects:** §UI-32's delay and reverb return levels. Its chorus figure and
+  its method stand.
+- **Bears on:** tessera F44, whose send-return trims are aimed at §UI-32's three
+  numbers.
+
+§UI-34 measured the delay return at −11.404 dB against a matched `DRY FF`
+reference where §UI-32 reports −7.230, and left the 4.17 dB open because the two
+sections had different purposes and different rigs. This section closes it by
+rebuilding §UI-32's rig from its own Method section and taking its own four
+captures.
+
+### Method
+
+§UI-32's Method, followed literally: `WAVV7F.M8S` reloaded from the card;
+instrument 00 `TYPE WAVSYNTH`, `SHAPE 06 SINE`, `SIZE 80`, `MULT 80`, `AMP 00`,
+`LIM 00`, `PAN 80`, `FILTER 00 OFF`, `CUTOFF FF`, `RES 00`; mixer
+`TRACK1_VOL A0`, all three returns `MX`/`DE`/`RE` at `E0`, `MIX E0`, `LIM 00`,
+`OTT 00`, `DJF 80`. Keyjazz note 60 at velocity `0x40`, **3 s** captures, one
+send changed at a time, `tools/level_run.py` asserting the rig before and after
+each. Measured with §UI-32's own estimators: in-note RMS over **50-350 ms** from
+the note's onset, and whole-capture energy.
+
+**`OUTPUT VOL` is not stated in §UI-32's Method.** It reads `F0` on a fresh card
+reload and was left there, which is also what §UI-31 and §UI-34 used.
+
+**Every effect parameter was read off the EFFECTS screen and is `00`** — chorus
+`MOD DEPTH:FRQ 00:00` / `STEREO WIDTH 00` / `REVERB SEND 00`; delay
+`TIME L:R 00:00` / `FEEDBACK 00` / `STEREO WIDTH 00` / `REVERB SEND 00`; reverb
+`ROOM SIZE 00` / `DECAY:SHIMMER 00:00` / `MOD DEPTH:FRQ 00:00` /
+`STEREO WIDTH 00`. That is the null configuration §UI-32 describes.
+
+`SHAPE` and `MFX` are unreachable by name on a WAVSYNTH and were stepped with
+`tools/step_cell.py` (§UI-34, Tooling).
+
+**The whole set was taken twice, each time from a fresh card reload and a rig
+rebuilt from scratch.**
+
+### Results
+
+Relative to the matched `DRY FF` reference taken in the same run:
+
+| capture | run 1 in-note | run 1 energy | run 2 in-note | run 2 energy | §UI-32 in-note |
+|---|---|---|---|---|---|
+| chorus, `MFX FF` | **−6.081** | −6.174 | — | — | **−6.081** |
+| delay, `DEL FF` | **−11.421** | −11.409 | **−11.421** | −11.435 | −7.230 |
+| reverb, `REV FF` | **−10.294** | −9.737 | **−10.297** | −9.736 | −8.461 |
+
+Run 1 against run 2: **0.001 dB** on the delay in-note figure and **0.002 dB** on
+the reverb. Neither run clipped.
+
+**The chorus figure reproduces to three decimal places.** That is the load-
+bearing result of this section: it means the rig, the dry reference, the
+instrument `DRY`, the measurement window, the estimator and the tooling are all
+the same as §UI-32's. Whatever moved the other two did not move chorus.
+
+**The delay is 4.191 dB quieter than §UI-32 has it, and the reverb 1.833 dB
+quieter.** Both differences are far outside the 0.003 dB the rig repeats to.
+
+The ordering changes with them. §UI-32 has chorus loudest, then delay, then
+reverb, spanning 2.380 dB. Measured here it is chorus, then reverb, then delay,
+spanning **5.340 dB**.
+
+### What was eliminated, and how
+
+- **The measurement window.** On the delay capture, RMS over 50-350 ms and over
+  100-420 ms differ by **0.017 dB**. The two sections used those two windows and
+  it is not the cause.
+- **Peak against RMS.** Both estimators move together: in-note −11.421 and
+  whole-capture energy −11.409 for the delay.
+- **The instrument `DRY` of the reference.** Ruled out by the chorus match — a
+  different reference level would have moved chorus by the same amount.
+- **The delay's `TIME` against the capture window.** `TIME L:R` reads `00:00`,
+  so nothing is deferred; and the sign is wrong for the hypothesis anyway. A
+  tempo-synced delay returning *after* the window would make §UI-32's figure
+  **quieter** than this one, and it is louder.
+- **The master returns.** §UI-34 already retook the delay point with `MX` and
+  `RE` at `E0` as §UI-32 had them rather than at `00`: −23.996 against −23.993
+  dBFS, a difference of 0.003 dB.
+- **Drift within a run.** Every capture was guarded on both sides by a full
+  re-read of INSTRUMENT and MIXER; none drifted.
+- **A one-off.** Two complete runs from two card reloads agree to 0.003 dB.
+
+### The reverb return is not a steady tone, and its figure is soft
+
+At `ROOM SIZE 00` and `DECAY:SHIMMER 00:00` the reverb return still rings for
+**67** 20 ms bins — 1.34 s, past the end of the 480 ms note — and swings between
+−20 and −43 dB across them rather than holding a level. The dry, chorus and
+delay captures all hold flat for 24 bins and stop at digital zero on bin 26.
+
+So the reverb's in-note number is measuring an attack, not a settled level, and
+it is the one figure here that is genuinely window-dependent: its in-note and
+energy readings differ by 0.56 dB where the delay's differ by 0.01. Its 1.833 dB
+gap against §UI-32 is larger than that, but the reverb is the weaker of the two
+corrections and is marked as such.
+
+§UI-32 counted this ring as "about 11 envelope bins against 6 for the others".
+Those counts are not reproduced here — 67 against 26 — but §UI-32 does not say
+what threshold it counted above, so the two are not comparable and nothing is
+concluded from the difference.
+
+### What is NOT explained
+
+**Why §UI-32's delay and reverb read high is unknown.** Several arithmetic
+possibilities were checked against the measured levels and none fits:
+
+- **A dry leak into the wet captures.** Reaching −7.230 from −11.421 needs an
+  extra −9.31 dB of signal, which would be `DRY` at about `D8`; reaching −8.461
+  from −10.294 needs −13.09 dB, about `C9`. Two different values, so one
+  mis-set `DRY` does not explain both — and §UI-32 reports a control with
+  `DRY 00` and all sends `00` returning exact digital zero.
+- **Sends left open from the previous capture.** Chorus plus delay summed in
+  power is −4.966 dB, not −7.230.
+
+No claim is made about what §UI-32's session actually had. What is established
+is that its stated rig, rebuilt twice, does not produce its delay or reverb
+figures, and does produce its chorus figure exactly.
