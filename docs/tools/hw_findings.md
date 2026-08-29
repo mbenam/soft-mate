@@ -2883,3 +2883,240 @@ A sustained, spectrally clean tone. In rough order of likely cost:
 spectral peak and **reports `NOT RESOLVED` with the cycle count and the
 peak-to-median ratio** rather than returning a number, which is what stopped the
 10.5 Hz figure above from being written down as a result.
+
+---
+
+## UI-34 — The track fader is a PURE exponential at ~0.2407 dB/unit, and it scales the sends
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/parity.md` §E6.
+- **Corrects:** §UI-31's incidental reading of the same control.
+
+§UI-31 measured this fader in passing, while establishing an input axis for the
+limiter, and said so: "nothing here separates a fader taper from mild
+compression in the `LIM 00` path". This section measures it deliberately and
+separates the two.
+
+**Its nine numbers reproduce exactly** — the largest disagreement across the
+overlapping points is 0.004 dB. What changes is what they mean, and two of the
+statements around them are wrong.
+
+### The rig
+
+`WAVV7F.M8S` reloaded from the card, then §UI-31's rig rebuilt on it. Instrument
+00: `TYPE WAVSYNTH`, `SHAPE 06 SINE`, `SIZE 80`, `MULT 80`, `WARP 00`,
+`SCAN 00`, `AMP 00`, `LIM 00 CLIP`, `PAN 80`, `FILTER 00 OFF`, `CUTOFF FF`,
+`RES 00`. Mixer: `MIX E0`, `LIM 00`, `OTT 00`, `DJF 80`, `OUTPUT VOL F0`.
+
+Keyjazz note 60 at velocity `0x40`, 2 s captures, RMS over 100-420 ms from the
+note's own onset (`tools/level_measure.py`). `tools/level_run.py` re-read every
+row of INSTRUMENT and MIXER before and after **each** capture and asserted
+`DRY`, `SHAPE`, `LIM`, `OTT`, `DJF` and `MIX` on every one; **no capture in this
+section drifted and none clipped.**
+
+`SHAPE` is not in the INSTRUMENT field map and was stepped with
+`tools/step_cell.py`. See the tooling notes at the end.
+
+### Run A — the fader at `DRY C0`, twenty points
+
+`TRACK1_VOL` swept; the fourth column is §UI-31's figure where it has one.
+
+| `TRACK1_VOL` | peak dBFS | RMS dBFS | §UI-31 RMS | dB/unit from the point above |
+|---|---|---|---|---|
+| `00` | — | **digital zero** | — | — |
+| `04` | −62.350 | −65.570 | — | — |
+| `08` | −61.061 | −64.564 | — | 0.2515 |
+| `0C` | −60.206 | −63.549 | — | 0.2538 |
+| `10` | −59.183 | −62.552 | −62.554 | 0.2491 |
+| `20` | −55.345 | −58.590 | −58.586 | 0.2477 |
+| `30` | −51.419 | −54.671 | −54.669 | 0.2449 |
+| `40` | −47.575 | −50.782 | −50.782 | 0.2431 |
+| `50` | −43.741 | −46.907 | — | 0.2422 |
+| `60` | −39.886 | −43.046 | −43.047 | 0.2413 |
+| `70` | −36.039 | −39.194 | — | 0.2408 |
+| `80` | −32.193 | −35.347 | −35.347 | 0.2405 |
+| `90` | −28.343 | −31.504 | — | 0.2402 |
+| `A0` | −24.513 | −27.667 | −27.667 | 0.2398 |
+| `B0` | −20.606 | −23.831 | — | 0.2397 |
+| `C0` | −16.826 | −19.998 | −19.998 | 0.2396 |
+| `D0` | −13.002 | −16.166 | — | 0.2395 |
+| `E0` | −9.170 | −12.337 | −12.337 | 0.2393 |
+| `F0` | −5.348 | −8.507 | — | 0.2394 |
+| `FF` | −1.769 | −4.922 | — | 0.2390 |
+
+Crest is 3.15-3.24 dB at every point from `10` up, so nothing in this range
+reshapes the waveform. The three points below `10` read 3.2-3.5 dB and sit at
+25-40 LSB of a 16-bit capture; their dB-per-unit figures are the noisiest in the
+table.
+
+**`TRACK1_VOL 00` is exact digital zero** — every sample after the note's onset
+is 0, not "very quiet". The fader closes.
+
+### `TRACK1_VOL` does NOT cap at `E0`
+
+§UI-31 says "`TRACK1_VOL` caps at `E0`, so no input above −12.337 dBFS RMS /
+−9.176 dBFS peak could be presented. Anything either control does above that
+level is unmeasured."
+
+**The device takes `FF` and reads it back as `FF`**, and `F0` likewise. Set and
+read back through `m8drv`, then captured: `F0` gives −8.507 and `FF` −4.922 dBFS
+RMS, neither clipped. So §UI-31's input axis was not bounded where it says it
+was, and A6's ceiling could be pushed 7.4 dB higher than it was. Nothing here
+re-measures `LIM` or `OTT`; this only removes the stated reason not to.
+
+### Run B — the same fader 15 dB higher, and what it settles
+
+§UI-31's open question is whether the monotone shrink in the last column of Run
+A is a taper in the fader or a level-dependent path. The two make different
+predictions when the whole path is moved and the fader is not, so Run A was
+repeated with the instrument's `DRY` at `FF` instead of `C0` — 63 units of the
+same kind of control, upstream of everything else.
+
+| `TRACK1_VOL` | peak dBFS | RMS dBFS | dB/unit |
+|---|---|---|---|
+| `01` | −47.702 | −50.860 | — |
+| `02` | −47.449 | −50.616 | 0.2437 |
+| `04` | −46.904 | −50.128 | 0.2440 |
+| `08` | −45.959 | −49.162 | 0.2415 |
+| `10` | −44.032 | −47.223 | 0.2424 |
+| `20` | −40.179 | −43.352 | 0.2420 |
+| `40` | −32.478 | −35.639 | 0.2410 |
+| `60` | −24.794 | −27.944 | 0.2405 |
+| `80` | −17.099 | −20.263 | 0.2400 |
+| `A0` | −9.431 | −12.589 | 0.2398 |
+| `C0` | −1.763 | −4.923 | 0.2396 |
+
+**A taper in the fader requires the two runs to be parallel in fader
+coordinates** — `B(v) − A(v)` the same at every `v`, because `DRY` would then
+contribute a constant. It is not:
+
+| `TRACK1_VOL` | `04` | `08` | `10` | `20` | `40` | `60` | `80` | `A0` | `C0` |
+|---|---|---|---|---|---|---|---|---|---|
+| B − A, dB | 15.442 | 15.402 | 15.329 | 15.238 | 15.143 | 15.102 | 15.084 | 15.078 | 15.075 |
+
+**0.367 dB of spread. The taper-in-the-fader model is rejected.**
+
+**An exponential fader into a level-dependent path requires the two runs to be
+the same curve slid along the fader axis** — `B(v) = A(v + s)`, with `s` the
+`DRY` offset expressed in fader units. Fitting `s` freely by linear
+interpolation on Run A:
+
+- best `s` = **62.80 units**, against the 63 units that separate `DRY C0` from
+  `DRY FF`;
+- residual **0.027 dB rms, 0.047 dB worst**, over eleven points spanning 46 dB.
+
+So: **the fader is a pure exponential, and the monotone shrink §UI-31 recorded
+is downstream of it.** Two independent checks of the same thing:
+
+- `DRY C0` with `TRACK1_VOL FF` reads −4.922 dBFS; `DRY FF` with `TRACK1_VOL C0`
+  reads −4.923. The output depends only on the **sum** of the two bytes
+  (447 in both), which is what two exponentials of equal slope in series do.
+- §UI-32's incidental measured `DRY C0` at 15.08 dB below `DRY FF`, i.e. 0.239
+  dB per unit over 63 steps. Independently reproduced here at 15.075 dB.
+
+### The slope, and what this rig still cannot do
+
+The measured slope is not one number, because the path is in it:
+
+- **0.2390 dB/unit** at the top of the fader (`F0`→`FF`),
+- **0.2515 dB/unit** at the bottom (`04`→`08`),
+- **0.2407 dB/unit** for a single exponential least-squares fit over `04`-`FF`,
+  which lands every one of the nineteen points within **0.24 dB** and has a
+  smooth bow for a residual: −0.24 dB at `04`, +0.15 dB around `70`, 0 at `FF`.
+
+For comparison, linear in amplitude — `v/255` — is **35 dB** out on the same
+points. That model is not close to anything here.
+
+**The split between the fader's slope and the path's gain is not determined by
+this rig, and cannot be.** Everything measurable is the composite: the two runs
+prove the variation is *not* in the fader, but there is no control in this path
+known to be linear to calibrate the rest against, so the path's own transfer can
+be measured only up to a scale that trades off exactly against the fader's
+slope. What is bounded is its size: the whole non-exponential part of the
+composite is **0.4 dB across 60 dB of range**.
+
+### Run C — the fader scales the effect sends
+
+Manual p. 30: "the track's volume in the mixer also adjusts its effect send
+levels". Never checked on the device until now.
+
+Instrument `DRY 00`, `DEL FF`, `MFX`/`REV` `00`; master `DE` return `E0`,
+`MX`/`RE` `00`. Everything else as above. If the fader did not reach the sends,
+the last column would be a straight line at the dry level's expense — the return
+would not move at all.
+
+| `TRACK1_VOL` | send return, RMS dBFS | dry at the same fader (Run A) | send − dry |
+|---|---|---|---|
+| `10` | −58.771 | −62.552 | 3.781 |
+| `20` | −54.853 | −58.590 | 3.737 |
+| `40` | −47.089 | −50.782 | 3.693 |
+| `60` | −39.363 | −43.046 | 3.683 |
+| `80` | −31.672 | −35.347 | 3.675 |
+| `A0` | −23.993 | −27.667 | 3.674 |
+| `C0` | −16.323 | −19.998 | 3.675 |
+| `E0` | −8.661 | −12.337 | 3.676 |
+
+**The send return tracks the fader unit for unit.** It moved 50.110 dB across
+the same 208 units that moved the dry path 50.215 dB, and the difference between
+them is constant within **0.107 dB** over the whole sweep — within 0.009 dB over
+`60`-`E0`, where the path is most linear. The residual drift below `40` is the
+same path nonlinearity Run B isolated, appearing in both columns at once.
+
+So the manual is right, and **the track fader is one law, not two**: whatever
+gain it applies, it applies before the split, and the wet-to-dry ratio at a
+fixed fader is independent of where the fader sits.
+
+Two checks that these are not artefacts: L and R are bit-identical with
+correlation 1.0000 in every send capture, so no mono-sum comb loss is hiding in
+the numbers; and both the dry and the send envelopes are flat within 0.1 dB
+across the whole 480 ms note, in 20 ms bins, so the measurement window is not
+catching an attack or a tail.
+
+### An absolute level that does NOT reconcile with §UI-32
+
+Against the `DRY FF` reference from Run B at the same fader, the delay return
+here sits at **−11.404 dB** (`A0`: −23.993 against −12.589). §UI-32 reports
+**−7.230 dB** for the same send, from a rig it describes in the same terms.
+
+The one rig difference visible between the two — §UI-32 had all three master
+returns at `E0`, Run C had only `DE` — **was tested and is not the cause**: the
+`A0` point retaken with `MX` and `RE` also at `E0` reads −23.996 dBFS against
+−23.993, a difference of 0.003 dB.
+
+**No number is corrected here and nothing is concluded from it.** This section
+did not set out to reproduce §UI-32 and did not reproduce its conditions
+(different `DRY`, different sweep, different purpose), so the 4.17 dB is
+recorded as an open discrepancy for whoever re-opens A3, not as a finding
+against it. E6's answer does not depend on it: the answer is the *slope*, and
+the slope is unambiguous.
+
+### Incidental: `MIX_VOL` is not linear in amplitude either
+
+Two points only, both guarded, at `TRACK1_VOL E0` / `DRY C0`:
+
+| `MIX` | RMS dBFS |
+|---|---|
+| `40` | −56.515 |
+| `E0` | −12.337 |
+
+44.178 dB across 160 units, an average of **0.2761 dB per unit**. Linear in
+amplitude would be 10.88 dB. So the master mix fader is exponential too, but
+**two points do not fit a law** and its slope is not the track fader's — it also
+sits at a different place in the path, so this section's separation argument
+does not transfer to it. Left open deliberately; it deserves its own item.
+
+### Tooling
+
+- **`m8drv set MIX_VOL` fails intermittently.** It refuses with "the cell reads
+  `MIX 40`, which has no leading hex digits to converge against" — the accented
+  cursor text sometimes includes the `MIX` label and sometimes does not, which
+  is the frame-to-frame accent variation `m8drv.md` already documents in
+  general. It cost this section the rest of the `MIX_VOL` sweep. Step that cell
+  with `tools/step_cell.py` instead of setting it; the map entry is fine.
+- **The INSTRUMENT field map is the sampler's, and does not fit WAVSYNTH.**
+  `SAMPLE` lands on the `SIZE` row, `SHAPE` has no field at all, and `CHO` —
+  the instrument's `MFX` send — is not found on this screen. `AMP`, `LIM`,
+  `PAN`, `DRY`, `DEL`, `REV`, `FILTER`, `CUTOFF` and `RES` all land correctly.
+  Anything needing `SHAPE` or `MFX` on a WAVSYNTH must go through
+  `tools/step_cell.py`.
