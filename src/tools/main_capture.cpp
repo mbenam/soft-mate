@@ -226,7 +226,7 @@ static std::vector<BatchEntry> readBatchFile(const std::string& path, bool& ok) 
 static std::vector<float> captureOnce(SerialPort& serial, CaptureData& captureData,
                                       uint8_t startMask, uint8_t stopMask,
                                       double seconds, float preRollMs, float tailSeconds,
-                                      int keyjazzNote, uint8_t keyjazzVel) {
+                                      int keyjazzNote, uint8_t keyjazzVel, double noteMs) {
     {
         std::lock_guard<std::mutex> lock(captureData.mtx);
         captureData.frames.clear();
@@ -255,12 +255,27 @@ static std::vector<float> captureOnce(SerialPort& serial, CaptureData& captureDa
         std::printf("serial: play sent (start-mask: 0x%02X)\n", startMask);
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
+    // --note-ms releases the keyjazz note early and keeps recording for the rest of
+    // the window. Without it the note is held for the whole capture, so anything that
+    // rings on AFTER the note stops -- a reverb or a delay tail -- is never in the file.
+    // That is what blocked the reverb RT60 measurement; see hw_findings.md UI-29.
+    const double windowMs = seconds * 1000.0;
+    const bool earlyRelease = keyjazz && noteMs > 0.0 && noteMs < windowMs;
+    if (earlyRelease) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(noteMs)));
+        serialKeyjazzOff(serial);
+        std::printf("serial: keyjazz note-off after %.0f ms (recording the tail)\n", noteMs);
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(windowMs - noteMs)));
+    } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(windowMs)));
+    }
 
     captureData.done.store(true);
     if (keyjazz) {
-        serialKeyjazzOff(serial);
-        std::printf("serial: keyjazz note-off\n");
+        if (!earlyRelease) {
+            serialKeyjazzOff(serial);
+            std::printf("serial: keyjazz note-off\n");
+        }
     } else {
         serialStop(serial, stopMask);
         std::printf("serial: stop sent (stop-mask: 0x%02X)\n", stopMask);
@@ -301,6 +316,7 @@ int main(int argc, char** argv) {
     uint8_t stopMask = 0x08;
     int keyjazzNote = -1;          // >=0 => play a live note instead of PLAY toggle
     uint8_t keyjazzVel = 0x7F;
+    double noteMs = 0.0;           // >0 => release the keyjazz note early, keep recording
     bool checkLevel = false;
     float floorLevel = 0.5f;
 
@@ -320,6 +336,7 @@ int main(int argc, char** argv) {
         else if (a == "--stop-mask")  stopMask  = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
         else if (a == "--keyjazz")    keyjazzNote = static_cast<int>(std::strtol(next().c_str(), nullptr, 0)); // MIDI note (60=C-4)
         else if (a == "--keyjazz-vel") keyjazzVel = static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0));
+        else if (a == "--note-ms")     noteMs = std::atof(next().c_str());
         else if (a == "--check-level") {
             checkLevel = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -332,7 +349,7 @@ int main(int argc, char** argv) {
     if (port.empty()) {
         std::fprintf(stderr,
             "usage: m8_capture --port COM4 --audio M8 [--seconds 3] [--out out.wav]\n"
-            "                  [--start-mask 0x08] [--stop-mask 0x08]\n"
+            "                  [--start-mask 0x08] [--stop-mask 0x08] [--note-ms 300]\n"
             "       m8_capture --port COM4 --audio M8 --batch probes.txt --out-dir refs/\n");
         return 1;
     }
@@ -426,7 +443,7 @@ int main(int argc, char** argv) {
             std::string dummy;
             std::getline(std::cin, dummy);
 
-            auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
+            auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel, noteMs);
             bool levelPassed = checkCapturePeak(trimmed, floorLevel, checkLevel);
             float peak = 0.0f;
             for (float s : trimmed) peak = std::max(peak, std::fabs(s));
@@ -438,7 +455,7 @@ int main(int argc, char** argv) {
         }
         std::printf("\nbatch complete: %zu/%zu captured\n", ok, batchEntries.size());
     } else {
-        auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel);
+        auto trimmed = captureOnce(serial, captureData, startMask, stopMask, seconds, preRollMs, tailSeconds, keyjazzNote, keyjazzVel, noteMs);
         bool levelPassed = checkCapturePeak(trimmed, floorLevel, checkLevel);
         float peak = 0.0f;
         for (float s : trimmed) peak = std::max(peak, std::fabs(s));

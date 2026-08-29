@@ -2263,3 +2263,121 @@ made this unresolvable from the manual alone and is why it was measured.
 The clone's B10. All three modes were parsed and then skipped, so the table froze
 on whatever row it was on. They are implemented in F41 with these mappings, each
 citing this section.
+
+---
+
+## UI-29 — Reverb DECAY → RT60, measured at six points
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/captures_backlog.md` A1.
+
+### The rig, and what it took to build it
+
+`m8_capture` held the keyjazz note for the whole recording window, so a reverb
+tail — which by definition happens *after* the note stops — could never be in the
+file. That is the only thing that blocked this item. `--note-ms` was added:
+release the note early, keep recording. Everything else here already existed.
+
+`m8drv set REV_DEC` cannot set the field. EFFECT SETTINGS draws decay and shimmer
+as one row, `DECAY:SHIMMER C0:00`, and `readCursorValue` returns the accent cells
+glued as `:SHIMMERC0`, which has no leading hex run — so `editValue` refuses. One
+attempt to force it timed out mid-sweep and left DECAY on `45`, which is the
+failure the refusal exists to prevent. `tools/set_rev_decay.py` steps the byte
+with the pinned gestures and re-reads the decoded row after every batch.
+
+**Instrument 00** (WAVSYNTH, SHAPE `06 SINE`, SIZE `20`, MULT/WARP/SCAN `00`):
+`DRY 00`, `MFX 00`, `DEL 00`, `REV FF`, `FILTER 00 OFF`, `CUTOFF FF`, `RES 00`,
+`AMP 00`, `LIM 00 CLIP`, `PAN 80`. So nothing dry reaches the output and the
+whole capture is the reverb's own output.
+
+**Reverb block, held fixed:** `INPUT EQ --`, `ROOM SIZE FF`, `SHIMMER 00`,
+`MOD DEPTH:FRQ 10:FF`, `STEREO WIDTH FF`. **The MODFX and DELAY blocks' own
+`REVERB SEND` were both `00`.** **Mixer:** returns `MX/DE/RE` all `E0`,
+`MIX E0`, `LIM 00`, `OTT 00`, `DJF 80`, `OUTPUT VOL F0`.
+
+**Capture:** keyjazz note 60 at velocity `0x40`, released after 300 ms,
+recording for 18 s (60 s for the `FF` re-run). `tools/rt60_run.py` reads the
+decoded row text of INSTRUMENT, EFFECT SETTINGS and MIXER before *and* after
+every capture and renames the WAV `.DRIFTED` if any row moved. No run in this
+session drifted. One run (`FF`, 18 s) was killed by an external timeout during
+its *after* read and was discarded and re-taken rather than kept.
+
+**The USB tap's floor is exact digital zero, not a noise floor.** Every capture
+here ends in literal zero samples. That is worth knowing generally: it means a
+full 60 dB of decay is really measurable on this rig, so the numbers below are
+measured rather than extrapolated from a T20/T30 fit.
+
+### Results
+
+`tools/rt60_measure.py`, three estimators per file. The headline column is
+Schroeder backward integration, time from the energy-decay curve's −5 dB point
+to its −65 dB point — a real 60 dB, no extrapolation.
+
+| DECAY | RT60, EDC −5→−65 dB | T30 extrapolated | envelope slope fit | tail reaches digital zero at |
+|---|---|---|---|---|
+| `00` | **0.528 s** | 0.537 s | 0.571 s (105.2 dB/s) | 1.04 s |
+| `40` | **0.854 s** | 0.993 s | 1.316 s (45.6 dB/s) | 1.54 s |
+| `80` | **1.667 s** | 1.807 s | 2.157 s (27.8 dB/s) | 2.57 s |
+| `C0` | **3.615 s** | 3.683 s | 4.265 s (14.1 dB/s) | 5.25 s |
+| `E0` | **8.512 s** | 9.204 s | 10.600 s (5.7 dB/s) | 11.42 s |
+| `FF` | **not reached in 60 s** | — | 0.29 dB/s | still ringing at 60.22 s |
+
+A second, independent capture at `C0` (the trial run, same rig) gave 3.775 s /
+3.889 s / 4.467 s and silence at 5.37 s. **Run-to-run spread is about 4%**, so
+these figures are good to roughly ±0.15 s at `C0` and proportionally elsewhere.
+The three estimators disagree by up to 15% at any one setting, always in the same
+order — the raw-envelope slope fit is the highest because the first few hundred
+ms decay faster than the rest. Where a single number is wanted, the EDC column is
+the one to use.
+
+The EDC crossings, in seconds from note-off, are the raw shape:
+
+| DECAY | −5 | −15 | −25 | −35 | −45 | −55 | −65 |
+|---|---|---|---|---|---|---|---|
+| `00` | 0.043 | 0.143 | 0.245 | 0.295 | 0.396 | 0.457 | 0.571 |
+| `40` | 0.162 | 0.249 | 0.432 | 0.598 | 0.722 | 0.857 | 1.016 |
+| `80` | 0.175 | 0.486 | 0.775 | 1.033 | 1.388 | 1.606 | 1.842 |
+| `C0` | 0.292 | 0.864 | 1.496 | 2.097 | 2.744 | 3.318 | 3.907 |
+| `E0` | 0.542 | 1.979 | 3.538 | 5.114 | 6.534 | 7.961 | 9.054 |
+
+Between −15 and −55 those steps are near-constant per 10 dB, so the decay is
+close to exponential once the first ~0.2 s is past.
+
+### `FF` decays, but not on this timescale
+
+The 18 s window was not enough to say anything about `FF` — its energy-decay
+curve was still falling at the end of the file, and backward integration against
+a truncated tail reports nonsense (crossings bunched at 17.85 s). Re-captured at
+60 s, with the rig re-asserted, in 2 s RMS bins:
+
+```
+  0.0s -24.43 dB    16.0s -31.25 dB    32.0s -36.70 dB    48.0s -41.29 dB
+  4.0s -25.82 dB    20.0s -32.34 dB    36.0s -37.11 dB    52.0s -42.32 dB
+  8.0s -27.90 dB    24.0s -33.93 dB    40.0s -39.40 dB    56.0s -43.67 dB
+ 12.0s -29.33 dB    28.0s -35.09 dB    44.0s -40.06 dB    58.0s -43.89 dB
+```
+
+**Measured: 19.5 dB of decay in 58 s, i.e. 0.34 dB/s**, still clearly audible and
+still falling when the capture ended. Straight-line extrapolation puts a 60 dB
+decay near 180 s, but **that is arithmetic, not a measurement** — nothing here
+observed it. What is measured is that `FF` is not infinite and is roughly 20×
+slower than `E0`.
+
+### The shape of the law
+
+RT60 roughly doubles per `0x40` up to `C0` and then accelerates hard: ×1.6 from
+`00` to `40`, ×1.95 to `80`, ×2.17 to `C0`, then ×2.35 for the half-step to `E0`,
+then ×21 for the remaining `0x1F` to `FF`. It is not linear and it is not a plain
+geometric series in the byte. It has the shape of a feedback coefficient
+approaching unity, which is what a reverb usually is, but **no law was fitted and
+none should be quoted from this section** — six points with a 4% spread cannot
+choose between the candidates near the top of the range, which is exactly where
+they differ most.
+
+### Two caveats that bound everything above
+
+- **`ROOM SIZE` was `FF` throughout.** Decay time on this device is a function of
+  both, and only one was varied. These numbers are RT60 at SIZE `FF`.
+- The excitation was a 300 ms sine at C-4. A broadband source could decay
+  differently if the reverb is frequency-dependent; that was not tested.

@@ -54,6 +54,7 @@ earlier, since-superseded guess at the bit layout — the mask constants actuall
 | `--stop-mask <hex>` | `0x08` | Same value as start by default (PLAY is a toggle, not separate start/stop keys). |
 | `--keyjazz <note>` | *(none — uses PLAY toggle)* | MIDI note number (60 = C-4). If set (`>= 0`), captures via keyjazz note-on/off instead of PLAY start/stop — plays one live note, not the sequencer. |
 | `--keyjazz-vel <n>` | `0x7F` | Velocity for keyjazz mode. **This is the level lever** — see the note below. |
+| `--note-ms <n>` | `0` (hold for the whole window) | Keyjazz only: release the note after this many ms and **keep recording** for the rest of `--seconds`. Added 2026-08-29 for the reverb RT60 measurement (`hw_findings.md` §UI-29) — a decay tail happens after the note stops, so with the note held for the whole window it can never be in the file. Ignored if `>= --seconds * 1000` or if PLAY-toggle mode is in use. |
 | `--check-level [floor]` | `disabled` (`0.5` if argument omitted) | Verify that the captured audio peak level meets or exceeds `floor`. Logs peak measurement and pass/fail state to stderr and the capture manifest. |
 
 ## Capture Manifest (`<name>.manifest.json`)
@@ -152,6 +153,9 @@ probe_macro_10.m8s	macro_shape10
   capture cycle (presses buttons, waits, records) and only then prints `no output path specified`
   to stderr — and still exits 0.** Nothing is written, but the process doesn't fail; don't rely
   on the exit code to catch this, check that the expected file actually exists.
+- **Onset trim runs on the whole window, `--note-ms` or not.** The output still starts at the
+  first sample over 0.01, so with `--note-ms 300` the note occupies the first 300 ms of the WAV
+  and everything after it is tail. `rt60_measure.py` assumes exactly that.
 - **`--keyjazz` and PLAY-toggle mode are mutually exclusive** per invocation (keyjazz is used if
   `keyjazzNote >= 0`, i.e. any `--keyjazz` value was passed) — you can't capture "play the
   sequencer AND also send a keyjazz note" in one call.
