@@ -96,11 +96,31 @@ def norm(row):
     Known limit, in the safe direction: a caption whose space to its label also
     vanished (`"LIM00CLIP"` as one token) is not stripped and still reads as
     drift. That costs a re-run, not a wrong number.
+
+    **A caption's tail must contain a NON-HEX character.** Added 2026-08-29,
+    after this rule silently ate a byte out of the mixer's track-volume row. That
+    row is eight bare hex bytes, and the decoder glues neighbouring ones from time
+    to time: the token `"E0E0"` matches the caption pattern -- `E0` is the value,
+    `E` is the required letter, `0` is the tail -- so it collapsed to `"E0"` and
+    the row normalised to seven bytes instead of eight.
+
+    The cost was not theoretical. It made `--expect` on that row unable to pin a
+    track volume (an eight-byte want could never match a seven-byte norm), and it
+    weakens drift detection on the one row where every value is a bare byte.
+
+    Every caption actually seen on this device has a tail with a non-hex letter in
+    it (`00CLIP`, `06SINE`, `01VOLUME`, `03LFO`, `00CHORUS`, `04POST`, `00OFF`),
+    and a run of glued hex bytes never does. A hypothetical caption spelled only
+    from A-F (`00FADE`) would go unstripped and read as drift -- the same safe
+    direction as the limit above.
     """
     out = []
     for tok in row.split():
         m = CAPTION.match(tok)
-        out.append(m.group(1) if m and any(c.isdigit() for c in m.group(1)) else tok)
+        ok = (m
+              and any(c.isdigit() for c in m.group(1))
+              and any(c not in "0123456789ABCDEFabcdef" for c in tok[len(m.group(1)):]))
+        out.append(m.group(1) if ok else tok)
     return "".join(out)
 
 
