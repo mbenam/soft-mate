@@ -76,6 +76,12 @@ time and reverses on a stall, for enum cells whose lists do not wrap.
   position, so a key path counted from "the top" only works if you saturate
   first. This is the same trap as the FM screen's DOWN chain
   ([`fm_probe`](fm_probe.md)).
+- **An enum's caption comes and goes between reads.** The value is drawn, the
+  text beside it sometimes is not: `"LIM 00"` against `"LIM 00CLIP"`,
+  `"FILTER 00"` against `"FILTER 00OFF"`. Three §UI-32 captures were discarded as
+  drift before this was diagnosed; the bytes were identical in every one.
+  `norm()` strips a caption attached to a hex value. A caption of more than one
+  word that vanishes whole still reads as drift -- a re-run, not a wrong number.
 - **`--drop-db` needs raising when the control under test reduces level.** The
   note-finder calls "the note" everything within 6 dB of the loudest bin; under
   9 dB of gain reduction the settled tail falls outside that and the note looks

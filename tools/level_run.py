@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -59,17 +60,32 @@ def snapshot(screens, set_field=None):
     return out
 
 
-def norm(row):
-    """Collapse runs of spaces before comparing rows.
+CAPTION = re.compile(r"\b([0-9A-F]{2})[A-Za-z][A-Za-z0-9%.:_-]*")
 
-    The decoder re-spaces the same values between reads -- `m8drv` records the
-    same MIXER field arriving as `" OUTPUT VOL  F0"` and as `"OUTPUTVOLF0"`. A
-    raw string compare therefore reports drift when nothing moved: a run with
-    LIM, OTT and every instrument value identical was discarded because SHAPE
-    rendered as `"SHAPE   06SINE"` and then `"SHAPE  06SINE"`. Collapsing space
-    runs keeps every token and its order, so a real value change still differs.
+
+def norm(row):
+    """Normalise a decoded row before comparing it with another read of itself.
+
+    Two ways the same screen decodes differently, both of which discarded good
+    runs before they were understood:
+
+    1. **Spacing moves.** `m8drv` records one MIXER field arriving as
+       `" OUTPUT VOL  F0"` and as `"OUTPUTVOLF0"`. A run with every value
+       identical was thrown away because SHAPE rendered as `"SHAPE   06SINE"`
+       and then `"SHAPE  06SINE"`.
+    2. **An enum's caption comes and goes.** The value is drawn, the text beside
+       it sometimes is not: `"LIM 00"` against `"LIM 00CLIP"`, `"FILTER 00"`
+       against `"FILTER 00OFF"`. Three A3 captures were discarded for this
+       before it was diagnosed -- the bytes were identical in every one.
+
+    So: collapse space runs, then drop a caption that is attached to a hex value
+    with no space. The value itself survives, so a real change still differs.
+
+    Known limit, in the safe direction: a caption of more than one word
+    (`"06PULSE 12%"`) that vanishes entirely still reads as drift, because only
+    the attached first word is stripped. That costs a re-run, not a wrong number.
     """
-    return " ".join(row.split())
+    return CAPTION.sub(r"\1", " ".join(row.split()))
 
 
 def diff(a, b):

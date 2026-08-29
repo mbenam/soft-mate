@@ -36,11 +36,21 @@ def batch(lines):
 
 
 def read(pattern):
+    """Search the decoded ROWS only.
+
+    Not the whole dump: its header carries a `cursor :` line holding the same
+    label and the value the cursor sits on, so a regex over the raw output can
+    match the cursor readout instead of the row and report a value the screen
+    does not show. That happened -- a `DEST` step reported reaching `01` while
+    the row still read `00`.
+    """
     r = subprocess.run(M8DRV + ["dump"], capture_output=True, text=True, timeout=180)
-    m = re.search(pattern, r.stdout)
-    if not m:
-        raise SystemExit("row pattern %r not found in:\n%s" % (pattern, r.stdout))
-    return int(m.group(1), 16)
+    rows = [ln for ln in r.stdout.splitlines() if ln.strip().startswith("y=")]
+    for ln in rows:
+        m = re.search(pattern, ln)
+        if m:
+            return int(m.group(1), 16)
+    raise SystemExit("row pattern %r not found in:\n%s" % (pattern, "\n".join(rows)))
 
 
 def main():

@@ -2712,3 +2712,95 @@ about 60 ms after the note starts. A single output number does not describe what
 - **The 480 ms note is short for `OTT`.** Its ripple is settled well inside the
   window, but a control with a time constant longer than ~400 ms would be
   invisible to this measurement.
+
+---
+
+## UI-32 — The three send returns do not come back at the same level
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/captures_backlog.md` A3.
+
+### Method
+
+`WAVV7F.M8S` reloaded from the card. Instrument 00: `TYPE WAVSYNTH`,
+`SHAPE 06 SINE`, `SIZE 80`, `MULT 80`, `AMP 00`, `LIM 00`, `PAN 80`,
+`FILTER 00 OFF`, `CUTOFF FF`, `RES 00`. Mixer: `TRACK1_VOL A0`, all three
+returns `MX/DE/RE` stepped to `E0`, `MIX E0`, `LIM 00`, `OTT 00`, `DJF 80`.
+
+Keyjazz note 60 at velocity `0x40`, 3 s captures. Four captures, changing one
+send at a time and asserting every row of INSTRUMENT and MIXER before and after
+each:
+
+| capture | `DRY` | `MFX` | `DEL` | `REV` |
+|---|---|---|---|---|
+| dry reference | `FF` | `00` | `00` | `00` |
+| chorus | `00` | `FF` | `00` | `00` |
+| delay | `00` | `00` | `FF` | `00` |
+| reverb | `00` | `00` | `00` | `FF` |
+
+A control with `DRY 00` and all three sends `00` came back at **exact digital
+zero**, so nothing leaks past the sends and the wet captures are wet only.
+
+**The send effects' own parameters were all `00`** — as `WAVV7F.M8S` ships them:
+chorus `MOD DEPTH:FRQ 00:00` / `WIDTH 00`, delay `TIME L:R 00:00` /
+`FEEDBACK 00`, reverb `ROOM SIZE 00` / `DECAY:SHIMMER 00:00`. Each effect is
+therefore at its null configuration, and what is measured is the send-to-return
+path rather than the effect's character.
+
+### Results
+
+Two measures, because they answer slightly different questions: **in-note** is
+RMS over 50-350 ms from the note's onset, which is "how loud does it come back";
+**energy** is the sum of squares over the whole 3 s capture, which also counts
+whatever rings on after the note.
+
+| capture | in-note, rel. dry | energy, rel. dry | peak | clipped |
+|---|---|---|---|---|
+| dry, `DRY FF` | 0.000 dB | 0.00 dB | 0.4473 | 0 |
+| chorus, `MFX FF` | **−6.081 dB** | −6.17 dB | 0.2216 | 0 |
+| delay, `DEL FF` | **−7.230 dB** | −7.08 dB | 0.2783 | 0 |
+| reverb, `REV FF` | **−8.461 dB** | −8.32 dB | 0.3055 | 0 |
+
+**They are not equal.** With the send at `FF` and the return at `E0`, chorus
+comes back loudest and reverb quietest, spanning **2.38 dB** in-note (2.15 dB by
+energy). The two measures agree within 0.15 dB for all three, so the ordering is
+not an artefact of the window.
+
+Reverb is the one where they differ most, and visibly: even at `ROOM SIZE 00`
+and `DECAY 00` its capture rings for about 11 envelope bins against 6 for the
+others, so its energy figure carries a short tail the others do not have. That
+makes its energy number *flattering* relative to its in-note level, and it is
+still the quietest of the three.
+
+### A first attempt clipped, and is not in the table
+
+At `TRACK1_VOL E0` the wet captures hit peak 1.0000 with tens of thousands of
+clipped samples while the dry reference sat at 0.4707 — the send-and-return path
+is far louder than the dry path at the same fader. Those two runs were discarded
+and the whole set retaken at `TRACK1_VOL A0`. A clipped capture cannot be a
+point on a level comparison.
+
+### Incidental: `DRY` accepts `FF`, and the tools say it does not
+
+`m8_makeprobe` carries a range table (`kMixerDry`) that caps the instrument's
+`DRY` at `0xC0`, and the first dry reference here was taken at `C0` because that
+is what the project shipped. **The device took `FF` and read it back as `FF`.**
+The difference is large enough to matter: `DRY C0` measured **15.08 dB below**
+`DRY FF`, which is 0.239 dB per unit over those 63 steps — the same ~0.24 dB per
+unit taper measured for the mixer's track fader in §UI-31.
+
+Had the dry reference been left at `C0`, all three return levels would have come
+back as *positive* numbers between +6.8 and +8.9 dB, which is why the matched
+reference matters and why the `C0` row is shown above.
+
+### What bounds this
+
+- **Null effect settings only.** Every send effect parameter was `00`. A chorus
+  with real depth or a delay with real feedback returns a different amount of
+  energy, and nothing here says how much.
+- **One source, one level, one send value.** `TRACK1_VOL A0`, send `FF`, return
+  `E0`. Whether the 2.4 dB spread is constant across send and return values is
+  not measured.
+- The spread is a level difference only; no claim is made here about what each
+  effect does to the signal.
