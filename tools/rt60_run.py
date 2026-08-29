@@ -49,11 +49,24 @@ def snapshot():
     return {s: dump_rows(s) for s in SCREENS}
 
 
+def norm(row):
+    """Collapse runs of spaces before comparing rows.
+
+    The decoder re-spaces the same values between reads -- `m8drv` records the
+    same MIXER field arriving as `" OUTPUT VOL  F0"` and as `"OUTPUTVOLF0"`. A
+    raw string compare therefore reports drift when nothing moved: a run with
+    LIM, OTT and every instrument value identical was discarded because SHAPE
+    rendered as `"SHAPE   06SINE"` and then `"SHAPE  06SINE"`. Collapsing space
+    runs keeps every token and its order, so a real value change still differs.
+    """
+    return " ".join(row.split())
+
+
 def diff(a, b):
     out = []
     for s in SCREENS:
         for i, (x, y) in enumerate(zip(a[s], b[s])):
-            if x != y:
+            if norm(x) != norm(y):
                 out.append("%s row %d: %r -> %r" % (s, i, x, y))
         if len(a[s]) != len(b[s]):
             out.append("%s: row count %d -> %d" % (s, len(a[s]), len(b[s])))

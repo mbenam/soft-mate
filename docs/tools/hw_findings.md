@@ -2523,3 +2523,192 @@ resulting pitch, not on the byte.
   there was not measured.
 - Above `44` the pitch is clamped rather than aliased, so nothing here says what
   the device would do with an unclamped ultrasonic operator.
+
+---
+
+## UI-31 — `LIM` is makeup gain into a falling ceiling; `OTT` is an upward compressor
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Answers:** tessera `docs/captures_backlog.md` A6.
+
+Both controls were defaulted off in the clone because nobody had ever measured
+them. This is the first evidence either way.
+
+### The input-level control, and why it is that one
+
+A6 needs a steady tone at known, varied input levels. Three candidates were
+tried and two were rejected **by measurement**, which is worth recording because
+the first of them is what the tooling's own documentation recommends:
+
+- **Keyjazz velocity — does nothing here.** `m8_capture`'s docs call
+  `--keyjazz-vel` "the level lever" (measured once on a macrosynth). On this
+  WAVSYNTH probe, velocity `0x40` and `0x7F` gave peak **0.3478 both times** and
+  RMS within 0.06 dB. The instrument's volume comes from its AHD envelope at
+  `AMT FF`, and nothing on it routes velocity to volume.
+- **Instrument `AMP` — a drive, not a gain.** `00`→`FF` moved the output only
+  from −12.336 to −9.613 dBFS RMS, nearly all of it in the first step
+  (`00`→`20` is +2.28 dB, `20`→`FF` is another 0.44 dB), and crest fell from
+  3.15 dB to 2.55 dB. It saturates and reshapes. Consistent with the earlier
+  reading of AMP as a drive into the instrument's own LIM stage.
+- **Mixer `TRACK1_VOL` — used.** A plain hex byte, settable by field name (no
+  paired-cell problem), unambiguously upstream of the master chain, and it does
+  not touch the waveform: crest stays 3.16 dB across its whole range.
+
+**The input axis is defined as the output measured with `LIM 00` and `OTT 00`**,
+not as an absolute figure inside the device. Every "gain" below is therefore
+relative to the `LIM 00` / `OTT 00` path. Nothing here proves that path is
+itself unity, and this rig cannot: the only fader available is the one being
+used as the axis.
+
+### The rig
+
+Instrument 00 from `WAVV7F.M8S` reloaded from the card: `TYPE WAVSYNTH`,
+`SHAPE 06 SINE`, `SIZE 80`, `MULT 80`, `WARP 00`, `SCAN 00`, `AMP 00`,
+`LIM 00 CLIP`, `PAN 80`, `DRY C0`, `MFX/DEL/REV 00`, `FILTER 00 OFF`,
+`CUTOFF FF`, `RES 00`. Mixer: returns `MX/DE/RE 00`, `MIX E0`, `DJF 80`,
+`OUTPUT VOL F0`.
+
+**The source is not a 261 Hz sine, and it does not matter, but it should be on
+the record.** Keyjazz note 60 through this patch produces a steady tone at
+**2219.40 Hz** — `SIZE 80` / `MULT 80` put it 37.015 semitones above middle C.
+It is the same tone in every capture in this section, its crest is 3.16 dB, and
+its RMS holds within 0.03 dB across the measurement window, which is all a level
+curve needs. It carries sidebands 27-34 dB down, so it is not a pure sine and
+should not be quoted as one.
+
+The note lasts about **480 ms** and then cuts to exact digital zero, whatever
+the capture length. Measured levels are the mean over 100-420 ms from the note's
+onset (`tools/level_measure.py`, note-relative window). `tools/level_run.py`
+re-read every row of INSTRUMENT and MIXER before and after **each** capture; no
+run in this section drifted.
+
+### Reference: `LIM 00`, `OTT 00`
+
+| `TRACK1_VOL` | peak dBFS | RMS dBFS |
+|---|---|---|
+| `10` | −59.183 | −62.554 |
+| `20` | −55.345 | −58.586 |
+| `30` | −51.419 | −54.669 |
+| `40` | −47.638 | −50.782 |
+| `60` | −39.886 | −43.047 |
+| `80` | −32.193 | −35.347 |
+| `A0` | −24.508 | −27.667 |
+| `C0` | −16.838 | −19.998 |
+| `E0` | −9.176 | −12.337 |
+
+Incidental and useful: **the track fader is logarithmic at about 0.24 dB per
+unit** — 3.968, 3.917, 3.887, then 3.868, 3.850, 3.840, 3.835, 3.831 dB per
+`0x10` step. The step size shrinks monotonically by 3.4% across the range;
+nothing here separates a fader taper from mild compression in the `LIM 00` path.
+
+**`E0` is the ceiling of this rig's input axis.** `TRACK1_VOL` caps at `E0`, so
+no input above −12.337 dBFS RMS / −9.176 dBFS peak could be presented. Anything
+either control does above that level is unmeasured.
+
+### `LIM` — makeup gain, and a ceiling that falls as the gain rises
+
+Output RMS dBFS, `OTT 00` throughout:
+
+| input RMS | `LIM 20` | `LIM 40` | `LIM 80` | `LIM A0` | `LIM C0` | `LIM FF` |
+|---|---|---|---|---|---|---|
+| −58.586 | — | — | — | — | — | −39.634 |
+| −50.782 | −48.400 | −46.030 | −41.294 | −38.931 | −36.570 | −31.928 |
+| −43.047 | −40.679 | −38.314 | −33.591 | −31.234 | −28.874 | −24.237 |
+| −35.347 | −32.985 | −30.624 | −25.906 | −23.548 | −21.193 | −22.180 |
+| −27.667 | −25.305 | −22.946 | −18.230 | −15.874 | −17.040 | −22.038 |
+| −19.998 | −17.637 | −15.279 | −11.874 | −14.260 | −16.814 | — |
+| −12.337 | −9.978 | −7.619 | −11.528 | −14.132 | −16.774 | −22.010 |
+
+As gain applied, same data:
+
+| input RMS | `LIM 20` | `LIM 40` | `LIM 80` | `LIM A0` | `LIM C0` | `LIM FF` |
+|---|---|---|---|---|---|---|
+| −50.782 | +2.382 | +4.752 | +9.488 | +11.851 | +14.212 | +18.854 |
+| −43.047 | +2.368 | +4.733 | +9.456 | +11.813 | +14.173 | +18.810 |
+| −35.347 | +2.362 | +4.723 | +9.441 | +11.799 | +14.154 | +13.167 |
+| −27.667 | +2.362 | +4.721 | +9.437 | +11.793 | +10.627 | +5.629 |
+| −19.998 | +2.361 | +4.719 | +8.124 | +5.738 | +3.184 | — |
+| −12.337 | +2.359 | +4.718 | +0.809 | −1.795 | −4.437 | −9.673 |
+
+**Small-signal gain is linear in the byte at 0.0742 dB per unit.** From the
+quietest input at each setting: `20` → +2.382 (0.0744/unit), `40` → +4.752
+(0.0743), `80` → +9.488 (0.0741), `A0` → +11.851 (0.0741), `C0` → +14.212
+(0.0740), `FF` → +18.952 (0.0743, from the −58.586 input). Six points inside
+±0.3%. So **`LIM FF` is about +19 dB of makeup gain.**
+
+**Above a threshold the output stops rising, and that ceiling falls as `LIM`
+rises:**
+
+| `LIM` | ceiling, RMS dBFS | ceiling, peak dBFS |
+|---|---|---|
+| `80` | −11.528 | −8.282 |
+| `A0` | −14.132 | −10.846 |
+| `C0` | −16.774 | −13.463 |
+| `FF` | −22.010 | −18.693 |
+
+−2.604, −2.642 and −5.236 dB across `0x20`, `0x20` and `0x3F`: **−0.0819 dB per
+unit**, three intervals inside 1.5%. That is the odd part of this finding and it
+is stated as measured, not explained: turning `LIM` up raises the small-signal
+gain *and* lowers the maximum the output will reach.
+
+**`LIM A0` was captured as a test of that, not as a fit.** After `80`, `C0` and
+`FF`, the two laws predict a ceiling of −14.17 dBFS and a small-signal gain of
++11.87 dB at `A0`. Measured: **−14.132 dBFS and +11.851 dB** — 0.04 dB and
+0.02 dB out.
+
+Above the knee the slope is near flat: at `LIM FF`, inputs of −35.347, −27.667
+and −12.337 give −22.180, −22.038 and −22.010, i.e. **23 dB of input change for
+0.17 dB of output change**. It is a brickwall, not a soft ratio.
+
+**Ceilings at `LIM 00`, `20` and `40` were never reached** — the highest outputs
+observed there were −12.337, −9.978 and −7.619 dBFS, all below where those
+settings' ceilings would lie. So the ceiling law is measured at four points and
+extrapolating it below `LIM 80` is arithmetic, not measurement. In particular
+**nothing here shows what `LIM 00` does**; it is only this section's reference.
+
+**`LIM` does not reshape the waveform in this range.** Crest stays 3.16-3.32 dB
+everywhere, including 9 dB into gain reduction, and no capture clipped. It is a
+compressor with roughly a 150 ms attack — at `LIM 80` with the loudest input the
+level starts at −7.45 dB, and settles to −11.55 dB by 160 ms.
+
+### `OTT` — an upward compressor that also reshapes the tone
+
+`LIM 00` throughout. Output RMS dBFS, and the gain against the same reference:
+
+| input RMS | `OTT 40` | gain | `OTT 80` | gain | `OTT C0` | gain |
+|---|---|---|---|---|---|---|
+| −50.782 | −38.182 | **+12.600** | −33.266 | **+17.516** | −30.549 | **+20.233** |
+| −43.047 | −35.534 | +7.513 | −31.567 | +11.480 | −29.721 | +13.326 |
+| −35.347 | −30.662 | +4.685 | −27.601 | +7.746 | −26.819 | +8.528 |
+| −27.667 | −24.342 | +3.325 | −21.945 | +5.722 | −22.040 | +5.627 |
+| −19.998 | −18.530 | +1.468 | −17.279 | +2.719 | −19.485 | +0.513 |
+| −12.337 | −11.835 | +0.502 | −11.383 | +0.954 | −15.706 | **−3.369** |
+
+**This is upward compression, and it is strong.** At `OTT C0` a −50.8 dBFS input
+comes back **+20.2 dB louder** while a −12.3 dBFS input comes back **3.4 dB
+quieter** — 38 dB of input range compressed into 15 dB of output range. Unlike
+`LIM`, `OTT` changes level at every input; there is no region where it is
+transparent.
+
+**It does not preserve the waveform.** Crest rises from the source's 3.16 dB to
+**5.4-8.3 dB**, worst at the quietest inputs, and the output carries new
+low-frequency content that the input does not have (components at 12.1 Hz and
+51.5 Hz, 41 and 44 dB down, absent from the reference). And it is not a static
+gain: the output has a **stationary periodic ripple with an ~80 ms period**,
+swinging 0.12 dB at the loudest input up to 1.60 dB at the quietest, stable from
+about 60 ms after the note starts. A single output number does not describe what
+`OTT` does; the ripple column is part of the measurement.
+
+### What bounds all of this
+
+- **One source, one band.** The tone is a single 2219 Hz partial. `OTT` is a
+  multiband processor, so a curve taken with all the energy in one band is a
+  slice of its behaviour, not the whole of it. `LIM`'s curve is much more likely
+  to generalise than `OTT`'s.
+- **No input above −12.337 dBFS RMS.** `TRACK1_VOL` caps at `E0`.
+- **`LIM` and `OTT` were never enabled together.** Every `LIM` point has
+  `OTT 00` and every `OTT` point has `LIM 00`.
+- **The 480 ms note is short for `OTT`.** Its ripple is settled well inside the
+  window, but a control with a time constant longer than ~400 ms would be
+  invisible to this measurement.
