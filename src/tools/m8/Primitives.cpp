@@ -1133,16 +1133,46 @@ static std::string findFieldLabel(Screen s, const std::string& name, const std::
 // generic "skip leading letters" heuristic -- that fails too, since hex
 // digits A-F are also letters, e.g. "TIMBRE80" would wrongly consume the
 // trailing 'E' of TIMBRE as part of the value) fixes this at the source.
+//
+// 2026-08-29: that strip was an EXACT prefix compare, and both of the ways this
+// device actually draws a labelled row defeat it. Whitespace carries no
+// information here and cursorMainText() does not reproduce it stably -- m8drv.md
+// records one MIXER field arriving as " OUTPUT VOL  F0" in one read and
+// "OUTPUTVOLF0" in the next. The first has a leading space the map's label does
+// not; the second has lost the space inside "OUTPUT VOL". Neither compares equal
+// to "OUTPUT VOL", so nothing was stripped and editValue refused the field for
+// having "no leading hex digits to converge against" -- blaming the field map,
+// which was correct. It cost hw_findings §UI-34 the rest of its MIX_VOL sweep
+// and blocked §UI-36 on OUT_VOL; both are label-plus-value cells on MIXER.
+//
+// So the match now ignores whitespace on both sides. It still matches the
+// field's EXACT label characters rather than skipping leading letters, which is
+// what the paragraph above is about: only the whitespace is treated as noise.
+static bool stripLabelIgnoringSpace(const std::string& txt, const std::string& label,
+                                    std::string& out) {
+    auto isSp = [](char c) { return c == ' ' || c == '\t'; };
+    size_t i = 0, j = 0;
+    while (j < label.size()) {
+        while (j < label.size() && isSp(label[j])) ++j;
+        if (j >= label.size()) break;
+        while (i < txt.size() && isSp(txt[i])) ++i;
+        if (i >= txt.size()) return false;
+        if (std::toupper(static_cast<unsigned char>(txt[i]))
+            != std::toupper(static_cast<unsigned char>(label[j]))) return false;
+        ++i; ++j;
+    }
+    out = txt.substr(i);
+    return true;
+}
+
+// A label that is not present at all -- the accent covered only the value --
+// leaves the text alone, which is what the caller wants.
 static std::string readCursorValue(M8Device& dev, const std::string& label = "") {
     std::string txt = dev.grid().cursorMainText();
     while (!txt.empty() && txt.back() == '\n') txt.pop_back();
     if (!label.empty()) {
-        std::string upperTxt = txt, upperLabel = label;
-        for (auto& c : upperTxt) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        for (auto& c : upperLabel) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        if (upperTxt.compare(0, upperLabel.size(), upperLabel) == 0) {
-            txt = txt.substr(upperLabel.size());
-        }
+        std::string stripped;
+        if (stripLabelIgnoringSpace(txt, label, stripped)) txt = stripped;
     }
     size_t start = txt.find_first_not_of(" \t");
     return (start == std::string::npos) ? "" : txt.substr(start);

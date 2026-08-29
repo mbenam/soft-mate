@@ -187,6 +187,12 @@ wrong produces plausible-but-wrong behaviour rather than an error.
   cells are accented varies between frames. The same MIXER field arrived as
   `" OUTPUT VOL  F0"` in one read and `"OUTPUTVOLF0"` in the next. Label stripping
   is therefore whitespace-insensitive; expect the same of your own comparisons.
+  **That sentence was aspirational until 2026-08-29** — `readCursorValue` compared
+  the label as an exact prefix, which both of those spellings defeat, so nothing
+  was stripped and `set` refused the field for having "no leading hex digits to
+  converge against", blaming the field map. It really is whitespace-insensitive
+  now; `set OUT_VOL` and `set MIX_VOL` were verified on hardware afterwards. See
+  `hw_findings.md` §UI-36.
 - **PowerShell 5.1 has no `&&`.** Chain with `;` or use separate lines.
 
 ## Also in that directory

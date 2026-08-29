@@ -3132,11 +3132,12 @@ does not transfer to it. Left open deliberately; it deserves its own item.
 ### Tooling
 
 - **`m8drv set MIX_VOL` fails intermittently.** It refuses with "the cell reads
-  `MIX 40`, which has no leading hex digits to converge against" — the accented
-  cursor text sometimes includes the `MIX` label and sometimes does not, which
-  is the frame-to-frame accent variation `m8drv.md` already documents in
-  general. It cost this section the rest of the `MIX_VOL` sweep. Step that cell
-  with `tools/step_cell.py` instead of setting it; the map entry is fine.
+  `MIX 40`, which has no leading hex digits to converge against". It cost this
+  section the rest of the `MIX_VOL` sweep. **FIXED 2026-08-29, see §UI-36** — the
+  cause was `readCursorValue` stripping the field label by an exact prefix
+  compare, which both spellings the device draws defeat; it now ignores
+  whitespace on both sides. `set MIX_VOL` and `set OUT_VOL` were both verified
+  on hardware afterwards. The map entry was fine, as this note said.
 - **The INSTRUMENT field map is the sampler's, and does not fit WAVSYNTH.**
   `SAMPLE` lands on the `SIZE` row, `SHAPE` has no field at all, and `CHO` —
   the instrument's `MFX` send — is not found on this screen. `AMP`, `LIM`,
