@@ -3716,3 +3716,86 @@ four plausible estimators and one answer.
   short-lag correlation is skipped and the earliest strong peak taken — at a true
   1.00 Hz it returned 4.0000 s, and the naive fix then returned the minimum lag
   at a true 0.35 Hz.
+
+---
+
+## UI-38 — PLAY on an empty song row scans UP to the previous run, and this unifies UI-21 and UI-22
+
+- **Date:** 2026-08-30
+- **Firmware:** 6.5.2, COM3, via `m8drv` in one daemon session
+- **Answers:** tessera `docs/captures_backlog.md` C6
+
+### The question
+
+The manual (p. 14) says "[PLAY] Starts/stops the song **from the current cursor
+position** on the song view". It says nothing about a cursor position with no
+chain in it, and the two candidate readings are far apart: play nothing, or go
+somewhere else and play that.
+
+§UI-21 settled where a track restarts when its run *ends*. §UI-22 settled that a
+track empty at the start row parks silent. Neither covers a start row that is
+empty for the track in question **with music above it**.
+
+### Method
+
+The rig song is sixteen song rows each carrying chain `00` on track 1. Track 1's
+cells were cut to leave two runs with a gap:
+
+```
+rows 00-01   chain 00      run A
+rows 02-07   empty         the gap
+rows 08-09   chain 00      run B
+rows 0A-0F   empty         past the end
+```
+
+The transport cycles a run far faster than the screen can be read — the chains
+hold one phrase each — so the playhead's *position* at any sample is aliased and
+worthless. The **set** of rows it visits is not, and that is what was collected:
+thirty screen reads per arm, in one daemon session.
+
+Two arms, differing only in where the cursor was when PLAY was pressed.
+
+| cursor | where it is | rows the playhead visited | blank reads |
+|---|---|---|---|
+| `0C` | past every run | **`08`, `09`** (28 / 2) | 0 |
+| `05` | inside the gap between the runs | **`00`, `01`** (24 / 6) | 0 |
+
+The rig was restored cell by cell and read back identical to the start state.
+
+### Result
+
+**PLAY scans UPWARD from the cursor row to the nearest non-empty cell and plays
+the contiguous run containing it.** Not song row 0 — the `0C` arm would have
+given `00`/`01` if it were, and gave `08`/`09`. Not silence — both arms played.
+
+Which end of the run it enters on is not separable here, because §UI-21 has it
+looping to the run's start within a bar either way.
+
+### What it settles, and the tidier thing it settles by accident
+
+**One rule now covers all three findings**, where there were three:
+
+> At PLAY, and again whenever a track's run ends, the track scans UP from its
+> current song row to the nearest non-empty cell and begins at the START of that
+> contiguous run. If there is nothing above it, the track stays silent and never
+> advances.
+
+- §UI-21 (loops to the start of its own run, not row 0) is the mid-playback case,
+  where the row directly above the gap is non-empty by construction.
+- §UI-22 (a track empty at the start row parks silent) is the case where the scan
+  runs off the top of the song and finds nothing. It is not a separate rule about
+  empty cells; it is this rule returning nothing.
+- This finding is the case where the scan has to cross a gap to get there.
+
+That also explains the manual's advice on p. 10 without appeal to anything else:
+*"To maintain a track's play position with other tracks while it remains silent,
+create a chain that contains empty phrases."* A track with a genuinely empty
+cell does not wait, because there is nothing above to scan to.
+
+### For the clone
+
+`Engine::runStart` returns -1 unless the row **directly** above is non-empty, so
+it implements the mid-playback case and not the other two. Starting a song on a
+row below its music therefore engages the transport and plays nothing. Widening
+the scan to cross a gap cannot disturb §UI-21: in the mid-playback call the row
+above is non-empty, so the loop exits immediately and the answer is unchanged.
