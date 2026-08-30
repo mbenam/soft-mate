@@ -2834,6 +2834,28 @@ reference matters and why the `C0` row is shown above.
 starts from what was ruled out rather than rediscovering it. Three things below
 are measurements; the LFO rate is not one of them.
 
+**CORRECTED 2026-08-29 - see §UI-37.** Two of the things this section rules out
+do not survive, and both are what kept A2 closed:
+
+1. **"Every keyjazz note available on this rig is about 480 ms" is true of
+   KEYJAZZ ONLY.** All four things listed below as failing to lengthen it --
+   `HOLD`, `DEC`, `DEST`, tempo -- were tried on keyjazz. A **sequenced** note
+   behaves differently: with the transport playing a phrase whose only note is on
+   row 0, the playhead parks on that row and the note is held. Measured on the
+   §UI-30 FM patch at **8.06 s, dead flat across every 20 ms bin**, and taken out
+   to 25 s. The note-length blocker is gone.
+2. **"At 100% wet the chorus produces no amplitude modulation" is an artefact of
+   the source, not a property of the effect.** That was measured on the WAVSYNTH
+   probe over a 500 ms keyjazz note. On a clean FM sine over 12 s the wet output
+   swings from -6 to -30 dB. The reasoning under it -- that with `DRY 00` there
+   is no dry path to comb against -- holds for a single-tap effect and is not
+   what the M8's chorus does.
+
+What stands: that the WAVSYNTH probe is too spectrally messy for pitch tracking,
+and the 10.5 Hz figure correctly withheld. §UI-37 confirms the first -- that
+probe's SEQUENCED note decays 56 dB in 300 ms even with an ADSR at `SUS FF` --
+and reaches the same verdict on pitch tracking for a different reason.
+
 ### What A2 needs and this rig cannot give
 
 A2 needs a **steady tone lasting several seconds**. Its lowest `FRQ` points are
@@ -3478,3 +3500,219 @@ Two bugs found and fixed; both blocked this section.
   substring of a seven-byte norm — which is why the guards in the discarded run
   above were weaker than they looked. A caption's tail must now contain a non-hex
   character.
+
+---
+
+## UI-37 — ModFX `MOD FRQ`: the note-length blocker is gone, the law is LINEAR not geometric, and the rate in Hz is still open
+
+- **Date:** 2026-08-29
+- **Firmware:** 6.5.2, COM3
+- **Advances but does not close:** tessera `docs/captures_backlog.md` A2.
+- **Corrects:** §UI-33, in place.
+
+**No rate in Hz is reported here either.** What is new is that the two things
+§UI-33 said blocked A2 are both gone, that `MOD FRQ` is demonstrably driving the
+modulation, and that its law is measurable *up to a scale factor* — which is
+enough to settle linear against geometric, the question A2 says matters most.
+
+Four estimators were tried and all four are recorded below with the reason each
+failed, in the same spirit as §UI-33: so the next attempt does not rediscover
+them.
+
+### The blocker is gone: a SEQUENCED note sustains indefinitely
+
+§UI-33 reported "every keyjazz note available on this rig is about 480 ms" and
+listed four things that did not lengthen it — `MOD1 HOLD`, `DEC`, `DEST`, and
+tempo. **All four were tried on keyjazz.** They are correct about keyjazz and do
+not generalise.
+
+With the transport playing a phrase whose only note is on row 0, the playhead
+**parks on that row** and the note is held for as long as the transport runs.
+Measured on the §UI-30 FM patch (`TYPE FMSYNTH`, `ALGO 0B`, operator A alone,
+`LEV FF/00`, others `00`):
+
+**8.06 s at −53.4 dB, every 20 ms bin identical to the last.** Longer captures
+were then taken at 12 s and 25 s with no change in character.
+
+This is the whole reason A2 was closed before and it costs nothing: the phrase
+was already in `WAVV7F.M8S` as shipped.
+
+Two things ruled out while getting there, both worth keeping:
+
+- **The WAVSYNTH probe cannot do this.** Its sequenced note decays ~56 dB in
+  300 ms even with `MOD1` switched to `ADSR ENV`, `DEST 01 VOLUME`, `AMT FF`,
+  `SUS FF`, verified on the MODS screen. That is consistent with §UI-33's
+  observation that the envelope is not the only thing gating that voice. The FM
+  patch sustains where the WAVSYNTH one does not.
+- **`PLAY` is a toggle, and one early capture was a STOP.** It recorded a single
+  decaying note and then silence, which reads exactly like a short note. Every
+  capture in this section is now taken by `tools/a2_run.py`, which asserts
+  `is_playing` false before and false after and quarantines the file as
+  `.UNPAIRED` if the two presses did not pair. `playhead_observable` is checked
+  first, since `is_playing` is meaningless on a form screen.
+
+### The rig
+
+`WAVV7F.M8S` from the card. Instrument 00 switched to `TYPE FMSYNTH` and built by
+`tools/fm_patch.py --setup`: `ALGO 0B A+B+C+D`, `RATIO 01.00` on all four,
+`LEV/FB FF/00 00/00 00/00 00/00`, so operator A is heard alone on a sine.
+`MOD1` amount `00`, so the `1>PIT` slot is inert. `AMP 00`, `LIM 00`, `PAN 80`,
+`FILTER 00 OFF`, `CUTOFF FF`, `RES 00`.
+
+Mixer: `TRACK1_VOL E0`, `MX` return `E0`, `DE`/`RE` `00`, `MIX E0`, `LIM 00`,
+`OTT 00`, `DJF 80`, `OUTPUT VOL F0`. EFFECTS: `MOD TYPE 00 CHORUS`,
+`STEREO WIDTH 00`, `REVERB SEND 00`.
+
+Captures are 12 s or 25 s, PLAY-toggle (not keyjazz), guarded on both sides by a
+full re-read of INSTRUMENT, MIXER and EFFECTS. **No capture in this section
+drifted or came back unpaired.**
+
+**The carrier is clean**, which is what §UI-33 said any pitch method would need:
+523.25 Hz with the 3rd harmonic **−30.53 dB** and the 5th **−48.04 dB**.
+
+**Incidental:** the phrase note written `C-6` plays **523.25 Hz** (MIDI 72), an
+octave above the 261.63 Hz that keyjazz note 60 produced through the same patch
+in §UI-30. Not chased.
+
+**L and R are bit-identical** in every capture at `STEREO WIDTH 00` — checked
+because a stereo chorus would otherwise have made the mono sum meaningless.
+
+### What IS measured: the peak deviation, and how it scales
+
+The one quantity that reads cleanly and repeatably off these captures is the
+**FM peak deviation** — the outermost sideband offset from the carrier, taken at
+−20 dB relative to the strongest partial, on an 11-plus second window
+(0.09 Hz resolution).
+
+At `MOD DEPTH FF`, sweeping `MOD FRQ`:
+
+| `MOD FRQ` | 32 (`20`) | 64 (`40`) | 128 (`80`) | 192 (`C0`) | 255 (`FF`) |
+|---|---|---|---|---|---|
+| deviation, Hz | **5.40** | **8.15** | **13.55** | **20.35** | **27.45** |
+
+At `MOD FRQ FF`, sweeping `MOD DEPTH`:
+
+| `MOD DEPTH` | 32 (`20`) | 128 (`80`) | 255 (`FF`) |
+|---|---|---|---|
+| deviation, Hz | **4.15** | **15.05** | **27.45** |
+| ratio to `DEPTH FF` | 0.151 | 0.548 | 1.000 |
+| `DEPTH` / 255 | 0.125 | 0.502 | 1.000 |
+
+**The two controls separate cleanly.** For a swept-delay effect the deviation is
+`f0 * 2*pi * A * f_LFO`, with `A` the delay-sweep amplitude set by `DEPTH` and
+`f_LFO` the rate set by `FRQ`. That model predicts the `DEPTH` ratio is the same
+whatever the rate, and it is: **0.548 at `FRQ FF`, 0.556 at `FRQ 20`**
+(`DEPTH FF` vs `80` gives 27.45 vs 15.05, and 5.40 vs 3.00). So `DEPTH` sets
+amplitude, `FRQ` sets rate, and **deviation is proportional to the rate.**
+
+### So the law is LINEAR in the byte, not geometric
+
+Because deviation is proportional to rate, the deviation column IS the rate law
+up to one unknown scale factor. Normalised:
+
+| `MOD FRQ` | 32 | 64 | 128 | 192 | 255 |
+|---|---|---|---|---|---|
+| deviation / deviation at `FF` | 0.197 | 0.297 | 0.494 | 0.741 | 1.000 |
+| `FRQ` / 255 | 0.125 | 0.251 | 0.502 | 0.753 | 1.000 |
+
+From `0x80` upward the two columns agree to about 1.5%. Below that the rate sits
+above the straight line — a positive intercept. A least-squares line through
+`0x40`-`0xFF` is `0.10105 * FRQ + 1.68` in deviation units, which predicts 4.91
+at `0x20` against 5.40 measured.
+
+**A geometric law is excluded.** Over an eightfold span of the byte (`0x20` to
+`0xFF`) the rate changes by a factor of **5.08**. A geometric law over any
+useful chorus range changes it by orders of magnitude across the same span. A2
+says its lowest points are the ones that settle the shape; they do, and the shape
+is linear with an offset.
+
+**What this does NOT give is the constant.** Every figure above is a deviation in
+Hz, not a rate in Hz. Converting needs `A`, the delay-sweep amplitude in seconds,
+which this rig has not measured.
+
+### Four estimators, and why each failed
+
+All four ran on the same guarded captures. Two are kept as tools because they are
+validated and will work on a better-behaved signal; none produced a rate that
+survived the one test that matters — **the rate must not depend on `DEPTH`**.
+
+| estimator | `DEPTH FF`, `FRQ FF` | `DEPTH 80`, `FRQ FF` | `DEPTH 20`, `FRQ FF` |
+|---|---|---|---|
+| instantaneous frequency (`lfo_pitch.py`) | 0.951 Hz | — | 0.546 Hz |
+| envelope autocorrelation | 2.41 Hz | — | 1.90 Hz |
+| envelope spectrum | 45.5 Hz | — | 5.73 Hz |
+| spectrogram self-similarity (`lfo_period.py`) | 22.80 Hz | 0.991 Hz | refused |
+
+1. **Instantaneous frequency of the 100%-wet signal.** Assumes the wet output is
+   one partial being swept — a vibrato. It is not: at `DEPTH FF` the carrier is
+   split into two equal sidebands ±24 Hz (within 0.05 dB of each other), a high
+   modulation index, and the analytic signal locks onto whichever component
+   dominates. The track sits at exactly 523.25 Hz, then exactly 511.96, then
+   exactly 534.53 — **flat plateaus at discrete offsets**, which is a tracker
+   hopping between sidebands, the same failure §UI-33 hit with a peak tracker on
+   a different source. At `DEPTH 20` the modulation is instead too shallow to
+   rise above the noise.
+2. **Sideband spacing.** For clean FM the comb spacing *is* the rate. The comb
+   measured here is dense and interleaved at roughly 1 Hz in two families, not a
+   single-rate set, so no spacing can be read.
+3. **Amplitude envelope, autocorrelation and spectrum.** §UI-33 reported no
+   amplitude modulation at 100% wet; that is corrected below — with a clean sine
+   there is plenty. But its period does not agree with anything else, and route
+   1 (deliberate `DRY 80` against `MFX FF`, so the comb exists) gave **5.35 Hz at
+   `FRQ 20` and 7.10 Hz at `FRQ FF`** — barely different, where the deviation
+   over that same span changes 5.08x. Whatever those numbers are, they are not
+   the rate.
+4. **Spectrogram self-similarity.** The most model-free of the four: whatever the
+   effect does internally, it is LFO-driven, so the short-time spectrum must
+   repeat at the LFO period. Validated on synthetic swept-delay ground truth at
+   0.35, 0.80, 1.00, 2.00, 3.70 and 7.50 Hz — every one recovered exactly, and
+   0.12 Hz correctly refused for holding only 3 periods. On the device it gives
+   22.80 Hz at `DEPTH FF` and 0.991 Hz at `DEPTH 80` for the same `FRQ FF`. The
+   rate cannot depend on `DEPTH`, so at most one is the LFO.
+
+The signal has structure at two very different timescales at once — a fast
+wobble of order 20 Hz and a pattern of order 1 s that includes stretches where
+the output sits at exactly the unmodulated carrier. Nothing measured here
+explains what the slow structure is, and until it is explained no estimator can
+be trusted to be reading the LFO rather than it.
+
+### What would close it
+
+The missing quantity is the delay-sweep amplitude `A`, and there is a direct
+route to it that was not reached: with dry and wet mixed, the comb notches sit at
+`(n + 1/2) / tau`, so tracking the lowest notch across a full LFO cycle gives
+`tau_min` and `tau_max` and hence `A` — after which
+`f_LFO = deviation / (f0 * 2*pi * A)` converts every figure in the deviation
+table into Hz at once. It also gives the period directly, since the notch sweep
+*is* the LFO. The `mix_*` captures for this exist
+(`hwtest_out/a2/mix_20.wav`, `mix_FF.wav`, `DRY 80` / `MFX FF`, 25 s, guarded);
+what is missing is a notch tracker, not device time.
+
+Failing that: identify the ~1 s structure first. It is the thing standing between
+four plausible estimators and one answer.
+
+### Tooling
+
+- **`tools/a2_run.py`** (new) — guarded PLAY-toggle captures, asserting the
+  transport pairs and the rig does not move.
+- **`tools/lfo_period.py`** (new) — spectrogram self-similarity, validated
+  against synthetic ground truth; refuses with a reason.
+- **`tools/lfo_pitch.py`** (new) — instantaneous frequency, validated the same
+  way; kept because it is correct for a signal with one swept partial.
+- **`cursor CHO_MOD_DEP` cannot disambiguate the two halves of the paired
+  `MOD DEPTH:FRQ` cell**, and the field map has one entry for the pair, so the
+  driver considers the cursor already on the field whichever half it sits on. A
+  sweep meaning to take `FRQ` from `FF` to `C0` **drove `DEPTH` from `FF` to
+  `00`** and reported that it had failed to move anything — a silent corruption
+  of the independent variable. `a2_run.py` now saturates LEFT and counts RIGHT,
+  which is absolute; `fm_probe_map.py` needed the same idiom on the FM screen.
+  Note also that `CHO_MOD_DEP` lands on **FRQ**, not `DEPTH`, which is the
+  opposite of what the name suggests.
+- Two estimator bugs, both caught on synthetic ground truth before they could
+  reach a device number: the instantaneous-frequency track glitches to tens of
+  kHz wherever the analytic envelope dips (one otherwise clean track ran −20035
+  to +22881 Hz and buried the peak under its own median), and period
+  autocorrelation picks an arbitrary MULTIPLE of the period unless the trivial
+  short-lag correlation is skipped and the earliest strong peak taken — at a true
+  1.00 Hz it returned 4.0000 s, and the naive fix then returned the minimum lag
+  at a true 0.35 Hz.
