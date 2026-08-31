@@ -13,6 +13,7 @@ Bundles/
 
 # Hardware-test artifacts (generated probes, oracles, captures, verdicts)
 hwtest_out/
+captures/
 # Third-party reference manual (Dirtywave M8, copyrighted — kept local only)
 manual/
 
