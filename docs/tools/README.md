@@ -31,6 +31,7 @@ it's the main app). None of them require the full `m8_clone` app to build or run
 | [`extract_manual_wavetables`](extract_manual_wavetables.md) | data extraction (Python) | Digitises the 61 WavSynth wave tables out of the manual's Wave Table Index — the plots there are vector polylines, so the index is a machine-readable source for the data itself. Emits the engine's generated wave table bank. |
 | [`compare_capture`](compare_capture.md) | wave table verification (Python) | Folds an `m8_capture` recording down to one averaged cycle and reports which of a wave table's 64 frames it matches. How the extraction above was verified against real hardware. |
 | [`hw_measure`](hw_measure.md) | verified capture (Python) | Sets instrument fields, verifies each by read-back, captures, then verifies **again** afterwards — and refuses to keep a WAV whose state drifted. Exists because a `set` on one field silently changed another and produced a data point that looked real ([#34](../../specs/M8_DRIVER_BUGS.md)). A measurement is worth only the state it was taken in. |
+| [`capture_target`](capture_target.md) | deterministic sequence capture (Python) | Navigates tracker hierarchy (`Song -> Chain -> Phrase` or `Chain -> Phrase`), verifies headers and grid coordinates closed-loop, stops pre-existing transport, and triggers `m8_capture`. |
 
 **Not covered by a doc here** (out of this index's scope, documented elsewhere):
 - `m8_clone` — the actual application (SDL3 UI + engine + headless `.m8script` runner). See
